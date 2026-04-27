@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import { supabase } from '@/lib/supabase/client'
@@ -23,7 +23,10 @@ const formSchema = z.object({
   nome: z.string().min(2, 'Nome é obrigatório'),
   email: z.string().email('E-mail inválido'),
   telefone: z.string().min(10, 'Telefone inválido'),
-  vaga_id: z.string({ required_error: 'Selecione uma vaga' }).min(1, 'Selecione uma vaga'),
+  vaga_id: z
+    .string({ required_error: 'Selecione uma vaga' })
+    .min(1, 'Selecione uma vaga')
+    .uuid('Selecione uma vaga válida'),
 })
 
 type FormData = z.infer<typeof formSchema>
@@ -44,7 +47,7 @@ export default function ApplyPage() {
     register,
     handleSubmit,
     formState: { errors },
-    setValue,
+    control,
   } = useForm<FormData>({
     resolver: zodResolver(formSchema),
   })
@@ -92,6 +95,10 @@ export default function ApplyPage() {
   }
 
   const onSubmit = async (data: FormData) => {
+    if (!data.vaga_id) {
+      setErrorMsg('Selecione uma vaga')
+      return
+    }
     if (!file) {
       setErrorMsg('Por favor, anexe o seu currículo.')
       return
@@ -101,7 +108,10 @@ export default function ApplyPage() {
       return
     }
 
+    console.log('--- Iniciando envio de candidatura ---')
     console.log('ID da vaga selecionada para envio (UUID):', data.vaga_id)
+    console.log('Nome:', data.nome)
+    console.log('Email:', data.email)
 
     setStatus('LOADING')
     setProgress(10)
@@ -340,26 +350,30 @@ export default function ApplyPage() {
 
                   <div className="space-y-2.5">
                     <Label htmlFor="vaga">Vaga de Interesse</Label>
-                    <Select
-                      onValueChange={(val) => setValue('vaga_id', val, { shouldValidate: true })}
-                    >
-                      <SelectTrigger className="h-11">
-                        <SelectValue placeholder="Selecione uma vaga" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {vagas.length === 0 ? (
-                          <SelectItem value="none" disabled>
-                            Nenhuma vaga aberta no momento
-                          </SelectItem>
-                        ) : (
-                          vagas.map((v) => (
-                            <SelectItem key={v.id} value={v.id}>
-                              {v.titulo}
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
+                    <Controller
+                      control={control}
+                      name="vaga_id"
+                      render={({ field }) => (
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <SelectTrigger className="h-11">
+                            <SelectValue placeholder="Selecione uma vaga" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {vagas.length === 0 ? (
+                              <SelectItem value="none" disabled>
+                                Nenhuma vaga aberta no momento
+                              </SelectItem>
+                            ) : (
+                              vagas.map((v) => (
+                                <SelectItem key={v.id} value={v.id}>
+                                  {v.titulo}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
                     {errors.vaga_id && (
                       <p className="text-xs text-red-500 font-medium">{errors.vaga_id.message}</p>
                     )}
