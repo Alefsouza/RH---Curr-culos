@@ -710,7 +710,18 @@ export const Constants = {
 //   AS $function$
 //   BEGIN
 //     INSERT INTO public.usuarios (id, email, nome)
-//     VALUES (NEW.id, NEW.email, NEW.raw_user_meta_data->>'name');
+//     VALUES (NEW.id, NEW.email, NEW.raw_user_meta_data->>'name')
+//     ON CONFLICT (id) DO NOTHING;
+//
+//     -- Insert default stages
+//     INSERT INTO public.etapas (id, nome, ordem, cor, user_id) VALUES
+//       (gen_random_uuid(), 'Candidatos', 1, 'bg-slate-200', NEW.id),
+//       (gen_random_uuid(), 'Triagem', 2, 'bg-blue-100', NEW.id),
+//       (gen_random_uuid(), 'Entrevista RH', 3, 'bg-purple-100', NEW.id),
+//       (gen_random_uuid(), 'Entrevista Técnica', 4, 'bg-orange-100', NEW.id),
+//       (gen_random_uuid(), 'Proposta', 5, 'bg-green-100', NEW.id),
+//       (gen_random_uuid(), 'Contratado', 6, 'bg-emerald-200', NEW.id);
+//
 //     RETURN NEW;
 //   END;
 //   $function$
