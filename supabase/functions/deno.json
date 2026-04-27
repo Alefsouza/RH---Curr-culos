@@ -3,6 +3,7 @@
     "outlook-webhook": 3,
     "process-resume": 2,
     "analyze-resume": 8,
-    "enviar-whatsapp": 1
+    "enviar-whatsapp": 1,
+    "test-whatsapp": 1
   }
 }
