@@ -23,7 +23,7 @@ const formSchema = z.object({
   nome: z.string().min(2, 'Nome é obrigatório'),
   email: z.string().email('E-mail inválido'),
   telefone: z.string().min(10, 'Telefone inválido'),
-  vaga_id: z.string().optional(),
+  vaga_id: z.string({ required_error: 'Selecione uma vaga' }).min(1, 'Selecione uma vaga'),
 })
 
 type FormData = z.infer<typeof formSchema>
@@ -100,6 +100,8 @@ export default function ApplyPage() {
       setErrorMsg('Link de candidatura inválido (User ID não encontrado).')
       return
     }
+
+    console.log('ID da vaga selecionada para envio (UUID):', data.vaga_id)
 
     setStatus('LOADING')
     setProgress(10)
@@ -337,8 +339,10 @@ export default function ApplyPage() {
                   </div>
 
                   <div className="space-y-2.5">
-                    <Label htmlFor="vaga">Vaga de Interesse (Opcional)</Label>
-                    <Select onValueChange={(val) => setValue('vaga_id', val)}>
+                    <Label htmlFor="vaga">Vaga de Interesse</Label>
+                    <Select
+                      onValueChange={(val) => setValue('vaga_id', val, { shouldValidate: true })}
+                    >
                       <SelectTrigger className="h-11">
                         <SelectValue placeholder="Selecione uma vaga" />
                       </SelectTrigger>
@@ -356,6 +360,9 @@ export default function ApplyPage() {
                         )}
                       </SelectContent>
                     </Select>
+                    {errors.vaga_id && (
+                      <p className="text-xs text-red-500 font-medium">{errors.vaga_id.message}</p>
+                    )}
                   </div>
                 </div>
 
