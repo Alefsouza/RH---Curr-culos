@@ -1,0 +1,73 @@
+import { Candidate, Stage } from '@/types/kanban'
+
+export const INITIAL_STAGES: Stage[] = [
+  { id: 'stage-1', name: 'Candidatos', color: 'bg-slate-200', order: 1 },
+  { id: 'stage-2', name: 'Triagem', color: 'bg-blue-100', order: 2 },
+  { id: 'stage-3', name: 'Entrevista RH', color: 'bg-purple-100', order: 3 },
+  { id: 'stage-4', name: 'Entrevista Técnica', color: 'bg-orange-100', order: 4 },
+  { id: 'stage-5', name: 'Proposta', color: 'bg-green-100', order: 5 },
+  { id: 'stage-6', name: 'Contratado', color: 'bg-emerald-200', order: 6 },
+]
+
+export const INITIAL_CANDIDATES: Candidate[] = [
+  {
+    id: 'cand-1',
+    name: 'Ana Silva',
+    email: 'ana.silva@email.com',
+    phone: '(11) 98765-4321',
+    source: 'Site',
+    stageId: 'stage-1',
+    job: 'Desenvolvedor Frontend',
+    appliedAt: '2023-10-25T10:00:00Z',
+  },
+  {
+    id: 'cand-2',
+    name: 'Carlos Santos',
+    email: 'carlos.santos@email.com',
+    phone: '(11) 91234-5678',
+    source: 'Outlook',
+    stageId: 'stage-1',
+    job: 'Desenvolvedor Backend',
+    appliedAt: '2023-10-26T14:30:00Z',
+  },
+  {
+    id: 'cand-3',
+    name: 'Mariana Costa',
+    email: 'mariana.c@email.com',
+    phone: '(21) 99988-7766',
+    source: 'Cato',
+    stageId: 'stage-2',
+    job: 'Designer UX/UI',
+    appliedAt: '2023-10-24T09:15:00Z',
+  },
+  {
+    id: 'cand-4',
+    name: 'João Pereira',
+    email: 'joao.p@email.com',
+    phone: '(31) 98877-6655',
+    source: 'Site',
+    stageId: 'stage-3',
+    job: 'Desenvolvedor Frontend',
+    appliedAt: '2023-10-20T11:45:00Z',
+  },
+  {
+    id: 'cand-5',
+    name: 'Lucas Oliveira',
+    email: 'lucas.oli@email.com',
+    phone: '(41) 97766-5544',
+    source: 'Outlook',
+    stageId: 'stage-4',
+    job: 'Tech Lead',
+    appliedAt: '2023-10-15T16:20:00Z',
+  },
+  {
+    id: 'cand-6',
+    name: 'Fernanda Lima',
+    email: 'fernanda.l@email.com',
+    phone: '(51) 96655-4433',
+    source: 'Cato',
+    stageId: 'stage-5',
+    job: 'Gerente de Produto',
+    appliedAt: '2023-10-10T10:00:00Z',
+  },
+]
