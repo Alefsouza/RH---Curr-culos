@@ -38,4 +38,20 @@ export async function updateCandidateStage(candidateId: string, stageId: string)
     .update({ etapa_id: stageId })
     .eq('id', candidateId)
   if (error) throw error
+
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    if (session) {
+      // Tenta enviar a mensagem automática via WhatsApp em background
+      supabase.functions
+        .invoke('enviar-whatsapp', {
+          body: { candidato_id: candidateId, etapa_id: stageId },
+        })
+        .catch(console.error)
+    }
+  } catch (e) {
+    console.error('Erro ao invocar envio de WhatsApp:', e)
+  }
 }
