@@ -53,7 +53,7 @@ Deno.serve(async (req: Request) => {
     }
 
     console.log(`Validando vaga_id recebido: ${vaga_id}`)
-    if (!vaga_id) {
+    if (vaga_id === undefined || vaga_id === null || vaga_id === '') {
       console.error('Erro: vaga_id ausente ou vazio.')
       return new Response(JSON.stringify({ error: 'Vaga é obrigatória.' }), {
         status: 400,
@@ -62,7 +62,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-    if (!uuidRegex.test(vaga_id)) {
+    if (typeof vaga_id !== 'string' || vaga_id.length !== 36 || !uuidRegex.test(vaga_id)) {
       console.error(`Erro: vaga_id inválido (${vaga_id}). Não é um UUID válido.`)
       return new Response(JSON.stringify({ error: 'Vaga inválida. Selecione uma vaga válida.' }), {
         status: 400,
@@ -390,7 +390,15 @@ Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
             const analiseJson = await callOpenAIWithRetry(analyzePrompt)
             console.log('Feedback da análise da vaga recebido da OpenAI.')
 
-            console.log(`Salvando resultado da análise no banco para a vaga_id: ${vaga.id}`)
+            console.log(
+              `Salvando resultado da análise no banco. Vaga ID sendo processado: ${vaga.id}`,
+            )
+
+            if (typeof vaga.id !== 'string' || vaga.id.length !== 36 || !uuidRegex.test(vaga.id)) {
+              console.error(`Erro ao salvar análise: vaga_id não é um UUID válido (${vaga.id})`)
+              throw new Error('Vaga inválida para inserção na análise.')
+            }
+
             const { data: novaAnalise, error: analiseError } = await supabase
               .from('analises')
               .insert({
