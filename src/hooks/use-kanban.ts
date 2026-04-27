@@ -1,42 +1,75 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Candidate, Stage } from '@/types/kanban'
-import { INITIAL_CANDIDATES, INITIAL_STAGES } from '@/lib/mock-data'
 import { useToast } from '@/hooks/use-toast'
+import { fetchStages, fetchCandidates, updateCandidateStage } from '@/services/kanban'
+import { useAuth } from '@/hooks/use-auth'
 
 export function useKanban() {
-  const [candidates, setCandidates] = useState<Candidate[]>(INITIAL_CANDIDATES)
-  const [stages, setStages] = useState<Stage[]>(INITIAL_STAGES)
+  const { user } = useAuth()
+  const [candidates, setCandidates] = useState<Candidate[]>([])
+  const [stages, setStages] = useState<Stage[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [draggedCandidateId, setDraggedCandidateId] = useState<string | null>(null)
   const { toast } = useToast()
 
+  const loadData = useCallback(async () => {
+    if (!user) return
+    try {
+      setLoading(true)
+      const [fetchedStages, fetchedCandidates] = await Promise.all([
+        fetchStages(),
+        fetchCandidates(),
+      ])
+      setStages(fetchedStages)
+      setCandidates(fetchedCandidates)
+      setError(null)
+    } catch (err: any) {
+      setError(err.message || 'Erro ao carregar dados.')
+    } finally {
+      setLoading(false)
+    }
+  }, [user])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
+
   const moveCandidate = useCallback(
-    (candidateId: string, newStageId: string) => {
+    async (candidateId: string, newStageId: string) => {
+      const previousCandidates = [...candidates]
+
       setCandidates((prev) => {
         const candidateIndex = prev.findIndex((c) => c.id === candidateId)
         if (candidateIndex === -1) return prev
 
         const candidate = prev[candidateIndex]
-        if (candidate.stageId === newStageId) return prev // No change
+        if (candidate.stageId === newStageId) return prev
 
         const updatedCandidates = [...prev]
         updatedCandidates[candidateIndex] = { ...candidate, stageId: newStageId }
+        return updatedCandidates
+      })
 
-        // Simulate Webhook / Side effect
+      try {
+        await updateCandidateStage(candidateId, newStageId)
+        const candidate = candidates.find((c) => c.id === candidateId)
+        const stage = stages.find((s) => s.id === newStageId)
+
         console.log(
-          `[WEBHOOK TRIGGER] WhatsApp notification sent to ${candidate.phone}: "Olá ${candidate.name}, seu status mudou para a etapa ${
-            stages.find((s) => s.id === newStageId)?.name
-          }!"`,
+          `[WEBHOOK TRIGGER] WhatsApp notification sent to ${candidate?.phone}: "Olá ${candidate?.name}, seu status mudou para a etapa ${stage?.name}!"`,
         )
 
         toast({
-          title: 'Candidato movido com sucesso!',
-          description: `${candidate.name} foi movido para a nova etapa.`,
+          title: 'Candidato movido!',
+          description: `${candidate?.name} movido para ${stage?.name}.`,
         })
-
-        return updatedCandidates
-      })
+      } catch (err: any) {
+        setCandidates(previousCandidates)
+        toast({ variant: 'destructive', title: 'Erro ao mover', description: err.message })
+      }
     },
-    [stages, toast],
+    [candidates, stages, toast],
   )
 
   const handleDragStart = useCallback((candidateId: string) => {
@@ -54,5 +87,8 @@ export function useKanban() {
     moveCandidate,
     handleDragStart,
     handleDragEnd,
+    loading,
+    error,
+    loadData,
   }
 }

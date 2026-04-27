@@ -10,11 +10,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Search, Plus, FilterX } from 'lucide-react'
+import { Search, Plus, FilterX, AlertCircle } from 'lucide-react'
 
 export default function Index() {
-  const { candidates, stages, draggedCandidateId, moveCandidate, handleDragStart, handleDragEnd } =
-    useKanban()
+  const {
+    candidates,
+    stages,
+    draggedCandidateId,
+    moveCandidate,
+    handleDragStart,
+    handleDragEnd,
+    loading,
+    error,
+    loadData,
+  } = useKanban()
 
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedJob, setSelectedJob] = useState<string>('all')
@@ -26,7 +35,6 @@ export default function Index() {
     return candidates.filter((candidate) => {
       const matchesSearch = candidate.name.toLowerCase().includes(searchQuery.toLowerCase())
       const matchesJob = selectedJob === 'all' || candidate.job === selectedJob
-      // Simplify period filter for mockup (real app would check dates)
       const matchesPeriod = selectedPeriod === 'all'
 
       return matchesSearch && matchesJob && matchesPeriod
@@ -40,6 +48,43 @@ export default function Index() {
   }
 
   const hasActiveFilters = searchQuery !== '' || selectedJob !== 'all' || selectedPeriod !== 'all'
+
+  if (loading) {
+    return (
+      <div className="flex flex-col h-full space-y-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="h-8 w-64 bg-slate-200 animate-pulse rounded mb-2" />
+            <div className="h-4 w-96 bg-slate-200 animate-pulse rounded" />
+          </div>
+          <div className="h-10 w-32 bg-slate-200 animate-pulse rounded" />
+        </div>
+        <div className="h-16 w-full bg-slate-200 animate-pulse rounded-xl" />
+        <div className="flex-1 overflow-hidden pb-4">
+          <div className="flex gap-6 h-full px-1">
+            <div className="w-[320px] h-full bg-slate-200/50 animate-pulse rounded-xl flex-shrink-0" />
+            <div className="w-[320px] h-full bg-slate-200/50 animate-pulse rounded-xl flex-shrink-0" />
+            <div className="w-[320px] h-full bg-slate-200/50 animate-pulse rounded-xl flex-shrink-0" />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full space-y-4">
+        <div className="bg-red-50 p-4 rounded-full">
+          <AlertCircle className="h-10 w-10 text-red-500" />
+        </div>
+        <h2 className="text-xl font-semibold text-slate-800">Erro ao carregar Kanban</h2>
+        <p className="text-slate-500 text-center max-w-md">{error}</p>
+        <Button onClick={loadData} variant="outline" className="mt-4">
+          Tentar Novamente
+        </Button>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col h-full space-y-6">

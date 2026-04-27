@@ -1,11 +1,9 @@
-export type Source = 'Outlook' | 'Cato' | 'Site'
-
 export interface Candidate {
   id: string
   name: string
   email: string
   phone: string
-  source: Source
+  source: string
   stageId: string
   job: string
   appliedAt: string

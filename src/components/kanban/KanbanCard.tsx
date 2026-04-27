@@ -59,9 +59,12 @@ export function KanbanCard({ candidate, isDragging, onDragStart, onDragEnd }: Ka
         <div className="flex items-center justify-between pt-1">
           <Badge
             variant="secondary"
-            className={cn('text-[10px] font-semibold px-2 py-0', sourceColors[candidate.source])}
+            className={cn(
+              'text-[10px] font-semibold px-2 py-0',
+              sourceColors[candidate.source] || 'bg-slate-100 text-slate-700 hover:bg-slate-200',
+            )}
           >
-            {candidate.source}
+            {candidate.source || 'Outro'}
           </Badge>
           <span className="text-[10px] text-slate-400">
             {new Date(candidate.appliedAt).toLocaleDateString('pt-BR', {
