@@ -11,7 +11,15 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
-import { LayoutDashboard, Users, Briefcase, Settings, Plus, SquareKanban } from 'lucide-react'
+import {
+  LayoutDashboard,
+  Users,
+  Briefcase,
+  Settings,
+  Plus,
+  SquareKanban,
+  MessageSquare,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 const navItems = [
@@ -19,6 +27,7 @@ const navItems = [
   { title: 'Quadro Kanban', url: '/', icon: SquareKanban },
   { title: 'Vagas', url: '/vagas', icon: Briefcase },
   { title: 'Candidatos', url: '#', icon: Users },
+  { title: 'Mensagens', url: '/templates', icon: MessageSquare },
   { title: 'Configurações', url: '#', icon: Settings },
 ]
 
