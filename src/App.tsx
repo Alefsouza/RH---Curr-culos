@@ -6,6 +6,7 @@ import Index from './pages/Index'
 import AuthPage from './pages/Auth'
 import NotFound from './pages/NotFound'
 import Layout from './components/Layout'
+import ApplyPage from './pages/Apply'
 import { AuthProvider, useAuth } from '@/hooks/use-auth'
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -23,6 +24,7 @@ const App = () => (
         <Sonner />
         <Routes>
           <Route path="/auth" element={<AuthPage />} />
+          <Route path="/candidatar/:userId" element={<ApplyPage />} />
           <Route
             element={
               <ProtectedRoute>
