@@ -7,6 +7,7 @@ import AuthPage from './pages/Auth'
 import NotFound from './pages/NotFound'
 import Layout from './components/Layout'
 import ApplyPage from './pages/Apply'
+import JobsPage from './pages/Jobs'
 import { AuthProvider, useAuth } from '@/hooks/use-auth'
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -33,6 +34,7 @@ const App = () => (
             }
           >
             <Route path="/" element={<Index />} />
+            <Route path="/vagas" element={<JobsPage />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

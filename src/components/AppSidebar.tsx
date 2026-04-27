@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button'
 const navItems = [
   { title: 'Dashboard', url: '#', icon: LayoutDashboard },
   { title: 'Quadro Kanban', url: '/', icon: SquareKanban },
-  { title: 'Vagas', url: '#', icon: Briefcase },
+  { title: 'Vagas', url: '/vagas', icon: Briefcase },
   { title: 'Candidatos', url: '#', icon: Users },
   { title: 'Configurações', url: '#', icon: Settings },
 ]
