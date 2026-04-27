@@ -52,6 +52,24 @@ Deno.serve(async (req: Request) => {
       )
     }
 
+    console.log(`Validando vaga_id recebido: ${vaga_id}`)
+    if (!vaga_id) {
+      console.error('Erro: vaga_id ausente ou vazio.')
+      return new Response(JSON.stringify({ error: 'Vaga é obrigatória.' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!uuidRegex.test(vaga_id)) {
+      console.error(`Erro: vaga_id inválido (${vaga_id}). Não é um UUID válido.`)
+      return new Response(JSON.stringify({ error: 'Vaga inválida. Selecione uma vaga válida.' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     console.log('Verificando chaves e credenciais nos Secrets...')
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
@@ -255,7 +273,9 @@ ${pdfText.substring(0, 15000)}`
       // 5. Insert Candidate
       console.log('Preparando para inserir o novo candidato na base de dados...')
       const { data: publicUrlData } = supabase.storage.from('curriculos').getPublicUrl(filePath)
-      const finalVagaId = vaga_id && vaga_id !== 'none' && vaga_id !== '' ? vaga_id : null
+      const finalVagaId = vaga_id
+
+      console.log(`Inserindo candidato com vaga_id processado: ${finalVagaId}`)
 
       const { data: newCandidate, error: insertCandidateError } = await supabase
         .from('candidatos')
@@ -370,6 +390,7 @@ Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
             const analiseJson = await callOpenAIWithRetry(analyzePrompt)
             console.log('Feedback da análise da vaga recebido da OpenAI.')
 
+            console.log(`Salvando resultado da análise no banco para a vaga_id: ${vaga.id}`)
             const { data: novaAnalise, error: analiseError } = await supabase
               .from('analises')
               .insert({
