@@ -1,7 +1,7 @@
 {
   "_versions": {
-    "outlook-webhook": 2,
-    "process-resume": 1,
-    "analyze-resume": 1
+    "outlook-webhook": 3,
+    "process-resume": 2,
+    "analyze-resume": 2
   }
 }

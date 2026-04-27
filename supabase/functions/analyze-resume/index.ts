@@ -11,12 +11,15 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    console.log('--- Iniciando processamento do currículo ---')
     const bodyText = await req.text()
     let body
     try {
       body = JSON.parse(bodyText)
+      console.log('Payload recebido e processado com sucesso.')
     } catch (e) {
-      return new Response(JSON.stringify({ error: 'Payload inválido.' }), {
+      console.error('Erro ao fazer parse do payload:', e)
+      return new Response(JSON.stringify({ error: 'Payload inválido. Formato JSON esperado.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -24,28 +27,11 @@ Deno.serve(async (req: Request) => {
 
     const { filePath, nome, email, telefone, vaga_id, user_id } = body
 
-    if (!filePath || !nome || !email || !user_id) {
-      return new Response(JSON.stringify({ error: 'Dados incompletos fornecidos.' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
-    const supabase = createClient(supabaseUrl, supabaseKey)
-
-    console.log(`Baixando arquivo: ${filePath}`)
-
-    // 1. Download PDF from Storage
-    const { data: fileData, error: downloadError } = await supabase.storage
-      .from('curriculos')
-      .download(filePath)
-
-    if (downloadError || !fileData) {
-      console.error('Erro ao baixar arquivo:', downloadError)
+    console.log('Validando dados de entrada...')
+    if (!filePath) {
+      console.error('Erro: filePath não fornecido na requisição.')
       return new Response(
-        JSON.stringify({ error: 'Erro ao acessar o arquivo enviado no Storage.' }),
+        JSON.stringify({ error: 'O caminho do arquivo PDF (filePath) é obrigatório.' }),
         {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -53,23 +39,78 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    console.log(`Arquivo baixado com sucesso, tamanho: ${fileData.size}`)
+    if (!nome || !user_id) {
+      console.error('Erro: nome ou user_id ausentes.')
+      return new Response(
+        JSON.stringify({
+          error: 'Dados incompletos. Nome e identificador do usuário são obrigatórios.',
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
+    }
+
+    console.log('Verificando chaves e credenciais nos Secrets...')
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+
+    const openaiKey = Deno.env.get('OPENAI_KEY') || Deno.env.get('OPENIA_KEY')
+    if (!openaiKey) {
+      console.error('Erro fatal: Chave da API da OpenAI não configurada nos Secrets do Supabase.')
+      return new Response(
+        JSON.stringify({
+          error: 'Configuração do servidor incompleta. A chave da OpenAI não foi encontrada.',
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey)
+
+    console.log(`Baixando arquivo PDF do Storage: ${filePath}`)
+    // 1. Download PDF from Storage
+    const { data: fileData, error: downloadError } = await supabase.storage
+      .from('curriculos')
+      .download(filePath)
+
+    if (downloadError || !fileData) {
+      console.error('Erro ao baixar arquivo do Storage:', downloadError)
+      return new Response(
+        JSON.stringify({
+          error:
+            'Erro ao acessar o arquivo enviado no banco de dados. Verifique se o arquivo existe e foi salvo corretamente.',
+          detalhes: downloadError,
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
+    }
+
+    console.log(`Arquivo PDF baixado com sucesso. Tamanho: ${fileData.size} bytes`)
 
     // 2. Parse PDF
+    console.log('Iniciando extração de texto do arquivo PDF...')
     const arrayBuffer = await fileData.arrayBuffer()
     const pdfBuffer = Buffer.from(arrayBuffer)
     let pdfText = ''
     try {
-      console.log('Iniciando extração de texto do PDF...')
       const data = await pdf(pdfBuffer)
       pdfText = data.text
-      console.log(`Texto extraído com sucesso, tamanho: ${pdfText.length}`)
-    } catch (err) {
-      console.error('Erro ao ler PDF:', err)
+      console.log(`Texto extraído com sucesso do PDF. Total de caracteres: ${pdfText.length}`)
+    } catch (err: any) {
+      console.error('Erro na extração de texto do PDF:', err)
       return new Response(
         JSON.stringify({
           error:
-            'Erro ao extrair texto do PDF. Certifique-se de que o arquivo é um PDF válido e legível.',
+            'Erro ao extrair texto do PDF. O arquivo pode estar corrompido ou protegido por senha.',
+          detalhes: err.message,
         }),
         {
           status: 400,
@@ -79,6 +120,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!pdfText || !pdfText.trim()) {
+      console.error('Aviso: O PDF extraído não contém texto (pode ser uma imagem).')
       return new Response(
         JSON.stringify({
           error:
@@ -92,17 +134,6 @@ Deno.serve(async (req: Request) => {
     }
 
     // 3. OpenAI Extraction
-    const openaiKey = Deno.env.get('OPENAI_KEY') || Deno.env.get('OPENIA_KEY')
-    if (!openaiKey) {
-      console.error('Chave da API da OpenAI não configurada.')
-      return new Response(
-        JSON.stringify({ error: 'Configuração do servidor incompleta (OpenAI).' }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
-      )
-    }
     const openai = new OpenAI({ apiKey: openaiKey })
 
     const callOpenAIWithRetry = async (
@@ -125,9 +156,9 @@ Deno.serve(async (req: Request) => {
         })
         return JSON.parse(response.choices[0].message.content || '{}')
       } catch (error: any) {
-        console.error('Erro na OpenAI:', error.message || error)
-        if (error.status === 503 && retries > 0) {
-          console.log(`OpenAI 503, retentando em ${backoff}ms...`)
+        console.error(`Falha na OpenAI (Tentativas restantes: ${retries}):`, error.message || error)
+        if (retries > 0) {
+          console.log(`Retentando chamada à OpenAI em ${backoff}ms...`)
           await new Promise((resolve) => setTimeout(resolve, backoff))
           return callOpenAIWithRetry(prompt, retries - 1, backoff * 2)
         }
@@ -152,17 +183,19 @@ ${pdfText.substring(0, 15000)}`
 
     let extractedData
     try {
-      console.log('Enviando texto para OpenAI...')
+      console.log('Enviando texto extraído para a Inteligência Artificial (OpenAI)...')
       extractedData = await callOpenAIWithRetry(extractionPrompt)
-      console.log('Dados extraídos com sucesso')
+      console.log('Estruturação de dados pela OpenAI concluída com sucesso.')
     } catch (err: any) {
-      console.error('Erro na chamada da OpenAI:', err)
+      console.error('Erro crítico e final na chamada da OpenAI:', err)
       return new Response(
         JSON.stringify({
-          error: 'Erro ao analisar os dados do currículo com Inteligência Artificial.',
+          error:
+            'Serviço de Inteligência Artificial indisponível no momento. Não foi possível analisar o currículo.',
+          detalhes: err.message,
         }),
         {
-          status: 500,
+          status: 503,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         },
       )
@@ -172,106 +205,150 @@ ${pdfText.substring(0, 15000)}`
     const finalTelefone = telefone || extractedData.telefone || null
     const finalNome = nome || extractedData.nome || 'Candidato Desconhecido'
 
-    console.log('Iniciando deduplicação...')
-    // 4. Deduplication
-    const orConditions = []
-    if (finalEmail) {
-      const safeEmail = finalEmail.replace(/"/g, '')
-      orConditions.push(`email.eq."${safeEmail}"`)
-    }
-    if (finalTelefone) {
-      const safeTel = finalTelefone.replace(/"/g, '')
-      orConditions.push(`telefone.eq."${safeTel}"`)
-    }
+    // 4. Deduplication and Database operations
+    console.log('Iniciando comunicação com o banco de dados (Deduplicação e Inserção)...')
 
-    if (orConditions.length > 0) {
-      const { data: duplicates, error: dupError } = await supabase
+    try {
+      const orConditions = []
+      if (finalEmail) {
+        const safeEmail = finalEmail.replace(/"/g, '')
+        orConditions.push(`email.eq."${safeEmail}"`)
+      }
+      if (finalTelefone) {
+        const safeTel = finalTelefone.replace(/"/g, '')
+        orConditions.push(`telefone.eq."${safeTel}"`)
+      }
+
+      if (orConditions.length > 0) {
+        console.log('Verificando candidatos duplicados no sistema...')
+        const { data: duplicates, error: dupError } = await supabase
+          .from('candidatos')
+          .select('id')
+          .eq('user_id', user_id)
+          .or(orConditions.join(','))
+
+        if (dupError) {
+          console.error('Erro ao buscar candidatos duplicados:', dupError)
+          throw dupError
+        }
+
+        if (duplicates && duplicates.length > 0) {
+          console.log(
+            `Aviso: Foram encontrados ${duplicates.length} candidatos duplicados. Removendo registros obsoletos...`,
+          )
+          const idsToDelete = duplicates.map((d) => d.id)
+          const { error: deleteError } = await supabase
+            .from('candidatos')
+            .delete()
+            .in('id', idsToDelete)
+
+          if (deleteError) {
+            console.error('Erro ao remover candidatos duplicados:', deleteError)
+            throw deleteError
+          }
+          console.log('Registros duplicados removidos com sucesso.')
+        } else {
+          console.log('Nenhum candidato duplicado detectado.')
+        }
+      }
+
+      // 5. Insert Candidate
+      console.log('Preparando para inserir o novo candidato na base de dados...')
+      const { data: publicUrlData } = supabase.storage.from('curriculos').getPublicUrl(filePath)
+      const finalVagaId = vaga_id && vaga_id !== 'none' && vaga_id !== '' ? vaga_id : null
+
+      const { data: newCandidate, error: insertCandidateError } = await supabase
         .from('candidatos')
-        .select('id')
-        .eq('user_id', user_id)
-        .or(orConditions.join(','))
-
-      if (dupError) {
-        console.error('Erro ao buscar duplicados:', dupError)
-      }
-
-      if (duplicates && duplicates.length > 0) {
-        console.log(`Encontrados ${duplicates.length} candidatos duplicados. Removendo...`)
-        const idsToDelete = duplicates.map((d) => d.id)
-        await supabase.from('candidatos').delete().in('id', idsToDelete)
-      }
-    }
-
-    // 5. Insert Candidate
-    console.log('Inserindo candidato...')
-    const { data: publicUrlData } = supabase.storage.from('curriculos').getPublicUrl(filePath)
-
-    const finalVagaId = vaga_id && vaga_id !== 'none' && vaga_id !== '' ? vaga_id : null
-
-    const { data: newCandidate, error: insertCandidateError } = await supabase
-      .from('candidatos')
-      .insert({
-        nome: finalNome,
-        email: finalEmail,
-        telefone: finalTelefone,
-        fonte: 'site',
-        curriculo_url: publicUrlData.publicUrl,
-        vaga_id: finalVagaId,
-        user_id: user_id,
-      })
-      .select('id')
-      .single()
-
-    if (insertCandidateError) {
-      console.error('Erro ao inserir candidato:', insertCandidateError)
-      return new Response(JSON.stringify({ error: 'Erro ao salvar os dados do candidato.' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-    const candidatoId = newCandidate.id
-
-    // 6. Stage "Nunca Responderam"
-    console.log('Buscando etapa "Nunca Responderam"...')
-    let { data: etapa } = await supabase
-      .from('etapas')
-      .select('id')
-      .eq('user_id', user_id)
-      .ilike('nome', 'Nunca Responderam')
-      .maybeSingle()
-
-    if (!etapa) {
-      console.log('Etapa não encontrada. Criando nova etapa...')
-      const { data: newEtapa } = await supabase
-        .from('etapas')
         .insert({
-          nome: 'Nunca Responderam',
-          ordem: 0,
-          cor: 'bg-slate-200',
+          nome: finalNome,
+          email: finalEmail,
+          telefone: finalTelefone,
+          fonte: 'site',
+          curriculo_url: publicUrlData.publicUrl,
+          vaga_id: finalVagaId,
           user_id: user_id,
         })
         .select('id')
         .single()
-      etapa = newEtapa
-    }
 
-    if (etapa) {
-      await supabase.from('candidato_etapa').insert({
-        candidato_id: candidatoId,
-        etapa_id: etapa.id,
-        usuario_id: user_id,
-      })
-      await supabase.from('candidatos').update({ etapa_id: etapa.id }).eq('id', candidatoId)
-    }
+      if (insertCandidateError) {
+        console.error('Erro ao inserir candidato na tabela:', insertCandidateError)
+        throw insertCandidateError
+      }
+      const candidatoId = newCandidate.id
+      console.log(`Sucesso: Candidato registrado no banco de dados. ID Gerado: ${candidatoId}`)
 
-    // 7. Analyze against job criteria
-    const analisesRealizadas = []
-    if (finalVagaId) {
-      console.log(`Analisando contra critérios da vaga ${finalVagaId}...`)
-      const { data: vaga } = await supabase.from('vagas').select('*').eq('id', finalVagaId).single()
+      // 6. Stage "Nunca Responderam"
+      console.log('Buscando etapa padrão "Nunca Responderam"...')
+      let { data: etapa, error: etapaError } = await supabase
+        .from('etapas')
+        .select('id')
+        .eq('user_id', user_id)
+        .ilike('nome', 'Nunca Responderam')
+        .maybeSingle()
 
-      if (vaga) {
-        const analyzePrompt = `Analise o currículo para a vaga de "${vaga.titulo}".
+      if (etapaError) {
+        console.error('Erro ao consultar etapas do usuário:', etapaError)
+        throw etapaError
+      }
+
+      if (!etapa) {
+        console.log('A etapa "Nunca Responderam" não foi encontrada. Criando nova etapa...')
+        const { data: newEtapa, error: insertEtapaError } = await supabase
+          .from('etapas')
+          .insert({
+            nome: 'Nunca Responderam',
+            ordem: 0,
+            cor: 'bg-slate-200',
+            user_id: user_id,
+          })
+          .select('id')
+          .single()
+
+        if (insertEtapaError) {
+          console.error('Erro ao criar a nova etapa:', insertEtapaError)
+          throw insertEtapaError
+        }
+        etapa = newEtapa
+        console.log('Nova etapa "Nunca Responderam" criada com sucesso.')
+      }
+
+      if (etapa) {
+        console.log(`Relacionando o candidato à etapa de ID: ${etapa.id}`)
+        const { error: relError } = await supabase.from('candidato_etapa').insert({
+          candidato_id: candidatoId,
+          etapa_id: etapa.id,
+          usuario_id: user_id,
+        })
+        if (relError) throw relError
+
+        const { error: updError } = await supabase
+          .from('candidatos')
+          .update({ etapa_id: etapa.id })
+          .eq('id', candidatoId)
+        if (updError) throw updError
+        console.log('Candidato inserido na etapa corretamente.')
+      }
+
+      // 7. Analyze against job criteria
+      const analisesRealizadas = []
+      if (finalVagaId) {
+        console.log(
+          `Iniciando análise de aderência do candidato para a vaga vinculada (ID: ${finalVagaId})...`,
+        )
+        const { data: vaga, error: vagaError } = await supabase
+          .from('vagas')
+          .select('*')
+          .eq('id', finalVagaId)
+          .single()
+
+        if (vagaError) {
+          console.error('Erro ao buscar detalhes da vaga para análise:', vagaError)
+          throw vagaError
+        }
+
+        if (vaga) {
+          const analyzePrompt = `Analise o currículo para a vaga de "${vaga.titulo}".
 Descrição da vaga: ${vaga.descricao || 'Não informada'}
 Critérios de Qualificação: ${JSON.stringify(vaga.criterios_qualificacao || {})}
 
@@ -288,52 +365,75 @@ Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
   }
 }`
 
-        try {
-          const analiseJson = await callOpenAIWithRetry(analyzePrompt)
-          const { data: novaAnalise, error: analiseError } = await supabase
-            .from('analises')
-            .insert({
-              candidato_id: candidatoId,
-              vaga_id: vaga.id,
-              resultado: analiseJson.resultado || 'revisar',
-              detalhes: analiseJson.detalhes || {},
-              user_id: user_id,
-            })
-            .select()
-            .single()
+          try {
+            console.log('Enviando dados da vaga para análise comportamental na OpenAI...')
+            const analiseJson = await callOpenAIWithRetry(analyzePrompt)
+            console.log('Feedback da análise da vaga recebido da OpenAI.')
 
-          if (!analiseError) {
-            analisesRealizadas.push(novaAnalise)
-          } else {
-            console.error('Erro ao inserir análise:', analiseError)
+            const { data: novaAnalise, error: analiseError } = await supabase
+              .from('analises')
+              .insert({
+                candidato_id: candidatoId,
+                vaga_id: vaga.id,
+                resultado: analiseJson.resultado || 'revisar',
+                detalhes: analiseJson.detalhes || {},
+                user_id: user_id,
+              })
+              .select()
+              .single()
+
+            if (!analiseError) {
+              analisesRealizadas.push(novaAnalise)
+              console.log('Relatório de análise de vaga salvo no banco de dados.')
+            } else {
+              console.error('Erro ao tentar salvar o relatório de análise:', analiseError)
+              throw analiseError
+            }
+          } catch (e: any) {
+            console.error(
+              `Aviso: Falha ao gerar a análise para a vaga "${vaga.titulo}". O processo continuará.`,
+              e,
+            )
           }
-        } catch (e) {
-          console.error(`Erro ao analisar a vaga ${vaga.titulo}:`, e)
         }
       }
+
+      console.log(
+        '--- Processamento do currículo e persistência de dados concluídos com SUCESSO ---',
+      )
+
+      // 8. Success Response
+      return new Response(
+        JSON.stringify({
+          success: true,
+          candidato_id: candidatoId,
+          dados_extraidos: extractedData,
+          analises: analisesRealizadas,
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
+    } catch (dbError: any) {
+      console.error('Erro Crítico no Banco de Dados:', dbError)
+      return new Response(
+        JSON.stringify({
+          error: 'Ocorreu um erro interno ao salvar os dados no banco de dados.',
+          detalhes: dbError.message || JSON.stringify(dbError),
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
     }
-
-    console.log('Processo concluído com sucesso!')
-
-    // 8. Success Response
-    return new Response(
-      JSON.stringify({
-        success: true,
-        candidato_id: candidatoId,
-        dados_extraidos: extractedData,
-        analises: analisesRealizadas,
-      }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      },
-    )
   } catch (error: any) {
-    console.error('Erro interno:', error)
+    console.error('Erro Fatal Não Tratado:', error)
     return new Response(
       JSON.stringify({
-        error: 'Ocorreu um erro interno no servidor ao processar o currículo.',
-        detalhes: error.message,
+        error: 'Ocorreu um erro interno inesperado no servidor ao processar o currículo.',
+        detalhes: error.message || String(error),
       }),
       {
         status: 500,
