@@ -124,7 +124,7 @@ export default function ApplyPage() {
       }, 800)
 
       const { data: funcData, error: funcError } = await supabase.functions.invoke(
-        'process-resume',
+        'analyze-resume',
         {
           body: {
             filePath,
