@@ -17,14 +17,14 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    console.log('Iniciando analyze-resume')
+    console.log('1. Iniciando analyze-resume')
 
     const bodyText = await req.text()
     let body
     try {
       body = JSON.parse(bodyText)
     } catch (e: any) {
-      console.log('Erro:', e.message)
+      console.log('Erro na etapa 1:', e.message)
       return new Response(JSON.stringify({ error: 'Payload inválido. Formato JSON esperado.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -32,6 +32,9 @@ Deno.serve(async (req: Request) => {
     }
 
     const { filePath, nome, email, telefone, vaga_id, user_id } = body
+
+    console.log('2. Vaga ID recebido:', vaga_id)
+    console.log('3. Arquivo recebido:', filePath)
 
     if (!filePath) {
       return new Response(JSON.stringify({ error: 'Arquivo PDF é obrigatório' }), {
@@ -73,7 +76,7 @@ Deno.serve(async (req: Request) => {
     const openaiKey = Deno.env.get('OPENAI_KEY') || Deno.env.get('OPENIA_KEY')
     if (!openaiKey) {
       const msg = 'Chave da API da OpenAI não configurada nos Secrets do Supabase.'
-      console.log('Erro:', msg)
+      console.log('Erro na etapa 1:', msg)
       return new Response(JSON.stringify({ error: msg }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -87,7 +90,7 @@ Deno.serve(async (req: Request) => {
       .download(filePath)
 
     if (downloadError || !fileData) {
-      console.log('Erro:', downloadError?.message || 'Erro ao baixar arquivo do Storage')
+      console.log('Erro na etapa 3:', downloadError?.message || 'Erro ao baixar arquivo do Storage')
       return new Response(
         JSON.stringify({ error: 'Erro ao acessar o arquivo enviado no banco de dados.' }),
         {
@@ -104,7 +107,7 @@ Deno.serve(async (req: Request) => {
       const data = await pdf(pdfBuffer)
       pdfText = data.text
     } catch (err: any) {
-      console.log('Erro:', err.message)
+      console.log('Erro na etapa 3:', err.message)
       return new Response(JSON.stringify({ error: 'Erro ao extrair texto do PDF.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -166,12 +169,12 @@ Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
 Texto extraído do currículo:
 ${pdfText.substring(0, 15000)}`
 
-    console.log('Chamando OpenAI com texto do PDF')
+    console.log('4. Chamando OpenAI')
     let extractedData
     try {
       extractedData = await callOpenAIWithRetry(extractionPrompt)
     } catch (err: any) {
-      console.log('Erro:', err.message)
+      console.log('Erro na etapa 4:', err.message)
       return new Response(
         JSON.stringify({ error: 'Serviço de Inteligência Artificial indisponível no momento.' }),
         {
@@ -184,6 +187,10 @@ ${pdfText.substring(0, 15000)}`
     const finalEmail = email || extractedData.email || null
     const finalTelefone = telefone || extractedData.telefone || null
     const finalNome = nome || extractedData.nome || 'Candidato Desconhecido'
+
+    console.log('5. Salvando candidato no banco')
+    let candidatoId
+    let analisesRealizadas = []
 
     try {
       const orConditions = []
@@ -215,7 +222,6 @@ ${pdfText.substring(0, 15000)}`
         }
       }
 
-      console.log('Salvando candidato no banco')
       const { data: publicUrlData } = supabase.storage.from('curriculos').getPublicUrl(filePath)
 
       const { data: newCandidate, error: insertCandidateError } = await supabase
@@ -233,7 +239,7 @@ ${pdfText.substring(0, 15000)}`
         .single()
 
       if (insertCandidateError) throw insertCandidateError
-      const candidatoId = newCandidate.id
+      candidatoId = newCandidate.id
 
       let { data: etapa, error: etapaError } = await supabase
         .from('etapas')
@@ -274,9 +280,23 @@ ${pdfText.substring(0, 15000)}`
           .eq('id', candidatoId)
         if (updError) throw updError
       }
+    } catch (dbError: any) {
+      console.log('Erro na etapa 5:', dbError.message)
+      return new Response(
+        JSON.stringify({
+          error: 'Ocorreu um erro interno ao salvar os dados no banco de dados.',
+          detalhes: dbError.message || JSON.stringify(dbError),
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
+    }
 
-      const analisesRealizadas = []
-      if (vaga_id) {
+    console.log('6. Salvando análise no banco')
+    try {
+      if (vaga_id && candidatoId) {
         const { data: vaga, error: vagaError } = await supabase
           .from('vagas')
           .select('*')
@@ -303,29 +323,24 @@ Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
   }
 }`
 
-          try {
-            const analiseJson = await callOpenAIWithRetry(analyzePrompt)
+          const analiseJson = await callOpenAIWithRetry(analyzePrompt)
 
-            console.log('Salvando análise no banco')
-            const { data: novaAnalise, error: analiseError } = await supabase
-              .from('analises')
-              .insert({
-                candidato_id: candidatoId,
-                vaga_id: vaga.id,
-                resultado: analiseJson.resultado || 'revisar',
-                detalhes: analiseJson.detalhes || {},
-                user_id: user_id,
-              })
-              .select()
-              .single()
+          const { data: novaAnalise, error: analiseError } = await supabase
+            .from('analises')
+            .insert({
+              candidato_id: candidatoId,
+              vaga_id: vaga.id,
+              resultado: analiseJson.resultado || 'revisar',
+              detalhes: analiseJson.detalhes || {},
+              user_id: user_id,
+            })
+            .select()
+            .single()
 
-            if (!analiseError) {
-              analisesRealizadas.push(novaAnalise)
-            } else {
-              throw analiseError
-            }
-          } catch (e: any) {
-            console.log('Erro:', e.message)
+          if (!analiseError) {
+            analisesRealizadas.push(novaAnalise)
+          } else {
+            throw analiseError
           }
         }
       }
@@ -343,10 +358,10 @@ Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
         },
       )
     } catch (dbError: any) {
-      console.log('Erro:', dbError.message)
+      console.log('Erro na etapa 6:', dbError.message)
       return new Response(
         JSON.stringify({
-          error: 'Ocorreu um erro interno ao salvar os dados no banco de dados.',
+          error: 'Ocorreu um erro interno ao salvar a análise no banco de dados.',
           detalhes: dbError.message || JSON.stringify(dbError),
         }),
         {
@@ -356,7 +371,7 @@ Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
       )
     }
   } catch (error: any) {
-    console.log('Erro:', error.message)
+    console.log('Erro geral:', error.message)
     return new Response(
       JSON.stringify({
         error: 'Ocorreu um erro interno inesperado no servidor ao processar o currículo.',
