@@ -15,7 +15,7 @@ import { LayoutDashboard, Users, Briefcase, Settings, Plus, SquareKanban } from 
 import { Button } from '@/components/ui/button'
 
 const navItems = [
-  { title: 'Dashboard', url: '#', icon: LayoutDashboard },
+  { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
   { title: 'Quadro Kanban', url: '/', icon: SquareKanban },
   { title: 'Vagas', url: '/vagas', icon: Briefcase },
   { title: 'Candidatos', url: '#', icon: Users },
