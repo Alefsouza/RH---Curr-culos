@@ -53,14 +53,26 @@ export default function ApplyPage() {
   })
 
   useEffect(() => {
-    if (userId) {
-      supabase
+    const fetchVagas = async () => {
+      console.log('Iniciando carregamento de vagas...')
+      const { data: vagas, error } = await supabase
         .from('vagas')
-        .select('*')
-        .eq('user_id', userId)
-        .then(({ data }) => {
-          if (data) setVagas(data)
-        })
+        .select('id, titulo')
+        .order('titulo', { ascending: true })
+
+      if (error) {
+        console.log('Erro ao carregar vagas:', error)
+      } else if (vagas && vagas.length > 0) {
+        console.log('Vagas carregadas:', vagas)
+        setVagas(vagas)
+      } else {
+        console.log('Nenhuma vaga encontrada no banco')
+        setVagas([])
+      }
+    }
+
+    if (userId) {
+      fetchVagas()
     }
   }, [userId])
 
