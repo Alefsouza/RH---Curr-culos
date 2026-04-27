@@ -3,6 +3,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 import OpenAI from 'npm:openai@4'
 import { Buffer } from 'node:buffer'
 import pdf from 'npm:pdf-parse@1.1.1'
+import jwt from 'npm:jsonwebtoken'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -19,6 +20,31 @@ Deno.serve(async (req: Request) => {
   try {
     console.log('1. Iniciando analyze-resume')
 
+    const authHeader = req.headers.get('authorization') || req.headers.get('Authorization')
+    const token = authHeader?.replace('Bearer ', '')
+
+    let userId = null
+    if (token) {
+      try {
+        const decoded = jwt.decode(token) as any
+        userId = decoded?.sub
+      } catch (e) {
+        console.log('Erro ao decodificar token:', e)
+      }
+    }
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+    if (!userId || typeof userId !== 'string' || userId.length !== 36 || !uuidRegex.test(userId)) {
+      console.log('Erro: Usuário não autenticado ou userId inválido no JWT:', userId)
+      return new Response(JSON.stringify({ error: 'Usuário não autenticado' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    console.log('User ID extraído do JWT:', userId)
+
     const bodyText = await req.text()
     let body
     try {
@@ -31,7 +57,7 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    const { filePath, nome, email, telefone, vaga_id, user_id } = body
+    const { filePath, nome, email, telefone, vaga_id } = body
 
     console.log('2. Vaga ID recebido:', vaga_id)
     console.log('3. Arquivo recebido:', filePath)
@@ -50,7 +76,6 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
     if (typeof vaga_id !== 'string' || vaga_id.length !== 36 || !uuidRegex.test(vaga_id)) {
       return new Response(JSON.stringify({ error: 'Vaga inválida. Selecione uma vaga válida.' }), {
         status: 400,
@@ -58,16 +83,11 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    if (!nome || !user_id) {
-      return new Response(
-        JSON.stringify({
-          error: 'Dados incompletos. Nome e identificador do usuário são obrigatórios.',
-        }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
-      )
+    if (!nome) {
+      return new Response(JSON.stringify({ error: 'Dados incompletos. Nome é obrigatório.' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
@@ -207,7 +227,7 @@ ${pdfText.substring(0, 15000)}`
         const { data: duplicates, error: dupError } = await supabase
           .from('candidatos')
           .select('id')
-          .eq('user_id', user_id)
+          .eq('user_id', userId)
           .or(orConditions.join(','))
 
         if (dupError) throw dupError
@@ -233,7 +253,7 @@ ${pdfText.substring(0, 15000)}`
           fonte: 'site',
           curriculo_url: publicUrlData.publicUrl,
           vaga_id: vaga_id,
-          user_id: user_id,
+          user_id: userId,
         })
         .select('id')
         .single()
@@ -244,7 +264,7 @@ ${pdfText.substring(0, 15000)}`
       let { data: etapa, error: etapaError } = await supabase
         .from('etapas')
         .select('id')
-        .eq('user_id', user_id)
+        .eq('user_id', userId)
         .ilike('nome', 'Nunca Responderam')
         .maybeSingle()
 
@@ -257,7 +277,7 @@ ${pdfText.substring(0, 15000)}`
             nome: 'Nunca Responderam',
             ordem: 0,
             cor: 'bg-slate-200',
-            user_id: user_id,
+            user_id: userId,
           })
           .select('id')
           .single()
@@ -270,7 +290,7 @@ ${pdfText.substring(0, 15000)}`
         const { error: relError } = await supabase.from('candidato_etapa').insert({
           candidato_id: candidatoId,
           etapa_id: etapa.id,
-          usuario_id: user_id,
+          usuario_id: userId,
         })
         if (relError) throw relError
 
@@ -332,7 +352,7 @@ Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
               vaga_id: vaga.id,
               resultado: analiseJson.resultado || 'revisar',
               detalhes: analiseJson.detalhes || {},
-              user_id: user_id,
+              user_id: userId,
             })
             .select()
             .single()
