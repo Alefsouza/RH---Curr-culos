@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
-import { useForm, Controller } from 'react-hook-form'
+import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import { supabase } from '@/lib/supabase/client'
@@ -23,10 +23,6 @@ const formSchema = z.object({
   nome: z.string().min(2, 'Nome é obrigatório'),
   email: z.string().email('E-mail inválido'),
   telefone: z.string().min(10, 'Telefone inválido'),
-  vaga_id: z
-    .string({ required_error: 'Selecione uma vaga' })
-    .min(1, 'Selecione uma vaga')
-    .uuid('Selecione uma vaga válida'),
 })
 
 type FormData = z.infer<typeof formSchema>
@@ -34,6 +30,7 @@ type FormData = z.infer<typeof formSchema>
 export default function ApplyPage() {
   const { userId } = useParams()
   const [vagas, setVagas] = useState<any[]>([])
+  const [vagaId, setVagaId] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [status, setStatus] = useState<'IDLE' | 'LOADING' | 'SUCCESS' | 'ERROR'>('IDLE')
   const [progress, setProgress] = useState(0)
@@ -47,7 +44,6 @@ export default function ApplyPage() {
     register,
     handleSubmit,
     formState: { errors },
-    control,
   } = useForm<FormData>({
     resolver: zodResolver(formSchema),
   })
@@ -107,7 +103,7 @@ export default function ApplyPage() {
   }
 
   const onSubmit = async (data: FormData) => {
-    if (!data.vaga_id) {
+    if (!vagaId) {
       setErrorMsg('Selecione uma vaga')
       return
     }
@@ -121,7 +117,7 @@ export default function ApplyPage() {
     }
 
     console.log('--- Iniciando envio de candidatura ---')
-    console.log('ID da vaga selecionada para envio (UUID):', data.vaga_id)
+    console.log('ID da vaga selecionada para envio (UUID):', vagaId)
     console.log('Nome:', data.nome)
     console.log('Email:', data.email)
 
@@ -155,7 +151,7 @@ export default function ApplyPage() {
             nome: data.nome,
             email: data.email,
             telefone: data.telefone,
-            vaga_id: data.vaga_id,
+            vaga_id: vagaId,
             user_id: userId,
           },
         },
@@ -362,32 +358,26 @@ export default function ApplyPage() {
 
                   <div className="space-y-2.5">
                     <Label htmlFor="vaga">Vaga de Interesse</Label>
-                    <Controller
-                      control={control}
-                      name="vaga_id"
-                      render={({ field }) => (
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <SelectTrigger className="h-11">
-                            <SelectValue placeholder="Selecione uma vaga" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {vagas.length === 0 ? (
-                              <SelectItem value="none" disabled>
-                                Nenhuma vaga aberta no momento
-                              </SelectItem>
-                            ) : (
-                              vagas.map((v) => (
-                                <SelectItem key={v.id} value={v.id}>
-                                  {v.titulo}
-                                </SelectItem>
-                              ))
-                            )}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
-                    {errors.vaga_id && (
-                      <p className="text-xs text-red-500 font-medium">{errors.vaga_id.message}</p>
+                    <Select onValueChange={(value) => setVagaId(value)} value={vagaId}>
+                      <SelectTrigger className="h-11">
+                        <SelectValue placeholder="Selecione uma vaga" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {vagas.length === 0 ? (
+                          <SelectItem value="none" disabled>
+                            Nenhuma vaga aberta no momento
+                          </SelectItem>
+                        ) : (
+                          vagas.map((v) => (
+                            <SelectItem key={v.id} value={v.id}>
+                              {v.titulo}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                    {!vagaId && errorMsg === 'Selecione uma vaga' && (
+                      <p className="text-xs text-red-500 font-medium">{errorMsg}</p>
                     )}
                   </div>
                 </div>
