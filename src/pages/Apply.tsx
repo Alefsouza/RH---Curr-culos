@@ -104,9 +104,16 @@ export default function ApplyPage() {
 
   const onSubmit = async (data: FormData) => {
     if (!vagaId) {
-      setErrorMsg('Selecione uma vaga')
+      setErrorMsg('Vaga é obrigatória')
       return
     }
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!uuidRegex.test(vagaId)) {
+      setErrorMsg('Selecione uma vaga válida')
+      return
+    }
+
     if (!file) {
       setErrorMsg('Por favor, anexe o seu currículo.')
       return
@@ -117,7 +124,7 @@ export default function ApplyPage() {
     }
 
     console.log('--- Iniciando envio de candidatura ---')
-    console.log('ID da vaga selecionada para envio (UUID):', vagaId)
+    console.log('Vaga ID enviado:', vagaId)
     console.log('Nome:', data.nome)
     console.log('Email:', data.email)
 
@@ -376,7 +383,8 @@ export default function ApplyPage() {
                         )}
                       </SelectContent>
                     </Select>
-                    {!vagaId && errorMsg === 'Selecione uma vaga' && (
+                    {(errorMsg === 'Vaga é obrigatória' ||
+                      errorMsg === 'Selecione uma vaga válida') && (
                       <p className="text-xs text-red-500 font-medium">{errorMsg}</p>
                     )}
                   </div>
