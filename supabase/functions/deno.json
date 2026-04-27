@@ -1,5 +1,6 @@
 {
   "_versions": {
-    "outlook-webhook": 1
+    "outlook-webhook": 1,
+    "process-resume": 1
   }
 }
