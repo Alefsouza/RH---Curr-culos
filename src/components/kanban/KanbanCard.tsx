@@ -32,8 +32,8 @@ export function KanbanCard({ candidate, isDragging, onDragStart, onDragEnd }: Ka
       onDragStart={handleDragStart}
       onDragEnd={onDragEnd}
       className={cn(
-        'group relative cursor-grab active:cursor-grabbing border-slate-200 hover:border-slate-300 hover:shadow-md transition-all duration-200 bg-white',
-        isDragging && 'opacity-50 scale-95 shadow-lg rotate-2',
+        'group relative cursor-grab active:cursor-grabbing border-border hover:border-primary/30 hover:shadow-elevation transition-all duration-200 bg-white',
+        isDragging && 'opacity-50 scale-95 shadow-elevation rotate-2',
       )}
     >
       <div className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity">

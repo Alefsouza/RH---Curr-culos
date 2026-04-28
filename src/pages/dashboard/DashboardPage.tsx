@@ -175,7 +175,7 @@ export default function DashboardPage() {
               value={filters.vagaId}
               onValueChange={(val) => setFilters({ ...filters, vagaId: val })}
             >
-              <SelectTrigger className="bg-white">
+              <SelectTrigger className="bg-white h-11">
                 <SelectValue placeholder="Todas as vagas" />
               </SelectTrigger>
               <SelectContent>
@@ -195,7 +195,7 @@ export default function DashboardPage() {
               value={filters.etapaId}
               onValueChange={(val) => setFilters({ ...filters, etapaId: val })}
             >
-              <SelectTrigger className="bg-white">
+              <SelectTrigger className="bg-white h-11">
                 <SelectValue placeholder="Todas as etapas" />
               </SelectTrigger>
               <SelectContent>
@@ -215,7 +215,7 @@ export default function DashboardPage() {
               type="date"
               value={filters.startDate}
               onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-              className="bg-white text-slate-700"
+              className="bg-white text-slate-700 h-11"
             />
           </div>
 
@@ -225,7 +225,7 @@ export default function DashboardPage() {
               type="date"
               value={filters.endDate}
               onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-              className="bg-white text-slate-700"
+              className="bg-white text-slate-700 h-11"
             />
           </div>
         </div>

@@ -35,26 +35,28 @@ export function AppSidebar() {
   const location = useLocation()
 
   return (
-    <Sidebar className="border-r border-slate-200">
-      <SidebarHeader className="h-16 flex items-center justify-center border-b border-slate-100">
+    <Sidebar className="border-r border-border bg-sidebar">
+      <SidebarHeader className="h-16 flex items-center justify-center border-b border-border">
         <div className="flex items-center gap-2 px-4 w-full">
-          <div className="bg-blue-600 p-1.5 rounded-lg">
-            <SquareKanban className="h-5 w-5 text-white" />
+          <div className="bg-primary p-1.5 rounded-lg">
+            <SquareKanban className="h-5 w-5 text-primary-foreground" />
           </div>
-          <span className="font-bold text-lg text-slate-800 tracking-tight">HireFlow</span>
+          <span className="font-bold text-lg text-sidebar-foreground tracking-tight">
+            Via Sudeste
+          </span>
         </div>
       </SidebarHeader>
 
       <SidebarContent>
         <SidebarGroup className="py-4">
           <div className="px-4 mb-6">
-            <Button className="w-full justify-start gap-2 shadow-sm" size="sm">
+            <Button className="w-full justify-start gap-2 shadow-sm">
               <Plus className="h-4 w-4" />
               <span>Novo Candidato</span>
             </Button>
           </div>
 
-          <SidebarGroupLabel className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 px-4">
+          <SidebarGroupLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-4">
             Menu Principal
           </SidebarGroupLabel>
           <SidebarGroupContent>
@@ -64,7 +66,7 @@ export function AppSidebar() {
                   <SidebarMenuButton
                     asChild
                     isActive={location.pathname === item.url}
-                    className="data-[active=true]:bg-blue-50 data-[active=true]:text-blue-700 data-[active=true]:font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors"
+                    className="data-[active=true]:bg-primary/10 data-[active=true]:text-primary data-[active=true]:font-semibold text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-colors h-11"
                   >
                     <Link to={item.url} className="flex items-center gap-3">
                       <item.icon className="h-4 w-4" />
@@ -78,16 +80,16 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-slate-100 p-4">
+      <SidebarFooter className="border-t border-border p-4">
         <div className="flex items-center gap-3">
           <img
             src="https://img.usecurling.com/ppl/thumbnail?gender=female&seed=1"
             alt="User Avatar"
-            className="h-8 w-8 rounded-full ring-2 ring-slate-100"
+            className="h-10 w-10 rounded-full ring-2 ring-border"
           />
           <div className="flex flex-col">
-            <span className="text-sm font-medium text-slate-800 leading-none">Julia Silva</span>
-            <span className="text-xs text-slate-500 mt-1">Recrutadora</span>
+            <span className="text-sm font-medium text-foreground leading-none">Julia Silva</span>
+            <span className="text-xs text-muted-foreground mt-1">Recrutadora</span>
           </div>
         </div>
       </SidebarFooter>

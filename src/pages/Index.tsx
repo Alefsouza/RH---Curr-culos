@@ -97,7 +97,7 @@ export default function Index() {
             Gerencie e acompanhe o progresso das suas vagas ativas.
           </p>
         </div>
-        <Button className="bg-blue-600 hover:bg-blue-700 shadow-sm gap-2">
+        <Button className="shadow-sm gap-2">
           <Plus className="h-4 w-4" />
           Nova Etapa
         </Button>
@@ -110,11 +110,11 @@ export default function Index() {
             placeholder="Filtrar por nome..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 border-slate-200 focus-visible:ring-blue-500 h-10 w-full"
+            className="pl-9 border-slate-200 focus-visible:ring-primary h-11 w-full"
           />
         </div>
         <Select value={selectedJob} onValueChange={setSelectedJob}>
-          <SelectTrigger className="w-full sm:w-[200px] border-slate-200 h-10">
+          <SelectTrigger className="w-full sm:w-[200px] border-slate-200 h-11">
             <SelectValue placeholder="Vaga" />
           </SelectTrigger>
           <SelectContent>
@@ -127,7 +127,7 @@ export default function Index() {
           </SelectContent>
         </Select>
         <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
-          <SelectTrigger className="w-full sm:w-[180px] border-slate-200 h-10">
+          <SelectTrigger className="w-full sm:w-[180px] border-slate-200 h-11">
             <SelectValue placeholder="Período" />
           </SelectTrigger>
           <SelectContent>
