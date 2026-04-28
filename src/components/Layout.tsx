@@ -23,7 +23,7 @@ export default function Layout() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary-foreground/50" />
                 <Input
                   placeholder="Buscar candidatos por nome..."
-                  className="pl-9 bg-primary-foreground/10 border-primary-foreground/20 text-primary-foreground placeholder:text-primary-foreground/50 focus-visible:ring-secondary h-11"
+                  className="pl-9 bg-primary-foreground/10 border-primary-foreground/20 text-primary-foreground placeholder:text-primary-foreground/50 focus-visible:ring-primary-foreground h-11"
                 />
               </div>
             </div>
@@ -40,7 +40,7 @@ export default function Layout() {
                 className="relative text-primary-foreground/70 hover:text-primary-foreground hover:bg-primary-foreground/10"
               >
                 <Bell className="h-5 w-5" />
-                <span className="absolute top-1.5 right-1.5 h-2 w-2 bg-secondary rounded-full border border-primary"></span>
+                <span className="absolute top-1.5 right-1.5 h-2 w-2 bg-red-500 rounded-full border border-primary"></span>
               </Button>
               <Button
                 variant="ghost"
