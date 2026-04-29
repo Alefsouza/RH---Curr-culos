@@ -20,6 +20,7 @@ import {
   Plus,
   SquareKanban,
   MessageSquare,
+  ClipboardCheck,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -32,6 +33,7 @@ export function AppSidebar() {
     { title: 'Quadro Kanban', url: '/', icon: SquareKanban },
     { title: 'Vagas', url: '/vagas', icon: Briefcase },
     { title: 'Candidatos', url: '/candidatos', icon: Users },
+    { title: 'Revisão de IA', url: '/revisao', icon: ClipboardCheck },
     { title: 'Mensagens', url: '/templates', icon: MessageSquare },
     { title: 'Configurações', url: '#', icon: Settings },
     ...(profile?.is_admin ? [{ title: 'Usuários', url: '/usuarios', icon: Users }] : []),
