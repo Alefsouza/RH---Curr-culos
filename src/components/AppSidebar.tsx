@@ -25,7 +25,7 @@ import { Button } from '@/components/ui/button'
 
 export function AppSidebar() {
   const location = useLocation()
-  const { profile } = useAuth()
+  const { profile, user } = useAuth()
 
   const navItems = [
     { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
@@ -53,9 +53,11 @@ export function AppSidebar() {
       <SidebarContent>
         <SidebarGroup className="py-4">
           <div className="px-4 mb-6">
-            <Button className="w-full justify-start gap-2 shadow-sm">
-              <Plus className="h-4 w-4" />
-              <span>Novo Candidato</span>
+            <Button asChild className="w-full justify-start gap-2 shadow-sm">
+              <Link to={`/candidatar/${user?.id}`}>
+                <Plus className="h-4 w-4" />
+                <span>Novo Candidato</span>
+              </Link>
             </Button>
           </div>
 
