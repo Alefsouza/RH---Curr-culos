@@ -4,6 +4,7 @@
     "process-resume": 2,
     "analyze-resume": 8,
     "enviar-whatsapp": 1,
-    "test-whatsapp": 1
+    "test-whatsapp": 1,
+    "manage-users": 1
   }
 }
