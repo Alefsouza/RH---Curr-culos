@@ -114,6 +114,7 @@ export type Database = {
         Row: {
           criado_em: string
           curriculo_url: string | null
+          dados_extraidos: Json | null
           data_recebimento: string | null
           duplicado_de: string | null
           email: string | null
@@ -128,6 +129,7 @@ export type Database = {
         Insert: {
           criado_em?: string
           curriculo_url?: string | null
+          dados_extraidos?: Json | null
           data_recebimento?: string | null
           duplicado_de?: string | null
           email?: string | null
@@ -142,6 +144,7 @@ export type Database = {
         Update: {
           criado_em?: string
           curriculo_url?: string | null
+          dados_extraidos?: Json | null
           data_recebimento?: string | null
           duplicado_de?: string | null
           email?: string | null
@@ -554,6 +557,7 @@ export const Constants = {
 //   user_id: uuid (not null)
 //   vaga_id: uuid (nullable)
 //   etapa_id: uuid (nullable)
+//   dados_extraidos: jsonb (nullable, default: '{}'::jsonb)
 // Table: etapas
 //   id: uuid (not null, default: gen_random_uuid())
 //   nome: text (not null)

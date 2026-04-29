@@ -31,7 +31,7 @@ export function AppSidebar() {
     { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
     { title: 'Quadro Kanban', url: '/', icon: SquareKanban },
     { title: 'Vagas', url: '/vagas', icon: Briefcase },
-    { title: 'Candidatos', url: '#', icon: Users },
+    { title: 'Candidatos', url: '/candidatos', icon: Users },
     { title: 'Mensagens', url: '/templates', icon: MessageSquare },
     { title: 'Configurações', url: '#', icon: Settings },
     ...(profile?.is_admin ? [{ title: 'Usuários', url: '/usuarios', icon: Users }] : []),
