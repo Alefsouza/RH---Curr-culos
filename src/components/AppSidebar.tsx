@@ -16,7 +16,6 @@ import {
   LayoutDashboard,
   Users,
   Briefcase,
-  Settings,
   Plus,
   SquareKanban,
   MessageSquare,
@@ -35,7 +34,6 @@ export function AppSidebar() {
     { title: 'Candidatos', url: '/candidatos', icon: Users },
     { title: 'Revisão de IA', url: '/revisao', icon: ClipboardCheck },
     { title: 'Mensagens', url: '/templates', icon: MessageSquare },
-    { title: 'Configurações', url: '#', icon: Settings },
     ...(profile?.is_admin ? [{ title: 'Usuários', url: '/usuarios', icon: Users }] : []),
   ]
 
