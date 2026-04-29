@@ -10,6 +10,7 @@ import ApplyPage from './pages/Apply'
 import JobsPage from './pages/Jobs'
 import DashboardPage from './pages/dashboard/DashboardPage'
 import TemplatesPage from './pages/TemplatesPage'
+import UsersPage from './pages/admin/UsersPage'
 import { AuthProvider, useAuth } from '@/hooks/use-auth'
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -39,6 +40,7 @@ const App = () => (
             <Route path="/vagas" element={<JobsPage />} />
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/templates" element={<TemplatesPage />} />
+            <Route path="/usuarios" element={<UsersPage />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
+import { useAuth } from '@/hooks/use-auth'
 import {
   Sidebar,
   SidebarContent,
@@ -22,17 +23,19 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
-const navItems = [
-  { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
-  { title: 'Quadro Kanban', url: '/', icon: SquareKanban },
-  { title: 'Vagas', url: '/vagas', icon: Briefcase },
-  { title: 'Candidatos', url: '#', icon: Users },
-  { title: 'Mensagens', url: '/templates', icon: MessageSquare },
-  { title: 'Configurações', url: '#', icon: Settings },
-]
-
 export function AppSidebar() {
   const location = useLocation()
+  const { profile } = useAuth()
+
+  const navItems = [
+    { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
+    { title: 'Quadro Kanban', url: '/', icon: SquareKanban },
+    { title: 'Vagas', url: '/vagas', icon: Briefcase },
+    { title: 'Candidatos', url: '#', icon: Users },
+    { title: 'Mensagens', url: '/templates', icon: MessageSquare },
+    { title: 'Configurações', url: '#', icon: Settings },
+    ...(profile?.is_admin ? [{ title: 'Usuários', url: '/usuarios', icon: Users }] : []),
+  ]
 
   return (
     <Sidebar className="border-r border-border bg-sidebar">
@@ -88,8 +91,12 @@ export function AppSidebar() {
             className="h-10 w-10 rounded-full ring-2 ring-border"
           />
           <div className="flex flex-col">
-            <span className="text-sm font-medium text-foreground leading-none">Julia Silva</span>
-            <span className="text-xs text-muted-foreground mt-1">Recrutadora</span>
+            <span className="text-sm font-medium text-foreground leading-none">
+              {profile?.nome || 'Usuário'}
+            </span>
+            <span className="text-xs text-muted-foreground mt-1">
+              {profile?.is_admin ? 'Administrador' : 'Recrutador(a)'}
+            </span>
           </div>
         </div>
       </SidebarFooter>
