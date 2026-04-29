@@ -325,18 +325,21 @@ export type Database = {
           criado_em: string
           email: string
           id: string
+          is_admin: boolean
           nome: string | null
         }
         Insert: {
           criado_em?: string
           email: string
           id: string
+          is_admin?: boolean
           nome?: string | null
         }
         Update: {
           criado_em?: string
           email?: string
           id?: string
+          is_admin?: boolean
           nome?: string | null
         }
         Relationships: []
@@ -578,6 +581,7 @@ export const Constants = {
 //   email: text (not null)
 //   nome: text (nullable)
 //   criado_em: timestamp with time zone (not null, default: now())
+//   is_admin: boolean (not null, default: false)
 // Table: vagas
 //   id: uuid (not null, default: gen_random_uuid())
 //   titulo: text (not null)
@@ -709,8 +713,13 @@ export const Constants = {
 //    SECURITY DEFINER
 //   AS $function$
 //   BEGIN
-//     INSERT INTO public.usuarios (id, email, nome)
-//     VALUES (NEW.id, NEW.email, NEW.raw_user_meta_data->>'name')
+//     INSERT INTO public.usuarios (id, email, nome, is_admin)
+//     VALUES (
+//       NEW.id,
+//       NEW.email,
+//       NEW.raw_user_meta_data->>'name',
+//       COALESCE((NEW.raw_user_meta_data->>'is_admin')::boolean, false)
+//     )
 //     ON CONFLICT (id) DO NOTHING;
 //
 //     -- Insert default stages

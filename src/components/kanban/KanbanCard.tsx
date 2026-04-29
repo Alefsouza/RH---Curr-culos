@@ -2,7 +2,8 @@ import React from 'react'
 import { Candidate } from '@/types/kanban'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Mail, Phone, GripVertical } from 'lucide-react'
+import { Mail, Phone, GripVertical, ExternalLink } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 
 interface KanbanCardProps {
@@ -41,7 +42,17 @@ export function KanbanCard({ candidate, isDragging, onDragStart, onDragEnd }: Ka
       </div>
       <CardContent className="p-4 pl-7 space-y-3">
         <div>
-          <h4 className="font-semibold text-slate-800 leading-tight">{candidate.name}</h4>
+          <h4 className="font-semibold text-slate-800 leading-tight hover:text-primary transition-colors">
+            <Link
+              to={`/candidato/${candidate.id}`}
+              onClick={(e) => e.stopPropagation()}
+              target="_blank"
+              className="flex items-center justify-between group/link"
+            >
+              <span>{candidate.name}</span>
+              <ExternalLink className="w-3 h-3 opacity-0 group-hover/link:opacity-100 transition-opacity" />
+            </Link>
+          </h4>
           <p className="text-xs text-slate-500 font-medium truncate">{candidate.job}</p>
         </div>
 
