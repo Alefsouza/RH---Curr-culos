@@ -1,6 +1,6 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'jsr:@supabase/supabase-js@2'
-import OpenAI from 'npm:openai@4'
+import { GoogleGenerativeAI } from 'npm:@google/generative-ai'
 import { Buffer } from 'node:buffer'
 import pdf from 'npm:pdf-parse@1.1.1'
 
@@ -99,9 +99,9 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
 
-    const openaiKey = Deno.env.get('OPENAI_KEY') || Deno.env.get('OPENIA_KEY')
-    if (!openaiKey) {
-      const msg = 'Chave da API da OpenAI não configurada nos Secrets do Supabase.'
+    const googleApiKey = Deno.env.get('GOOGLE_API_KEY')
+    if (!googleApiKey) {
+      const msg = 'Chave da API do Google (GOOGLE_API_KEY) não configurada nos Secrets do Supabase.'
       console.log('Erro na etapa 1:', msg)
       return new Response(JSON.stringify({ error: msg }), {
         status: 500,
@@ -134,15 +134,12 @@ Deno.serve(async (req: Request) => {
 
     console.log('4. Iniciando extração de texto do PDF')
     let pdfText = ''
+    let arrayBuffer: ArrayBuffer
     try {
-      const arrayBuffer = await fileData.arrayBuffer()
+      arrayBuffer = await fileData.arrayBuffer()
       const pdfBuffer = Buffer.from(arrayBuffer)
       const data = await pdf(pdfBuffer)
       pdfText = data.text
-
-      if (!pdfText || !pdfText.trim()) {
-        throw new Error('O arquivo PDF está vazio ou não contém texto legível.')
-      }
     } catch (err: any) {
       console.log('Erro na etapa 4:', err.message)
       return new Response(JSON.stringify({ error: 'Erro ao extrair texto do PDF.' }), {
@@ -151,59 +148,62 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    const openai = new OpenAI({ apiKey: openaiKey })
-
-    const callOpenAIWithRetry = async (
-      prompt: string,
+    const genAI = new GoogleGenerativeAI(googleApiKey)
+    const callGeminiWithRetry = async (
+      prompt: string | any[],
       retries = 3,
       backoff = 2000,
     ): Promise<any> => {
       try {
-        const response = await openai.chat.completions.create({
-          model: 'gpt-4o-mini',
-          messages: [
-            {
-              role: 'system',
-              content:
-                'Você é um assistente de RH focado em estruturar dados de currículos. Retorne sempre um JSON válido.',
-            },
-            { role: 'user', content: prompt },
-          ],
-          response_format: { type: 'json_object' },
-        })
-        return JSON.parse(response.choices[0].message.content || '{}')
+        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+        const result = await model.generateContent(prompt)
+        let text = await result.response.text()
+        text = text
+          .replace(/```json/gi, '')
+          .replace(/```/g, '')
+          .trim()
+        return JSON.parse(text || '{}')
       } catch (error: any) {
         if (retries > 0) {
           await new Promise((resolve) => setTimeout(resolve, backoff))
-          return callOpenAIWithRetry(prompt, retries - 1, backoff * 2)
+          return callGeminiWithRetry(prompt, retries - 1, backoff * 2)
         }
         throw error
       }
     }
 
-    const extractionPrompt = `Extraia os seguintes dados do currículo: nome, email, telefone, experiencia profissional, skills, formacao academica.
-Se algum dado não for encontrado, retorne null ou um array vazio.
-Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
-{
-  "nome": "string ou null",
-  "email": "string ou null",
-  "telefone": "string ou null",
-  "experiencia_profissional": ["string"],
-  "skills": ["string"],
-  "formacao_academica": ["string"]
-}
-
-Texto extraído do currículo:
-${pdfText.substring(0, 15000)}`
-
-    console.log('5. Chamando OpenAI para análise')
+    console.log('5. Chamando Gemini para análise')
     let extractedData
     try {
-      extractedData = await callOpenAIWithRetry(extractionPrompt)
+      if (!pdfText || pdfText.trim().length < 50) {
+        console.log('OCR com Gemini Vision ativado')
+        const base64pdf = Buffer.from(arrayBuffer!).toString('base64')
+        const ocrPrompt = `Extraia todo o texto deste currículo em português. Retorne em JSON estruturado com os seguintes campos: nome (string), email (string), telefone (string), experiencia_profissional (array de strings), skills (array de strings), formacao_academica (array de strings). Retorne APENAS o JSON, sem marcações markdown.`
+
+        extractedData = await callGeminiWithRetry([
+          {
+            inlineData: {
+              data: base64pdf,
+              mimeType: 'application/pdf',
+            },
+          },
+          { text: ocrPrompt },
+        ])
+      } else {
+        const analyzePrompt = `Extraia deste currículo em português os seguintes campos em JSON estruturado: nome (string), email (string), telefone (string), experiencia_profissional (array de strings), skills (array de strings), formacao_academica (array de strings). Retorne APENAS o JSON, sem marcações markdown.\n\nCurrículo:\n${pdfText.substring(0, 15000)}`
+        extractedData = await callGeminiWithRetry(analyzePrompt)
+      }
+
+      if (!extractedData.nome || typeof extractedData !== 'object') {
+        throw new Error('Falha ao extrair dados ou JSON inválido')
+      }
     } catch (err: any) {
       console.log('Erro na etapa 5:', err.message)
       return new Response(
-        JSON.stringify({ error: 'Serviço de Inteligência Artificial indisponível no momento.' }),
+        JSON.stringify({
+          error:
+            'Serviço de Inteligência Artificial indisponível ou falhou ao analisar o documento.',
+        }),
         {
           status: 503,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -340,7 +340,7 @@ Critérios de Qualificação: ${JSON.stringify(vaga.criterios_qualificacao || {}
 Dados estruturados do currículo:
 ${JSON.stringify(extractedData)}
 
-Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
+Retorne ESTRITAMENTE em formato JSON com as seguintes chaves (sem marcações markdown):
 {
   "resultado": "qualificado" | "nao_qualificado" | "revisar",
   "detalhes": {
@@ -350,7 +350,7 @@ Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
   }
 }`
 
-          const analiseJson = await callOpenAIWithRetry(analyzePrompt)
+          const analiseJson = await callGeminiWithRetry(analyzePrompt)
 
           const { data: novaAnalise, error: analiseError } = await supabase
             .from('analises')
