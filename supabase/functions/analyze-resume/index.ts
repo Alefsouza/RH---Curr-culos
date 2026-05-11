@@ -2,6 +2,7 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import OpenAI from 'npm:openai@4'
 import { Buffer } from 'node:buffer'
+import pdf from 'npm:pdf-parse@1.1.1'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -111,36 +112,62 @@ Deno.serve(async (req: Request) => {
 
     try {
       const bytes = await fileData.arrayBuffer()
-      const base64 = Buffer.from(bytes).toString('base64')
-      console.log('PDF convertido para base64')
+      const pdfBuffer = Buffer.from(bytes)
+      let pdfData
 
-      console.log('OCR com OpenAI Vision ativado')
+      try {
+        pdfData = await pdf(pdfBuffer)
+      } catch (err) {
+        console.error('Erro no pdf-parse:', err)
+      }
 
-      const dataUrl = `data:application/pdf;base64,${base64}`
+      const extractedText = pdfData?.text?.trim()
 
-      const visionResponse = await openai.chat.completions.create({
-        model: 'gpt-4o',
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: 'Extraia todo o texto deste currículo em português. Retorne em JSON estruturado com os seguintes campos: nome (string), email (string), telefone (string), experiencia_profissional (array de strings), skills (array de strings), formacao_academica (array de strings). Retorne APENAS o JSON, sem explicações.',
-              },
-              { type: 'image_url', image_url: { url: dataUrl } },
-            ],
-          },
-        ],
-        response_format: { type: 'json_object' },
-        max_tokens: 2000,
-      })
+      if (extractedText && extractedText.length > 50) {
+        console.log('Texto extraído com sucesso usando pdf-parse')
+        const extractionPrompt = `Extraia todo o texto deste currículo em português. Retorne em JSON estruturado com os seguintes campos: nome (string), email (string), telefone (string), experiencia_profissional (array de strings), skills (array de strings), formacao_academica (array de strings). Retorne APENAS o JSON, sem explicações.
+        
+Texto do currículo:
+${extractedText.substring(0, 15000)}`
 
-      const responseText = visionResponse.choices[0]?.message?.content || ''
-      if (!responseText) throw new Error('Vazio')
-      extractedData = JSON.parse(responseText)
+        const response = await openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: extractionPrompt }],
+          response_format: { type: 'json_object' },
+        })
+
+        extractedData = JSON.parse(response.choices[0]?.message?.content || '{}')
+      } else {
+        const base64 = pdfBuffer.toString('base64')
+        console.log('PDF convertido para base64')
+        console.log('OCR com OpenAI Vision ativado')
+
+        const dataUrl = `data:application/pdf;base64,${base64}`
+
+        const visionResponse = await openai.chat.completions.create({
+          model: 'gpt-4o',
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: 'Extraia todo o texto deste currículo em português. Retorne em JSON estruturado com: nome, email, telefone, experiencia_profissional, skills, formacao_academica. Retorne APENAS o JSON.',
+                },
+                { type: 'image_url', image_url: { url: dataUrl } },
+              ],
+            },
+          ],
+          response_format: { type: 'json_object' },
+          max_tokens: 2000,
+        })
+
+        const responseText = visionResponse.choices[0]?.message?.content || ''
+        if (!responseText) throw new Error('Vazio')
+        extractedData = JSON.parse(responseText)
+      }
     } catch (err) {
-      console.error('Erro na OpenAI Vision:', err)
+      console.error('Erro na OpenAI Vision/Extração:', err)
       return new Response(
         JSON.stringify({
           error:
