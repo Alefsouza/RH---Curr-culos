@@ -153,9 +153,10 @@ Deno.serve(async (req: Request) => {
       prompt: string | any[],
       retries = 3,
       backoff = 2000,
+      modelName = 'gemini-2.0-flash',
     ): Promise<any> => {
       try {
-        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+        const model = genAI.getGenerativeModel({ model: modelName })
         const result = await model.generateContent(prompt)
         let text = await result.response.text()
         text = text
@@ -164,9 +165,18 @@ Deno.serve(async (req: Request) => {
           .trim()
         return JSON.parse(text || '{}')
       } catch (error: any) {
+        if (
+          modelName === 'gemini-2.0-flash' &&
+          (error?.status === 404 ||
+            error?.message?.includes('not found') ||
+            error?.message?.includes('404'))
+        ) {
+          console.log('Modelo gemini-2.0-flash falhou (404), tentando gemini-1.5-pro...')
+          return callGeminiWithRetry(prompt, retries, backoff, 'gemini-1.5-pro')
+        }
         if (retries > 0) {
           await new Promise((resolve) => setTimeout(resolve, backoff))
-          return callGeminiWithRetry(prompt, retries - 1, backoff * 2)
+          return callGeminiWithRetry(prompt, retries - 1, backoff * 2, modelName)
         }
         throw error
       }
