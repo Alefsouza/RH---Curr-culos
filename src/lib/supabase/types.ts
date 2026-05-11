@@ -9,6 +9,51 @@ export type Database = {
   }
   public: {
     Tables: {
+      analise_cv: {
+        Row: {
+          atualizado_em: string
+          criado_em: string
+          cv_id: string
+          id: string
+          motivo: string | null
+          status: string | null
+          vaga_id: string
+        }
+        Insert: {
+          atualizado_em?: string
+          criado_em?: string
+          cv_id: string
+          id?: string
+          motivo?: string | null
+          status?: string | null
+          vaga_id: string
+        }
+        Update: {
+          atualizado_em?: string
+          criado_em?: string
+          cv_id?: string
+          id?: string
+          motivo?: string | null
+          status?: string | null
+          vaga_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'analise_cv_cv_id_fkey'
+            columns: ['cv_id']
+            isOneToOne: false
+            referencedRelation: 'candidatos'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'analise_cv_vaga_id_fkey'
+            columns: ['vaga_id']
+            isOneToOne: false
+            referencedRelation: 'vagas'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       analises: {
         Row: {
           candidato_id: string | null
@@ -529,6 +574,14 @@ export const Constants = {
 // --- COLUMN TYPES (actual PostgreSQL types) ---
 // Use this to know the real database type when writing migrations.
 // "string" in TypeScript types above may be uuid, text, varchar, timestamptz, etc.
+// Table: analise_cv
+//   id: uuid (not null, default: gen_random_uuid())
+//   cv_id: uuid (not null)
+//   vaga_id: uuid (not null)
+//   status: text (nullable)
+//   motivo: text (nullable)
+//   criado_em: timestamp with time zone (not null, default: now())
+//   atualizado_em: timestamp with time zone (not null, default: now())
 // Table: analises
 //   id: uuid (not null, default: gen_random_uuid())
 //   candidato_id: uuid (nullable)
@@ -595,6 +648,11 @@ export const Constants = {
 //   user_id: uuid (not null)
 
 // --- CONSTRAINTS ---
+// Table: analise_cv
+//   FOREIGN KEY analise_cv_cv_id_fkey: FOREIGN KEY (cv_id) REFERENCES candidatos(id) ON DELETE CASCADE
+//   PRIMARY KEY analise_cv_pkey: PRIMARY KEY (id)
+//   CHECK analise_cv_status_check: CHECK ((status = ANY (ARRAY['pre_aprovado'::text, 'reprovado'::text])))
+//   FOREIGN KEY analise_cv_vaga_id_fkey: FOREIGN KEY (vaga_id) REFERENCES vagas(id) ON DELETE CASCADE
 // Table: analises
 //   FOREIGN KEY analises_candidato_id_fkey: FOREIGN KEY (candidato_id) REFERENCES candidatos(id) ON DELETE CASCADE
 //   PRIMARY KEY analises_pkey: PRIMARY KEY (id)
@@ -632,6 +690,16 @@ export const Constants = {
 //   FOREIGN KEY vagas_user_id_fkey: FOREIGN KEY (user_id) REFERENCES usuarios(id) ON DELETE CASCADE
 
 // --- ROW LEVEL SECURITY POLICIES ---
+// Table: analise_cv
+//   Policy "analise_cv_delete" (DELETE, PERMISSIVE) roles={authenticated}
+//     USING: (EXISTS ( SELECT 1    FROM candidatos c   WHERE ((c.id = analise_cv.cv_id) AND (c.user_id = auth.uid()))))
+//   Policy "analise_cv_insert" (INSERT, PERMISSIVE) roles={authenticated}
+//     WITH CHECK: (EXISTS ( SELECT 1    FROM candidatos c   WHERE ((c.id = analise_cv.cv_id) AND (c.user_id = auth.uid()))))
+//   Policy "analise_cv_select" (SELECT, PERMISSIVE) roles={authenticated}
+//     USING: (EXISTS ( SELECT 1    FROM candidatos c   WHERE ((c.id = analise_cv.cv_id) AND (c.user_id = auth.uid()))))
+//   Policy "analise_cv_update" (UPDATE, PERMISSIVE) roles={authenticated}
+//     USING: (EXISTS ( SELECT 1    FROM candidatos c   WHERE ((c.id = analise_cv.cv_id) AND (c.user_id = auth.uid()))))
+//     WITH CHECK: (EXISTS ( SELECT 1    FROM candidatos c   WHERE ((c.id = analise_cv.cv_id) AND (c.user_id = auth.uid()))))
 // Table: analises
 //   Policy "analises_delete" (DELETE, PERMISSIVE) roles={authenticated}
 //     USING: (auth.uid() = user_id)
@@ -739,3 +807,23 @@ export const Constants = {
 //   END;
 //   $function$
 //
+// FUNCTION update_atualizado_em_column()
+//   CREATE OR REPLACE FUNCTION public.update_atualizado_em_column()
+//    RETURNS trigger
+//    LANGUAGE plpgsql
+//   AS $function$
+//   BEGIN
+//       NEW.atualizado_em = NOW();
+//       RETURN NEW;
+//   END;
+//   $function$
+//
+
+// --- TRIGGERS ---
+// Table: analise_cv
+//   update_analise_cv_atualizado_em: CREATE TRIGGER update_analise_cv_atualizado_em BEFORE UPDATE ON public.analise_cv FOR EACH ROW EXECUTE FUNCTION update_atualizado_em_column()
+
+// --- INDEXES ---
+// Table: analise_cv
+//   CREATE INDEX analise_cv_cv_id_idx ON public.analise_cv USING btree (cv_id)
+//   CREATE INDEX analise_cv_vaga_id_idx ON public.analise_cv USING btree (vaga_id)
