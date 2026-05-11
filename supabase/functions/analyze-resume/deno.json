@@ -1,6 +1,7 @@
 {
   "imports": {
-    "npm:@google/generative-ai": "npm:@google/generative-ai",
-    "npm:pdf-parse@1.1.1": "npm:pdf-parse@1.1.1"
+    "npm:openai@4": "npm:openai@4.0.0",
+    "npm:pdf-parse@1.1.1": "npm:pdf-parse@1.1.1",
+    "npm:pdf-img-convert@1.2.1": "npm:pdf-img-convert@1.2.1"
   }
 }

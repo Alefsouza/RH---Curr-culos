@@ -1,8 +1,9 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'jsr:@supabase/supabase-js@2'
-import { GoogleGenerativeAI } from 'npm:@google/generative-ai'
+import OpenAI from 'npm:openai@4'
 import { Buffer } from 'node:buffer'
 import pdf from 'npm:pdf-parse@1.1.1'
+import pdf2img from 'npm:pdf-img-convert@1.2.1'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -99,9 +100,9 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
 
-    const googleApiKey = Deno.env.get('GOOGLE_API_KEY')
-    if (!googleApiKey) {
-      const msg = 'Chave da API do Google (GOOGLE_API_KEY) não configurada nos Secrets do Supabase.'
+    const openaiKey = Deno.env.get('OPENAI_API_KEY') || Deno.env.get('OPENIA_KEY')
+    if (!openaiKey) {
+      const msg = 'Chave da API da OpenAI não configurada nos Secrets do Supabase.'
       console.log('Erro na etapa 1:', msg)
       return new Response(JSON.stringify({ error: msg }), {
         status: 500,
@@ -148,71 +149,144 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    const genAI = new GoogleGenerativeAI(googleApiKey)
-    const callGeminiWithRetry = async (
-      prompt: string | any[],
-      retries = 3,
-      backoff = 2000,
-      modelName = 'gemini-2.0-flash',
-    ): Promise<any> => {
-      try {
-        const model = genAI.getGenerativeModel({ model: modelName })
-        const result = await model.generateContent(prompt)
-        let text = await result.response.text()
-        text = text
-          .replace(/```json/gi, '')
-          .replace(/```/g, '')
-          .trim()
-        return JSON.parse(text || '{}')
-      } catch (error: any) {
-        if (
-          modelName === 'gemini-2.0-flash' &&
-          (error?.status === 404 ||
-            error?.message?.includes('not found') ||
-            error?.message?.includes('404'))
-        ) {
-          console.log('Modelo gemini-2.0-flash falhou (404), tentando gemini-1.5-pro...')
-          return callGeminiWithRetry(prompt, retries, backoff, 'gemini-1.5-pro')
-        }
-        if (retries > 0) {
-          await new Promise((resolve) => setTimeout(resolve, backoff))
-          return callGeminiWithRetry(prompt, retries - 1, backoff * 2, modelName)
-        }
-        throw error
-      }
-    }
+    const openai = new OpenAI({ apiKey: openaiKey })
 
-    console.log('5. Chamando Gemini para análise')
+    console.log('5. Chamando OpenAI para análise')
     let extractedData
     try {
       if (!pdfText || pdfText.trim().length < 50) {
-        console.log('OCR com Gemini Vision ativado')
-        const base64pdf = Buffer.from(arrayBuffer!).toString('base64')
-        const ocrPrompt = `Extraia todo o texto deste currículo em português. Retorne em JSON estruturado com os seguintes campos: nome (string), email (string), telefone (string), experiencia_profissional (array de strings), skills (array de strings), formacao_academica (array de strings). Retorne APENAS o JSON, sem marcações markdown.`
+        console.log('OCR com OpenAI Vision ativado')
 
-        extractedData = await callGeminiWithRetry([
-          {
-            inlineData: {
-              data: base64pdf,
-              mimeType: 'application/pdf',
-            },
-          },
-          { text: ocrPrompt },
-        ])
+        let base64Image = ''
+        try {
+          const pdfArray = await pdf2img.convert(new Uint8Array(arrayBuffer), {
+            width: 1024,
+            page_numbers: [1],
+          })
+          base64Image = Buffer.from(pdfArray[0]).toString('base64')
+        } catch (err: any) {
+          console.log('Erro ao converter PDF para imagem:', err.message)
+          return new Response(
+            JSON.stringify({
+              error:
+                'Não consegui extrair texto do PDF. Certifique-se de que é um PDF válido com texto legível.',
+            }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          )
+        }
+
+        const ocrPrompt = `Extraia todo o texto deste currículo em português. Retorne em JSON estruturado com os seguintes campos: nome (string), email (string), telefone (string), experiencia_profissional (array de strings), skills (array de strings), formacao_academica (array de strings). Retorne APENAS o JSON, sem explicações.`
+
+        let responseText = ''
+        try {
+          const response = await openai.chat.completions.create({
+            model: 'gpt-4o',
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  { type: 'text', text: ocrPrompt },
+                  { type: 'image_url', image_url: { url: `data:image/png;base64,${base64Image}` } },
+                ],
+              },
+            ],
+            response_format: { type: 'json_object' },
+            max_tokens: 2000,
+          })
+          responseText = response.choices[0]?.message?.content || ''
+        } catch (openaiErr: any) {
+          console.log('Erro na etapa 5 (OpenAI Vision):', openaiErr.message)
+          return new Response(
+            JSON.stringify({
+              error:
+                'Serviço de análise temporariamente indisponível. Tente novamente em alguns instantes.',
+            }),
+            { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          )
+        }
+
+        if (!responseText) {
+          return new Response(
+            JSON.stringify({
+              error:
+                'Não consegui extrair texto do PDF. Certifique-se de que é um PDF válido com texto legível.',
+            }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          )
+        }
+
+        try {
+          extractedData = JSON.parse(responseText)
+        } catch (e) {
+          return new Response(
+            JSON.stringify({
+              error:
+                'Não consegui extrair texto do PDF. Certifique-se de que é um PDF válido com texto legível.',
+            }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          )
+        }
       } else {
-        const analyzePrompt = `Extraia deste currículo em português os seguintes campos em JSON estruturado: nome (string), email (string), telefone (string), experiencia_profissional (array de strings), skills (array de strings), formacao_academica (array de strings). Retorne APENAS o JSON, sem marcações markdown.\n\nCurrículo:\n${pdfText.substring(0, 15000)}`
-        extractedData = await callGeminiWithRetry(analyzePrompt)
+        const analyzePrompt = `Extraia deste currículo em português os seguintes campos em JSON estruturado: nome (string), email (string), telefone (string), experiencia_profissional (array de strings), skills (array de strings), formacao_academica (array de strings). Retorne APENAS o JSON, sem explicações.\n\nCurrículo:\n${pdfText.substring(0, 15000)}`
+
+        let responseText = ''
+        try {
+          const response = await openai.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [{ role: 'user', content: analyzePrompt }],
+            response_format: { type: 'json_object' },
+            max_tokens: 2000,
+          })
+          responseText = response.choices[0]?.message?.content || ''
+        } catch (openaiErr: any) {
+          console.log('Erro na etapa 5 (OpenAI Text):', openaiErr.message)
+          return new Response(
+            JSON.stringify({
+              error:
+                'Serviço de análise temporariamente indisponível. Tente novamente em alguns instantes.',
+            }),
+            { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          )
+        }
+
+        if (!responseText) {
+          return new Response(
+            JSON.stringify({
+              error:
+                'Não consegui extrair texto do PDF. Certifique-se de que é um PDF válido com texto legível.',
+            }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          )
+        }
+
+        try {
+          extractedData = JSON.parse(responseText)
+        } catch (e) {
+          return new Response(
+            JSON.stringify({
+              error:
+                'Não consegui extrair texto do PDF. Certifique-se de que é um PDF válido com texto legível.',
+            }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          )
+        }
       }
 
-      if (!extractedData.nome || typeof extractedData !== 'object') {
-        throw new Error('Falha ao extrair dados ou JSON inválido')
+      if (!extractedData || !extractedData.nome) {
+        return new Response(
+          JSON.stringify({
+            error:
+              'Não consegui extrair texto do PDF. Certifique-se de que é um PDF válido com texto legível.',
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
       }
     } catch (err: any) {
-      console.log('Erro na etapa 5:', err.message)
+      console.log('Erro geral na etapa 5:', err.message)
       return new Response(
         JSON.stringify({
           error:
-            'Serviço de Inteligência Artificial indisponível ou falhou ao analisar o documento.',
+            'Serviço de análise temporariamente indisponível. Tente novamente em alguns instantes.',
         }),
         {
           status: 503,
@@ -360,7 +434,21 @@ Retorne ESTRITAMENTE em formato JSON com as seguintes chaves (sem marcações ma
   }
 }`
 
-          const analiseJson = await callGeminiWithRetry(analyzePrompt)
+          let analiseJson: any = { resultado: 'revisar', detalhes: {} }
+          try {
+            const response = await openai.chat.completions.create({
+              model: 'gpt-4o-mini',
+              messages: [{ role: 'user', content: analyzePrompt }],
+              response_format: { type: 'json_object' },
+              max_tokens: 1500,
+            })
+            const text = response.choices[0]?.message?.content
+            if (text) {
+              analiseJson = JSON.parse(text)
+            }
+          } catch (e: any) {
+            console.log('Erro ao analisar a vaga com OpenAI:', e.message)
+          }
 
           const { data: novaAnalise, error: analiseError } = await supabase
             .from('analises')
