@@ -3,8 +3,6 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 import OpenAI from 'npm:openai@4'
 import { Buffer } from 'node:buffer'
 import pdf from 'npm:pdf-parse@1.1.1'
-import jwt from 'npm:jsonwebtoken'
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
@@ -26,8 +24,12 @@ Deno.serve(async (req: Request) => {
     let userId = null
     if (token) {
       try {
-        const decoded = jwt.decode(token) as any
-        userId = decoded?.sub
+        const parts = token.split('.')
+        if (parts.length >= 2) {
+          const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+          const payload = JSON.parse(atob(base64))
+          userId = payload.sub
+        }
       } catch (e) {
         console.log('Erro ao decodificar token:', e)
       }
@@ -37,10 +39,13 @@ Deno.serve(async (req: Request) => {
 
     if (!userId || typeof userId !== 'string' || userId.length !== 36 || !uuidRegex.test(userId)) {
       console.log('Erro: Usuário não autenticado ou userId inválido no JWT:', userId)
-      return new Response(JSON.stringify({ error: 'Usuário não autenticado' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(
+        JSON.stringify({ error: 'Usuário não autenticado. Faça login novamente.' }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
     }
 
     console.log('User ID extraído do JWT:', userId)
