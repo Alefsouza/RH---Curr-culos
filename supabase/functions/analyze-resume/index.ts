@@ -3,6 +3,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 import OpenAI from 'npm:openai@4'
 import { Buffer } from 'node:buffer'
 import pdf from 'npm:pdf-parse@1.1.1'
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
@@ -110,12 +111,18 @@ Deno.serve(async (req: Request) => {
 
     const supabase = createClient(supabaseUrl, supabaseKey)
 
-    const { data: fileData, error: downloadError } = await supabase.storage
-      .from('curriculos')
-      .download(filePath)
+    let fileData
+    try {
+      const { data, error: downloadError } = await supabase.storage
+        .from('curriculos')
+        .download(filePath)
 
-    if (downloadError || !fileData) {
-      console.log('Erro na etapa 3:', downloadError?.message || 'Erro ao baixar arquivo do Storage')
+      if (downloadError || !data) {
+        throw new Error(downloadError?.message || 'Erro ao baixar arquivo do Storage')
+      }
+      fileData = data
+    } catch (err: any) {
+      console.log('Erro na etapa 3:', err.message)
       return new Response(
         JSON.stringify({ error: 'Erro ao acessar o arquivo enviado no banco de dados.' }),
         {
@@ -125,28 +132,23 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    const arrayBuffer = await fileData.arrayBuffer()
-    const pdfBuffer = Buffer.from(arrayBuffer)
+    console.log('4. Iniciando extração de texto do PDF')
     let pdfText = ''
     try {
+      const arrayBuffer = await fileData.arrayBuffer()
+      const pdfBuffer = Buffer.from(arrayBuffer)
       const data = await pdf(pdfBuffer)
       pdfText = data.text
+
+      if (!pdfText || !pdfText.trim()) {
+        throw new Error('O arquivo PDF está vazio ou não contém texto legível.')
+      }
     } catch (err: any) {
-      console.log('Erro na etapa 3:', err.message)
+      console.log('Erro na etapa 4:', err.message)
       return new Response(JSON.stringify({ error: 'Erro ao extrair texto do PDF.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
-    }
-
-    if (!pdfText || !pdfText.trim()) {
-      return new Response(
-        JSON.stringify({ error: 'O arquivo PDF está vazio ou não contém texto legível.' }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
-      )
     }
 
     const openai = new OpenAI({ apiKey: openaiKey })
@@ -194,12 +196,12 @@ Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
 Texto extraído do currículo:
 ${pdfText.substring(0, 15000)}`
 
-    console.log('4. Chamando OpenAI')
+    console.log('5. Chamando OpenAI para análise')
     let extractedData
     try {
       extractedData = await callOpenAIWithRetry(extractionPrompt)
     } catch (err: any) {
-      console.log('Erro na etapa 4:', err.message)
+      console.log('Erro na etapa 5:', err.message)
       return new Response(
         JSON.stringify({ error: 'Serviço de Inteligência Artificial indisponível no momento.' }),
         {
@@ -213,9 +215,9 @@ ${pdfText.substring(0, 15000)}`
     const finalTelefone = telefone || extractedData.telefone || null
     const finalNome = nome || extractedData.nome || 'Candidato Desconhecido'
 
-    console.log('5. Salvando candidato no banco')
+    console.log('6. Salvando candidato no banco')
     let candidatoId
-    let analisesRealizadas = []
+    let analisesRealizadas: any[] = []
 
     try {
       const orConditions = []
@@ -306,7 +308,7 @@ ${pdfText.substring(0, 15000)}`
         if (updError) throw updError
       }
     } catch (dbError: any) {
-      console.log('Erro na etapa 5:', dbError.message)
+      console.log('Erro na etapa 6:', dbError.message)
       return new Response(
         JSON.stringify({
           error: 'Ocorreu um erro interno ao salvar os dados no banco de dados.',
@@ -319,7 +321,7 @@ ${pdfText.substring(0, 15000)}`
       )
     }
 
-    console.log('6. Salvando análise no banco')
+    console.log('7. Salvando análise no banco')
     try {
       if (vaga_id && candidatoId) {
         const { data: vaga, error: vagaError } = await supabase
@@ -370,6 +372,7 @@ Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
         }
       }
 
+      console.log('8. Retornando sucesso')
       return new Response(
         JSON.stringify({
           success: true,
@@ -383,7 +386,7 @@ Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
         },
       )
     } catch (dbError: any) {
-      console.log('Erro na etapa 6:', dbError.message)
+      console.log('Erro na etapa 7:', dbError.message)
       return new Response(
         JSON.stringify({
           error: 'Ocorreu um erro interno ao salvar a análise no banco de dados.',
