@@ -50,14 +50,11 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    console.log('User ID extraído do JWT:', userId)
-
     const bodyText = await req.text()
     let body
     try {
       body = JSON.parse(bodyText)
     } catch (e: any) {
-      console.log('Erro na etapa 1:', e.message)
       return new Response(JSON.stringify({ error: 'Payload inválido. Formato JSON esperado.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -66,9 +63,6 @@ Deno.serve(async (req: Request) => {
 
     const { filePath, nome, email, telefone, vaga_id } = body
 
-    console.log('2. Vaga ID recebido:', vaga_id)
-    console.log('3. Arquivo recebido:', filePath)
-
     if (!filePath) {
       return new Response(JSON.stringify({ error: 'Arquivo PDF é obrigatório' }), {
         status: 400,
@@ -76,22 +70,8 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    if (!vaga_id) {
-      return new Response(JSON.stringify({ error: 'Vaga é obrigatória' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    if (typeof vaga_id !== 'string' || vaga_id.length !== 36 || !uuidRegex.test(vaga_id)) {
+    if (!vaga_id || typeof vaga_id !== 'string' || !uuidRegex.test(vaga_id)) {
       return new Response(JSON.stringify({ error: 'Vaga inválida. Selecione uma vaga válida.' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    if (!nome) {
-      return new Response(JSON.stringify({ error: 'Dados incompletos. Nome é obrigatório.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -100,14 +80,12 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
 
-    const openaiKey = Deno.env.get('OPENAI_API_KEY') || Deno.env.get('OPENIA_KEY')
+    const openaiKey = Deno.env.get('OPENAI_API_KEY') || Deno.env.get('OPENAI_KEY')
     if (!openaiKey) {
-      const msg = 'Chave da API da OpenAI não configurada nos Secrets do Supabase.'
-      console.log('Erro na etapa 1:', msg)
-      return new Response(JSON.stringify({ error: msg }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(
+        JSON.stringify({ error: 'Chave da API da OpenAI não configurada nos Secrets.' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey)
@@ -117,23 +95,15 @@ Deno.serve(async (req: Request) => {
       const { data, error: downloadError } = await supabase.storage
         .from('curriculos')
         .download(filePath)
-
-      if (downloadError || !data) {
-        throw new Error(downloadError?.message || 'Erro ao baixar arquivo do Storage')
-      }
+      if (downloadError || !data) throw new Error('Erro ao baixar do Storage')
       fileData = data
-    } catch (err: any) {
-      console.log('Erro na etapa 3:', err.message)
+    } catch (err) {
       return new Response(
         JSON.stringify({ error: 'Erro ao acessar o arquivo enviado no banco de dados.' }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
     }
 
-    console.log('4. Iniciando extração de texto do PDF')
     let pdfText = ''
     let arrayBuffer: ArrayBuffer
     try {
@@ -141,8 +111,7 @@ Deno.serve(async (req: Request) => {
       const pdfBuffer = Buffer.from(arrayBuffer)
       const data = await pdf(pdfBuffer)
       pdfText = data.text
-    } catch (err: any) {
-      console.log('Erro na etapa 4:', err.message)
+    } catch (err) {
       return new Response(JSON.stringify({ error: 'Erro ao extrair texto do PDF.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -150,129 +119,19 @@ Deno.serve(async (req: Request) => {
     }
 
     const openai = new OpenAI({ apiKey: openaiKey })
-
-    console.log('5. Chamando OpenAI para análise')
     let extractedData
-    try {
-      if (!pdfText || pdfText.trim().length < 50) {
-        console.log('OCR com OpenAI Vision ativado')
 
-        let base64Image = ''
-        try {
-          const pdfArray = await pdf2img.convert(new Uint8Array(arrayBuffer), {
-            width: 1024,
-            page_numbers: [1],
-          })
-          base64Image = Buffer.from(pdfArray[0]).toString('base64')
-        } catch (err: any) {
-          console.log('Erro ao converter PDF para imagem:', err.message)
-          return new Response(
-            JSON.stringify({
-              error:
-                'Não consegui extrair texto do PDF. Certifique-se de que é um PDF válido com texto legível.',
-            }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-          )
-        }
+    if (!pdfText || pdfText.trim().length < 50) {
+      console.log('OCR com OpenAI Vision ativado')
 
-        const ocrPrompt = `Extraia todo o texto deste currículo em português. Retorne em JSON estruturado com os seguintes campos: nome (string), email (string), telefone (string), experiencia_profissional (array de strings), skills (array de strings), formacao_academica (array de strings). Retorne APENAS o JSON, sem explicações.`
-
-        let responseText = ''
-        try {
-          const response = await openai.chat.completions.create({
-            model: 'gpt-4o',
-            messages: [
-              {
-                role: 'user',
-                content: [
-                  { type: 'text', text: ocrPrompt },
-                  { type: 'image_url', image_url: { url: `data:image/png;base64,${base64Image}` } },
-                ],
-              },
-            ],
-            response_format: { type: 'json_object' },
-            max_tokens: 2000,
-          })
-          responseText = response.choices[0]?.message?.content || ''
-        } catch (openaiErr: any) {
-          console.log('Erro na etapa 5 (OpenAI Vision):', openaiErr.message)
-          return new Response(
-            JSON.stringify({
-              error:
-                'Serviço de análise temporariamente indisponível. Tente novamente em alguns instantes.',
-            }),
-            { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-          )
-        }
-
-        if (!responseText) {
-          return new Response(
-            JSON.stringify({
-              error:
-                'Não consegui extrair texto do PDF. Certifique-se de que é um PDF válido com texto legível.',
-            }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-          )
-        }
-
-        try {
-          extractedData = JSON.parse(responseText)
-        } catch (e) {
-          return new Response(
-            JSON.stringify({
-              error:
-                'Não consegui extrair texto do PDF. Certifique-se de que é um PDF válido com texto legível.',
-            }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-          )
-        }
-      } else {
-        const analyzePrompt = `Extraia deste currículo em português os seguintes campos em JSON estruturado: nome (string), email (string), telefone (string), experiencia_profissional (array de strings), skills (array de strings), formacao_academica (array de strings). Retorne APENAS o JSON, sem explicações.\n\nCurrículo:\n${pdfText.substring(0, 15000)}`
-
-        let responseText = ''
-        try {
-          const response = await openai.chat.completions.create({
-            model: 'gpt-4o-mini',
-            messages: [{ role: 'user', content: analyzePrompt }],
-            response_format: { type: 'json_object' },
-            max_tokens: 2000,
-          })
-          responseText = response.choices[0]?.message?.content || ''
-        } catch (openaiErr: any) {
-          console.log('Erro na etapa 5 (OpenAI Text):', openaiErr.message)
-          return new Response(
-            JSON.stringify({
-              error:
-                'Serviço de análise temporariamente indisponível. Tente novamente em alguns instantes.',
-            }),
-            { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-          )
-        }
-
-        if (!responseText) {
-          return new Response(
-            JSON.stringify({
-              error:
-                'Não consegui extrair texto do PDF. Certifique-se de que é um PDF válido com texto legível.',
-            }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-          )
-        }
-
-        try {
-          extractedData = JSON.parse(responseText)
-        } catch (e) {
-          return new Response(
-            JSON.stringify({
-              error:
-                'Não consegui extrair texto do PDF. Certifique-se de que é um PDF válido com texto legível.',
-            }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-          )
-        }
-      }
-
-      if (!extractedData || !extractedData.nome) {
+      let base64Image = ''
+      try {
+        const pdfArray = await pdf2img.convert(new Uint8Array(arrayBuffer), {
+          width: 1024,
+          page_numbers: [1],
+        })
+        base64Image = Buffer.from(pdfArray[0]).toString('base64')
+      } catch (err) {
         return new Response(
           JSON.stringify({
             error:
@@ -281,150 +140,167 @@ Deno.serve(async (req: Request) => {
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         )
       }
-    } catch (err: any) {
-      console.log('Erro geral na etapa 5:', err.message)
-      return new Response(
-        JSON.stringify({
-          error:
-            'Serviço de análise temporariamente indisponível. Tente novamente em alguns instantes.',
-        }),
-        {
-          status: 503,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
-      )
+
+      const ocrPrompt = `Extraia todo o texto deste currículo em português. Retorne em JSON estruturado com os seguintes campos: nome (string), email (string), telefone (string), experiencia_profissional (array de strings), skills (array de strings), formacao_academica (array de strings). Retorne APENAS o JSON, sem explicações.`
+
+      let responseText = ''
+      try {
+        const response = await openai.chat.completions.create({
+          model: 'gpt-4o',
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: ocrPrompt },
+                { type: 'image_url', image_url: { url: `data:image/png;base64,${base64Image}` } },
+              ],
+            },
+          ],
+          response_format: { type: 'json_object' },
+          max_tokens: 2000,
+        })
+        responseText = response.choices[0]?.message?.content || ''
+      } catch (err) {
+        return new Response(
+          JSON.stringify({
+            error:
+              'Serviço de análise temporariamente indisponível. Tente novamente em alguns instantes.',
+          }),
+          { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
+      }
+
+      if (!responseText) {
+        return new Response(
+          JSON.stringify({
+            error:
+              'Não consegui extrair texto do PDF. Certifique-se de que é um PDF válido com texto legível.',
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
+      }
+
+      try {
+        extractedData = JSON.parse(responseText)
+      } catch (e) {
+        return new Response(
+          JSON.stringify({
+            error:
+              'Não consegui extrair texto do PDF. Certifique-se de que é um PDF válido com texto legível.',
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
+      }
+    } else {
+      const analyzePrompt = `Extraia deste currículo em português os seguintes campos em JSON estruturado: nome (string), email (string), telefone (string), experiencia_profissional (array de strings), skills (array de strings), formacao_academica (array de strings). Retorne APENAS o JSON, sem explicações.\n\nCurrículo:\n${pdfText.substring(0, 15000)}`
+
+      try {
+        const response = await openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: analyzePrompt }],
+          response_format: { type: 'json_object' },
+          max_tokens: 2000,
+        })
+        const responseText = response.choices[0]?.message?.content || ''
+        if (!responseText) throw new Error('Vazio')
+        extractedData = JSON.parse(responseText)
+      } catch (err) {
+        return new Response(
+          JSON.stringify({
+            error:
+              'Serviço de análise temporariamente indisponível. Tente novamente em alguns instantes.',
+          }),
+          { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
+      }
     }
 
     const finalEmail = email || extractedData.email || null
     const finalTelefone = telefone || extractedData.telefone || null
     const finalNome = nome || extractedData.nome || 'Candidato Desconhecido'
 
-    console.log('6. Salvando candidato no banco')
     let candidatoId
-    let analisesRealizadas: any[] = []
-
-    try {
-      const orConditions = []
-      if (finalEmail) {
-        const safeEmail = finalEmail.replace(/"/g, '')
-        orConditions.push(`email.eq."${safeEmail}"`)
-      }
-      if (finalTelefone) {
-        const safeTel = finalTelefone.replace(/"/g, '')
-        orConditions.push(`telefone.eq."${safeTel}"`)
-      }
-
-      if (orConditions.length > 0) {
-        const { data: duplicates, error: dupError } = await supabase
-          .from('candidatos')
-          .select('id')
-          .eq('user_id', userId)
-          .or(orConditions.join(','))
-
-        if (dupError) throw dupError
-
-        if (duplicates && duplicates.length > 0) {
-          const idsToDelete = duplicates.map((d) => d.id)
-          const { error: deleteError } = await supabase
-            .from('candidatos')
-            .delete()
-            .in('id', idsToDelete)
-          if (deleteError) throw deleteError
-        }
-      }
-
-      const { data: publicUrlData } = supabase.storage.from('curriculos').getPublicUrl(filePath)
-
-      const { data: newCandidate, error: insertCandidateError } = await supabase
-        .from('candidatos')
-        .insert({
-          nome: finalNome,
-          email: finalEmail,
-          telefone: finalTelefone,
-          fonte: 'site',
-          curriculo_url: publicUrlData.publicUrl,
-          vaga_id: vaga_id,
-          user_id: userId,
-        })
-        .select('id')
-        .single()
-
-      if (insertCandidateError) throw insertCandidateError
-      candidatoId = newCandidate.id
-
-      let { data: etapa, error: etapaError } = await supabase
-        .from('etapas')
-        .select('id')
-        .eq('user_id', userId)
-        .ilike('nome', 'Nunca Responderam')
-        .maybeSingle()
-
-      if (etapaError) throw etapaError
-
-      if (!etapa) {
-        const { data: newEtapa, error: insertEtapaError } = await supabase
-          .from('etapas')
-          .insert({
-            nome: 'Nunca Responderam',
-            ordem: 0,
-            cor: 'bg-slate-200',
-            user_id: userId,
-          })
-          .select('id')
-          .single()
-
-        if (insertEtapaError) throw insertEtapaError
-        etapa = newEtapa
-      }
-
-      if (etapa) {
-        const { error: relError } = await supabase.from('candidato_etapa').insert({
-          candidato_id: candidatoId,
-          etapa_id: etapa.id,
-          usuario_id: userId,
-        })
-        if (relError) throw relError
-
-        const { error: updError } = await supabase
-          .from('candidatos')
-          .update({ etapa_id: etapa.id })
-          .eq('id', candidatoId)
-        if (updError) throw updError
-      }
-    } catch (dbError: any) {
-      console.log('Erro na etapa 6:', dbError.message)
-      return new Response(
-        JSON.stringify({
-          error: 'Ocorreu um erro interno ao salvar os dados no banco de dados.',
-          detalhes: dbError.message || JSON.stringify(dbError),
-        }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
-      )
+    const orConditions = []
+    if (finalEmail) {
+      const safeEmail = finalEmail.replace(/"/g, '')
+      orConditions.push(`email.eq."${safeEmail}"`)
+    }
+    if (finalTelefone) {
+      const safeTel = finalTelefone.replace(/"/g, '')
+      orConditions.push(`telefone.eq."${safeTel}"`)
     }
 
-    console.log('7. Salvando análise no banco')
-    try {
-      if (vaga_id && candidatoId) {
-        const { data: vaga, error: vagaError } = await supabase
-          .from('vagas')
-          .select('*')
-          .eq('id', vaga_id)
-          .single()
+    if (orConditions.length > 0) {
+      const { data: duplicates } = await supabase
+        .from('candidatos')
+        .select('id')
+        .eq('user_id', userId)
+        .or(orConditions.join(','))
+      if (duplicates && duplicates.length > 0) {
+        await supabase
+          .from('candidatos')
+          .delete()
+          .in(
+            'id',
+            duplicates.map((d) => d.id),
+          )
+      }
+    }
 
-        if (vagaError) throw vagaError
+    const { data: publicUrlData } = supabase.storage.from('curriculos').getPublicUrl(filePath)
 
-        if (vaga) {
-          const analyzePrompt = `Analise o currículo para a vaga de "${vaga.titulo}".
+    const { data: newCandidate, error: insertError } = await supabase
+      .from('candidatos')
+      .insert({
+        nome: finalNome,
+        email: finalEmail,
+        telefone: finalTelefone,
+        fonte: 'site',
+        curriculo_url: publicUrlData.publicUrl,
+        vaga_id: vaga_id,
+        user_id: userId,
+        dados_extraidos: extractedData,
+      })
+      .select('id')
+      .single()
+
+    if (insertError) throw insertError
+    candidatoId = newCandidate.id
+
+    let { data: etapa } = await supabase
+      .from('etapas')
+      .select('id')
+      .eq('user_id', userId)
+      .ilike('nome', 'Nunca Responderam')
+      .maybeSingle()
+
+    if (!etapa) {
+      const { data: newEtapa } = await supabase
+        .from('etapas')
+        .insert({ nome: 'Nunca Responderam', ordem: 0, cor: 'bg-slate-200', user_id: userId })
+        .select('id')
+        .single()
+      etapa = newEtapa
+    }
+
+    if (etapa) {
+      await supabase
+        .from('candidato_etapa')
+        .insert({ candidato_id: candidatoId, etapa_id: etapa.id, usuario_id: userId })
+      await supabase.from('candidatos').update({ etapa_id: etapa.id }).eq('id', candidatoId)
+    }
+
+    const analisesRealizadas = []
+    const { data: vaga } = await supabase.from('vagas').select('*').eq('id', vaga_id).single()
+    if (vaga) {
+      const prompt = `Analise o currículo para a vaga de "${vaga.titulo}".
 Descrição da vaga: ${vaga.descricao || 'Não informada'}
 Critérios de Qualificação: ${JSON.stringify(vaga.criterios_qualificacao || {})}
 
 Dados estruturados do currículo:
 ${JSON.stringify(extractedData)}
 
-Retorne ESTRITAMENTE em formato JSON com as seguintes chaves (sem marcações markdown):
+Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
 {
   "resultado": "qualificado" | "nao_qualificado" | "revisar",
   "detalhes": {
@@ -433,80 +309,49 @@ Retorne ESTRITAMENTE em formato JSON com as seguintes chaves (sem marcações ma
     "aderencia": "percentual de aderência (ex: 80%)"
   }
 }`
+      let analiseJson: any = { resultado: 'revisar', detalhes: {} }
+      try {
+        const res = await openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: prompt }],
+          response_format: { type: 'json_object' },
+          max_tokens: 1500,
+        })
+        const text = res.choices[0]?.message?.content
+        if (text) analiseJson = JSON.parse(text)
+      } catch (e) {}
 
-          let analiseJson: any = { resultado: 'revisar', detalhes: {} }
-          try {
-            const response = await openai.chat.completions.create({
-              model: 'gpt-4o-mini',
-              messages: [{ role: 'user', content: analyzePrompt }],
-              response_format: { type: 'json_object' },
-              max_tokens: 1500,
-            })
-            const text = response.choices[0]?.message?.content
-            if (text) {
-              analiseJson = JSON.parse(text)
-            }
-          } catch (e: any) {
-            console.log('Erro ao analisar a vaga com OpenAI:', e.message)
-          }
-
-          const { data: novaAnalise, error: analiseError } = await supabase
-            .from('analises')
-            .insert({
-              candidato_id: candidatoId,
-              vaga_id: vaga.id,
-              resultado: analiseJson.resultado || 'revisar',
-              detalhes: analiseJson.detalhes || {},
-              user_id: userId,
-            })
-            .select()
-            .single()
-
-          if (!analiseError) {
-            analisesRealizadas.push(novaAnalise)
-          } else {
-            throw analiseError
-          }
-        }
-      }
-
-      console.log('8. Retornando sucesso')
-      return new Response(
-        JSON.stringify({
-          success: true,
+      const { data: novaAnalise } = await supabase
+        .from('analises')
+        .insert({
           candidato_id: candidatoId,
-          dados_extraidos: extractedData,
-          analises: analisesRealizadas,
-        }),
-        {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
-      )
-    } catch (dbError: any) {
-      console.log('Erro na etapa 7:', dbError.message)
-      return new Response(
-        JSON.stringify({
-          error: 'Ocorreu um erro interno ao salvar a análise no banco de dados.',
-          detalhes: dbError.message || JSON.stringify(dbError),
-        }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
-      )
+          vaga_id: vaga.id,
+          resultado: analiseJson.resultado || 'revisar',
+          detalhes: analiseJson.detalhes || {},
+          user_id: userId,
+        })
+        .select()
+        .single()
+
+      if (novaAnalise) analisesRealizadas.push(novaAnalise)
     }
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        candidato_id: candidatoId,
+        dados_extraidos: extractedData,
+        analises: analisesRealizadas,
+      }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    )
   } catch (error: any) {
-    console.log('Erro geral:', error.message)
     return new Response(
       JSON.stringify({
         error: 'Ocorreu um erro interno inesperado no servidor ao processar o currículo.',
-        detalhes: error.message || String(error),
+        detalhes: error.message,
       }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      },
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     )
   }
 })
