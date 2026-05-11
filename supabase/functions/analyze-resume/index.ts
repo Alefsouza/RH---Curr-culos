@@ -3,7 +3,6 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 import OpenAI from 'npm:openai@4'
 import { Buffer } from 'node:buffer'
 import pdf from 'npm:pdf-parse@1.1.1'
-import pdf2img from 'npm:pdf-img-convert@1.2.1'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -122,97 +121,35 @@ Deno.serve(async (req: Request) => {
     let extractedData
 
     if (!pdfText || pdfText.trim().length < 50) {
-      console.log('OCR com OpenAI Vision ativado')
+      return new Response(
+        JSON.stringify({
+          error:
+            'Não foi possível extrair o texto do PDF. Certifique-se de que é um PDF de texto válido (currículos em formato de imagem não são suportados no momento).',
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
+    }
 
-      let base64Image = ''
-      try {
-        const pdfArray = await pdf2img.convert(new Uint8Array(arrayBuffer), {
-          width: 1024,
-          page_numbers: [1],
-        })
-        base64Image = Buffer.from(pdfArray[0]).toString('base64')
-      } catch (err) {
-        return new Response(
-          JSON.stringify({
-            error:
-              'Não consegui extrair texto do PDF. Certifique-se de que é um PDF válido com texto legível.',
-          }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-        )
-      }
+    const analyzePrompt = `Extraia deste currículo em português os seguintes campos em JSON estruturado: nome (string), email (string), telefone (string), experiencia_profissional (array de strings), skills (array de strings), formacao_academica (array de strings). Retorne APENAS o JSON, sem explicações.\n\nCurrículo:\n${pdfText.substring(0, 15000)}`
 
-      const ocrPrompt = `Extraia todo o texto deste currículo em português. Retorne em JSON estruturado com os seguintes campos: nome (string), email (string), telefone (string), experiencia_profissional (array de strings), skills (array de strings), formacao_academica (array de strings). Retorne APENAS o JSON, sem explicações.`
-
-      let responseText = ''
-      try {
-        const response = await openai.chat.completions.create({
-          model: 'gpt-4o',
-          messages: [
-            {
-              role: 'user',
-              content: [
-                { type: 'text', text: ocrPrompt },
-                { type: 'image_url', image_url: { url: `data:image/png;base64,${base64Image}` } },
-              ],
-            },
-          ],
-          response_format: { type: 'json_object' },
-          max_tokens: 2000,
-        })
-        responseText = response.choices[0]?.message?.content || ''
-      } catch (err) {
-        return new Response(
-          JSON.stringify({
-            error:
-              'Serviço de análise temporariamente indisponível. Tente novamente em alguns instantes.',
-          }),
-          { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-        )
-      }
-
-      if (!responseText) {
-        return new Response(
-          JSON.stringify({
-            error:
-              'Não consegui extrair texto do PDF. Certifique-se de que é um PDF válido com texto legível.',
-          }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-        )
-      }
-
-      try {
-        extractedData = JSON.parse(responseText)
-      } catch (e) {
-        return new Response(
-          JSON.stringify({
-            error:
-              'Não consegui extrair texto do PDF. Certifique-se de que é um PDF válido com texto legível.',
-          }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-        )
-      }
-    } else {
-      const analyzePrompt = `Extraia deste currículo em português os seguintes campos em JSON estruturado: nome (string), email (string), telefone (string), experiencia_profissional (array de strings), skills (array de strings), formacao_academica (array de strings). Retorne APENAS o JSON, sem explicações.\n\nCurrículo:\n${pdfText.substring(0, 15000)}`
-
-      try {
-        const response = await openai.chat.completions.create({
-          model: 'gpt-4o-mini',
-          messages: [{ role: 'user', content: analyzePrompt }],
-          response_format: { type: 'json_object' },
-          max_tokens: 2000,
-        })
-        const responseText = response.choices[0]?.message?.content || ''
-        if (!responseText) throw new Error('Vazio')
-        extractedData = JSON.parse(responseText)
-      } catch (err) {
-        return new Response(
-          JSON.stringify({
-            error:
-              'Serviço de análise temporariamente indisponível. Tente novamente em alguns instantes.',
-          }),
-          { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-        )
-      }
+    try {
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: analyzePrompt }],
+        response_format: { type: 'json_object' },
+        max_tokens: 2000,
+      })
+      const responseText = response.choices[0]?.message?.content || ''
+      if (!responseText) throw new Error('Vazio')
+      extractedData = JSON.parse(responseText)
+    } catch (err) {
+      return new Response(
+        JSON.stringify({
+          error:
+            'Serviço de análise temporariamente indisponível. Tente novamente em alguns instantes.',
+        }),
+        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
     }
 
     const finalEmail = email || extractedData.email || null
