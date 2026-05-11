@@ -3,6 +3,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 import OpenAI from 'npm:openai@4'
 import { Buffer } from 'node:buffer'
 import pdf from 'npm:pdf-parse@1.1.1'
+import pdf2img from 'npm:pdf-img-convert@1.2.1'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -17,7 +18,21 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    console.log('1. Iniciando analyze-resume')
+    console.log('Iniciando analyze-resume com OpenAI')
+
+    const openaiKey =
+      Deno.env.get('OPENIA_KEY') || Deno.env.get('OPENAI_API_KEY') || Deno.env.get('OPENAI_KEY')
+    if (!openaiKey) {
+      console.log('ERRO: OPENIA_KEY não configurada nas Secrets')
+      return new Response(JSON.stringify({ error: 'Chave OpenAI não configurada' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+    console.log('OPENIA_KEY encontrada')
+
+    const openai = new OpenAI({ apiKey: openaiKey })
+    console.log('OpenAI inicializado com sucesso')
 
     const authHeader = req.headers.get('authorization') || req.headers.get('Authorization')
     const token = authHeader?.replace('Bearer ', '')
@@ -78,15 +93,6 @@ Deno.serve(async (req: Request) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
-
-    const openaiKey = Deno.env.get('OPENAI_API_KEY') || Deno.env.get('OPENAI_KEY')
-    if (!openaiKey) {
-      return new Response(
-        JSON.stringify({ error: 'Chave da API da OpenAI não configurada nos Secrets.' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      )
-    }
-
     const supabase = createClient(supabaseUrl, supabaseKey)
 
     let fileData
@@ -105,56 +111,100 @@ Deno.serve(async (req: Request) => {
 
     let pdfText = ''
     let arrayBuffer: ArrayBuffer
+    let extractedData
+
     try {
       arrayBuffer = await fileData.arrayBuffer()
       const pdfBuffer = Buffer.from(arrayBuffer)
       const data = await pdf(pdfBuffer)
       pdfText = data.text
     } catch (err) {
-      return new Response(JSON.stringify({ error: 'Erro ao extrair texto do PDF.' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      console.log('Erro ao extrair texto do PDF com pdfjs:', err)
     }
 
-    const openai = new OpenAI({ apiKey: openaiKey })
-    let extractedData
+    if (!pdfText || pdfText.trim().length < 50) {
+      console.log('OCR com OpenAI Vision ativado')
+      try {
+        const pdfArray = new Uint8Array(arrayBuffer!)
+        const images = await pdf2img.convert(pdfArray, { page_numbers: [1] })
+
+        if (images && images.length > 0) {
+          const base64Image = Buffer.from(images[0]).toString('base64')
+          const dataUrl = `data:image/png;base64,${base64Image}`
+
+          const visionResponse = await openai.chat.completions.create({
+            model: 'gpt-4o',
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'text',
+                    text: 'Extraia todo o texto deste currículo em português. Retorne em JSON estruturado com os seguintes campos: nome (string), email (string), telefone (string), experiencia_profissional (array de strings), skills (array de strings), formacao_academica (array de strings). Retorne APENAS o JSON, sem explicações.',
+                  },
+                  { type: 'image_url', image_url: { url: dataUrl } },
+                ],
+              },
+            ],
+            response_format: { type: 'json_object' },
+            max_tokens: 2000,
+          })
+
+          const responseText = visionResponse.choices[0]?.message?.content || ''
+          if (!responseText) throw new Error('Vazio')
+          extractedData = JSON.parse(responseText)
+          pdfText = JSON.stringify(extractedData)
+        }
+      } catch (err) {
+        console.error('Erro na OpenAI Vision:', err)
+        return new Response(
+          JSON.stringify({
+            error:
+              'Serviço de análise temporariamente indisponível. Tente novamente em alguns instantes.',
+          }),
+          { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
+      }
+    }
 
     if (!pdfText || pdfText.trim().length < 50) {
       return new Response(
         JSON.stringify({
           error:
-            'Não foi possível extrair o texto do PDF. Certifique-se de que é um PDF de texto válido (currículos em formato de imagem não são suportados no momento).',
+            'Não consegui extrair texto do PDF. Certifique-se de que é um PDF válido com texto legível.',
         }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
     }
 
-    const analyzePrompt = `Extraia deste currículo em português os seguintes campos em JSON estruturado: nome (string), email (string), telefone (string), experiencia_profissional (array de strings), skills (array de strings), formacao_academica (array de strings). Retorne APENAS o JSON, sem explicações.\n\nCurrículo:\n${pdfText.substring(0, 15000)}`
+    if (!extractedData) {
+      const analyzePrompt = `Extraia deste currículo em português os seguintes campos em JSON estruturado: nome (string), email (string), telefone (string), experiencia_profissional (array de strings), skills (array de strings), formacao_academica (array de strings). Retorne APENAS o JSON, sem explicações.\n\nCurrículo:\n${pdfText.substring(0, 15000)}`
 
-    try {
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: analyzePrompt }],
-        response_format: { type: 'json_object' },
-        max_tokens: 2000,
-      })
-      const responseText = response.choices[0]?.message?.content || ''
-      if (!responseText) throw new Error('Vazio')
-      extractedData = JSON.parse(responseText)
-    } catch (err) {
-      return new Response(
-        JSON.stringify({
-          error:
-            'Serviço de análise temporariamente indisponível. Tente novamente em alguns instantes.',
-        }),
-        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      )
+      try {
+        const response = await openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: analyzePrompt }],
+          response_format: { type: 'json_object' },
+          max_tokens: 2000,
+        })
+        const responseText = response.choices[0]?.message?.content || ''
+        if (!responseText) throw new Error('Vazio')
+        extractedData = JSON.parse(responseText)
+      } catch (err) {
+        console.error('Erro na OpenAI Text:', err)
+        return new Response(
+          JSON.stringify({
+            error:
+              'Serviço de análise temporariamente indisponível. Tente novamente em alguns instantes.',
+          }),
+          { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
+      }
     }
 
-    const finalEmail = email || extractedData.email || null
-    const finalTelefone = telefone || extractedData.telefone || null
-    const finalNome = nome || extractedData.nome || 'Candidato Desconhecido'
+    const finalEmail = email || extractedData?.email || null
+    const finalTelefone = telefone || extractedData?.telefone || null
+    const finalNome = nome || extractedData?.nome || 'Candidato Desconhecido'
 
     let candidatoId
     const orConditions = []
