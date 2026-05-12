@@ -302,7 +302,19 @@ export default function VagaDetalhes() {
     setAnalises((prev) => prev.map((a) => (a.id === analise.id ? { ...a, status: novoStatus } : a)))
 
     try {
-      await vagaDetalhesService.updateStatus(analise.id, novoStatus)
+      // 4. Ao mudar o status, atualize o banco de dados (tabela analise_cv).
+      const { error: analiseError } = await supabase
+        .from('analise_cv')
+        .update({ status: novoStatus, atualizado_em: new Date().toISOString() })
+        .eq('id', analise.id)
+
+      if (analiseError) throw analiseError
+
+      try {
+        await vagaDetalhesService.updateStatus(analise.id, novoStatus)
+      } catch (e) {
+        console.warn('Erro ao atualizar via serviço, mas DB foi atualizado com sucesso.', e)
+      }
 
       const candidateId = analise.candidato?.id || (analise as any).cv_id
       if (candidateId) {
@@ -311,26 +323,40 @@ export default function VagaDetalhes() {
             data: { user },
           } = await supabase.auth.getUser()
           if (user) {
-            const { data: etapa } = await supabase
+            // 5. Se mudar para "pré_aprovado", adicione o CV ao Kanban como "Novo"
+            let { data: etapa } = await supabase
               .from('etapas')
               .select('id')
               .eq('user_id', user.id)
-              .order('ordem', { ascending: true })
-              .limit(1)
-              .single()
+              .ilike('nome', 'Novo')
+              .maybeSingle()
+
+            if (!etapa) {
+              const { data: fallbackEtapa } = await supabase
+                .from('etapas')
+                .select('id')
+                .eq('user_id', user.id)
+                .order('ordem', { ascending: true })
+                .limit(1)
+                .single()
+              etapa = fallbackEtapa
+            }
 
             if (etapa) {
               await supabase.from('candidatos').update({ etapa_id: etapa.id }).eq('id', candidateId)
             }
           }
         } else {
+          // 6. Se mudar para "reprovado", remova o CV do Kanban.
           await supabase.from('candidatos').update({ etapa_id: null }).eq('id', candidateId)
         }
         window.dispatchEvent(new CustomEvent('kanban:reload'))
       }
 
+      // 8. Recarregue a lista de CVs após mudar o status.
       await fetchData(true)
 
+      // 7. Mostre toast de sucesso
       toast({
         title: 'Status atualizado com sucesso',
         description:
