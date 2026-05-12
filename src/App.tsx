@@ -8,6 +8,7 @@ import NotFound from './pages/NotFound'
 import Layout from './components/Layout'
 import ApplyPage from './pages/Apply'
 import JobsPage from './pages/Jobs'
+import VagaDetalhes from './pages/VagaDetalhes'
 import DashboardPage from './pages/dashboard/DashboardPage'
 import TemplatesPage from './pages/TemplatesPage'
 import UsersPage from './pages/admin/UsersPage'
@@ -41,6 +42,7 @@ const App = () => (
           >
             <Route path="/" element={<Index />} />
             <Route path="/vagas" element={<JobsPage />} />
+            <Route path="/vaga/:id" element={<VagaDetalhes />} />
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/templates" element={<TemplatesPage />} />
             <Route path="/candidatos" element={<CandidatesPage />} />
