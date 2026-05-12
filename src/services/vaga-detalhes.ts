@@ -32,4 +32,10 @@ export const vagaDetalhesService = {
       candidato: Array.isArray(row.candidato) ? row.candidato[0] : row.candidato,
     })) as AnaliseCVComCandidato[]
   },
+
+  async updateStatus(analiseId: string, status: 'pre_aprovado' | 'reprovado'): Promise<void> {
+    const { error } = await supabase.from('analise_cv').update({ status }).eq('id', analiseId)
+
+    if (error) throw error
+  },
 }
