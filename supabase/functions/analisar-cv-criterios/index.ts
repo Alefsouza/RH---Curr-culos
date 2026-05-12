@@ -101,36 +101,126 @@ Deno.serve(async (req: Request) => {
     }
 
     let criteriosText = 'Sem critérios definidos.'
-    let localizacoesText = 'Nenhuma restrição de local'
+    let localizacoesVaga: string[] = []
     let raioKm = 0
 
     if (vaga.criterios_qualificacao && typeof vaga.criterios_qualificacao === 'object') {
       const critObj = vaga.criterios_qualificacao as any
       criteriosText = critObj.texto_livre || JSON.stringify(critObj)
       if (Array.isArray(critObj.localizacoes) && critObj.localizacoes.length > 0) {
-        localizacoesText = critObj.localizacoes
-          .map((l: any) => {
-            return [l.endereco, l.cidade, l.estado].filter(Boolean).join(', ')
-          })
-          .join(' | ')
+        localizacoesVaga = critObj.localizacoes.map((l: any) => {
+          return [l.endereco, l.cidade, l.estado].filter(Boolean).join(', ')
+        })
       }
       raioKm = critObj.raio_km || 0
     } else if (typeof vaga.criterios_qualificacao === 'string') {
       criteriosText = vaga.criterios_qualificacao
     }
 
-    const enderecoCV =
-      extracted.endereco ||
-      extracted.location ||
-      extracted.cidade ||
-      'Endereço não explícito; inferir dos dados do currículo se possível.'
+    const enderecoCV = extracted.endereco || extracted.location || extracted.cidade || ''
+    if (!enderecoCV) {
+      return new Response(
+        JSON.stringify({
+          error:
+            'Endereço do candidato não encontrado no currículo. O endereço é obrigatório para validação.',
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
+    }
+
+    const googleApiKey = Deno.env.get('GOOGLE_API_KEY')
+    let menorDistanciaKm: number = 0
+    let qualificadoPorLocalizacao = true
+    let distanciaCalculada = false
+
+    if (localizacoesVaga.length > 0 && raioKm > 0) {
+      if (!googleApiKey) {
+        console.error('GOOGLE_API_KEY não configurada.')
+        return new Response(
+          JSON.stringify({
+            error: 'Erro de configuração do servidor: Google Maps API Key ausente.',
+          }),
+          {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          },
+        )
+      }
+
+      const callGoogleMapsWithRetry = async (
+        origin: string,
+        destination: string,
+        retries = 3,
+        delays = [2000, 4000, 8000],
+      ): Promise<number | null> => {
+        try {
+          const url = new URL('https://maps.googleapis.com/maps/api/distancematrix/json')
+          url.searchParams.append('origins', origin)
+          url.searchParams.append('destinations', destination)
+          url.searchParams.append('key', googleApiKey)
+          url.searchParams.append('units', 'metric')
+
+          const response = await fetch(url.toString(), { method: 'POST' })
+          if (!response.ok) {
+            if (response.status === 503 && retries > 0) {
+              throw new Error('503')
+            }
+            throw new Error(`HTTP Error ${response.status}`)
+          }
+          const data = await response.json()
+
+          if (
+            data.status === 'OK' &&
+            data.rows &&
+            data.rows[0].elements &&
+            data.rows[0].elements[0].status === 'OK'
+          ) {
+            const distanceMeters = data.rows[0].elements[0].distance.value
+            return distanceMeters / 1000
+          }
+          return null
+        } catch (error: any) {
+          if (retries > 0) {
+            const delay = delays[3 - retries] || 8000
+            console.log(
+              `Erro Google Maps. Tentando novamente em ${delay}ms... (${retries} tentativas)`,
+            )
+            await new Promise((res) => setTimeout(res, delay))
+            return callGoogleMapsWithRetry(origin, destination, retries - 1, delays)
+          }
+          console.error('Erro final Google Maps:', error)
+          return null
+        }
+      }
+
+      let minC: number | null = null
+      for (const locVaga of localizacoesVaga) {
+        const dist = await callGoogleMapsWithRetry(enderecoCV, locVaga)
+        if (dist !== null) {
+          if (minC === null || dist < minC) {
+            minC = dist
+          }
+        }
+      }
+
+      if (minC !== null) {
+        menorDistanciaKm = minC
+        qualificadoPorLocalizacao = menorDistanciaKm <= raioKm
+        distanciaCalculada = true
+      } else {
+        qualificadoPorLocalizacao = false
+      }
+    }
 
     const promptText = `Analise este currículo comparado com estes critérios:
 - Critérios textuais: ${criteriosText}
-- Localizações aceitas: ${localizacoesText}
-- Raio de aceitação: ${raioKm} km
-
-Endereço do candidato: ${enderecoCV}
+- Localização do candidato: ${enderecoCV}
+- Distância até a vaga: ${distanciaCalculada ? menorDistanciaKm.toFixed(2) : 0} km
+- Raio aceito: ${raioKm} km
+- Qualificado por localização: ${qualificadoPorLocalizacao}
 
 Dados completos do currículo:
 ${JSON.stringify(cvData)}
@@ -138,8 +228,8 @@ ${JSON.stringify(cvData)}
 Retorne ESTRITAMENTE um JSON com as seguintes chaves:
 - status (pre_aprovado ou reprovado)
 - motivo (explicação breve em português)
-- validacao_localizacao (true se dentro do raio ou sem restrição, false se fora do raio)
-- distancia_km (distância estimada em km, ou 0 se não aplicável)`
+- validacao_localizacao (true se dentro do raio, false se fora)
+- distancia_km (distância calculada)`
 
     const openaiKey =
       Deno.env.get('OPENIA_KEY') || Deno.env.get('OPENAI_API_KEY') || Deno.env.get('OPENAI_KEY')
@@ -202,16 +292,15 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
         ? resultJson.status
         : 'reprovado'
     let motivo = resultJson.motivo || 'Análise concluída sem detalhes adicionais.'
-    const validacaoLocalizacao = resultJson.validacao_localizacao
 
-    if (validacaoLocalizacao === false) {
+    if (distanciaCalculada && !qualificadoPorLocalizacao) {
       status = 'reprovado'
       if (
         !motivo.toLowerCase().includes('localização') &&
         !motivo.toLowerCase().includes('distância') &&
         !motivo.toLowerCase().includes('raio')
       ) {
-        motivo = `Reprovado por localização: Distância estimada de ${resultJson.distancia_km || '?'} km ultrapassa o limite aceitável. ${motivo}`
+        motivo = `Reprovado por localização: Distância calculada de ${menorDistanciaKm.toFixed(2)} km ultrapassa o limite aceitável de ${raioKm} km. ${motivo}`
       }
     }
 
