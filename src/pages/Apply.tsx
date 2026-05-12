@@ -274,7 +274,7 @@ export default function ApplyPage() {
                         extractedData.skills.slice(0, 6).map((skill: string, i: number) => (
                           <span
                             key={i}
-                            className="px-2 py-1 bg-primary/10 text-primary-foreground rounded-md text-xs font-medium"
+                            className="px-2 py-1 bg-primary/10 text-black rounded-md text-xs font-medium"
                           >
                             {skill}
                           </span>
