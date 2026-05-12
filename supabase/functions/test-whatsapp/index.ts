@@ -29,7 +29,6 @@ Deno.serve(async (req: Request) => {
 
     const uazapiUrl = Deno.env.get('UAZAPI_URL') || 'https://api.uazapi.com'
     const uazapiKey = Deno.env.get('UAZAPI_KEY') || ''
-    const instanceId = Deno.env.get('UAZAPI_INSTANCE_ID') || ''
 
     if (!uazapiKey) {
       console.log('Aviso: UAZAPI_KEY não configurada. Simulando sucesso.')
@@ -40,22 +39,22 @@ Deno.serve(async (req: Request) => {
     }
 
     const cleanPhone = phone.replace(/\D/g, '')
-    let formattedPhone = cleanPhone
-    if (formattedPhone.length <= 11) {
-      formattedPhone = '55' + formattedPhone
+    let numWpp = cleanPhone
+    if (numWpp.startsWith('55') && numWpp.length >= 12) {
+      numWpp = numWpp.substring(2)
     }
 
-    const apiUrl = `${uazapiUrl}/api/send-message`
+    const baseUrl = uazapiUrl.endsWith('/') ? uazapiUrl.slice(0, -1) : uazapiUrl
+    const apiUrl = `${baseUrl}/message/sendText`
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${uazapiKey}`,
+        token: uazapiKey,
       },
       body: JSON.stringify({
-        phone: formattedPhone,
-        message: message,
-        instance_id: instanceId,
+        numero: numWpp,
+        mensagem: message,
       }),
     })
 

@@ -143,7 +143,6 @@ Deno.serve(async (req: Request) => {
 
     const uazapiUrl = Deno.env.get('UAZAPI_URL') || 'https://api.uazapi.com'
     const uazapiKey = Deno.env.get('UAZAPI_KEY') || ''
-    const instanceId = Deno.env.get('UAZAPI_INSTANCE_ID') || ''
 
     const sendWhatsAppWithRetry = async (
       phone: string,
@@ -152,17 +151,23 @@ Deno.serve(async (req: Request) => {
       backoff = 2000,
     ): Promise<any> => {
       try {
-        const apiUrl = `${uazapiUrl}/api/send-message`
+        const baseUrl = uazapiUrl.endsWith('/') ? uazapiUrl.slice(0, -1) : uazapiUrl
+        const apiUrl = `${baseUrl}/message/sendText`
+
+        let numWpp = phone
+        if (numWpp.startsWith('55') && numWpp.length >= 12) {
+          numWpp = numWpp.substring(2)
+        }
+
         const response = await fetch(apiUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${uazapiKey}`,
+            token: uazapiKey,
           },
           body: JSON.stringify({
-            phone: phone,
-            message: message,
-            instance_id: instanceId,
+            numero: numWpp,
+            mensagem: message,
           }),
         })
 
