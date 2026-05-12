@@ -19,6 +19,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
 import { supabase } from '@/lib/supabase/client'
@@ -43,6 +51,9 @@ export function KanbanColumn({
   const [isDragOver, setIsDragOver] = useState(false)
   const [isAlertOpen, setIsAlertOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [newStageName, setNewStageName] = useState(stage.name)
+  const [isSaving, setIsSaving] = useState(false)
   const { toast } = useToast()
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -62,6 +73,43 @@ export function KanbanColumn({
     const candidateId = e.dataTransfer.getData('text/plain')
     if (candidateId) {
       onDrop(candidateId, stage.id)
+    }
+  }
+
+  const handleEditClick = (e: React.MouseEvent) => {
+    e.preventDefault()
+    setNewStageName(stage.name)
+    setIsEditDialogOpen(true)
+  }
+
+  const handleSaveEdit = async () => {
+    if (!newStageName.trim() || newStageName.trim() === stage.name) {
+      setIsEditDialogOpen(false)
+      return
+    }
+    try {
+      setIsSaving(true)
+      const { error } = await supabase
+        .from('etapas')
+        .update({ nome: newStageName.trim() })
+        .eq('id', stage.id)
+
+      if (error) throw error
+
+      toast({
+        title: 'Etapa renomeada com sucesso',
+      })
+
+      window.dispatchEvent(new CustomEvent('kanban:reload'))
+      setIsEditDialogOpen(false)
+    } catch (err: any) {
+      toast({
+        title: 'Erro ao renomear etapa',
+        description: err.message,
+        variant: 'destructive',
+      })
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -125,7 +173,7 @@ export function KanbanColumn({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40">
-              <DropdownMenuItem>Editar Etapa</DropdownMenuItem>
+              <DropdownMenuItem onClick={handleEditClick}>Editar Etapa</DropdownMenuItem>
               <DropdownMenuItem
                 onClick={handleDeleteClick}
                 className="text-red-600 focus:bg-red-50 focus:text-red-700"
@@ -191,6 +239,37 @@ export function KanbanColumn({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar Etapa</DialogTitle>
+            <DialogDescription>Altere o nome da etapa abaixo.</DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <input
+              type="text"
+              value={newStageName}
+              onChange={(e) => setNewStageName(e.target.value)}
+              className="flex h-10 w-full rounded-md border border-slate-300 bg-transparent px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+              placeholder="Nome da etapa"
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsEditDialogOpen(false)}
+              disabled={isSaving}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveEdit} disabled={isSaving}>
+              {isSaving ? 'Salvando...' : 'Salvar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
