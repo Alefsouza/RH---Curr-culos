@@ -113,16 +113,42 @@ export function KanbanColumn({
     }
   }
 
-  const handleDeleteClick = (e: React.MouseEvent) => {
+  const handleDeleteClick = async (e: React.MouseEvent) => {
     e.preventDefault()
+
     if (candidates.length > 0) {
       toast({
         title:
           'Não é possível deletar. Existem currículos nesta etapa. Mova-os para outra etapa primeiro.',
         variant: 'destructive',
       })
-    } else {
+      return
+    }
+
+    try {
+      const { count, error } = await supabase
+        .from('candidatos')
+        .select('*', { count: 'exact', head: true })
+        .eq('etapa_id', stage.id)
+
+      if (error) throw error
+
+      if (count && count > 0) {
+        toast({
+          title:
+            'Não é possível deletar. Existem currículos nesta etapa. Mova-os para outra etapa primeiro.',
+          variant: 'destructive',
+        })
+        return
+      }
+
       setIsAlertOpen(true)
+    } catch (err: any) {
+      toast({
+        title: 'Erro ao verificar a etapa',
+        description: err.message,
+        variant: 'destructive',
+      })
     }
   }
 
