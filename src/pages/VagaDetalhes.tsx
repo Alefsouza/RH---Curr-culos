@@ -102,7 +102,12 @@ function MobileCVCard({
       </div>
 
       <div className="bg-slate-50 p-3 rounded-lg flex items-center justify-between border border-slate-100">
-        <Label className="text-sm font-medium text-slate-700">Status da Análise</Label>
+        <Label
+          className="text-sm font-medium text-slate-700 cursor-pointer"
+          onClick={() => onToggleStatus(analise)}
+        >
+          Status da Análise
+        </Label>
         <div className="flex items-center gap-2">
           <span
             className={`text-xs font-semibold ${isAprovado ? 'text-green-600' : 'text-slate-500'}`}
@@ -298,32 +303,21 @@ export default function VagaDetalhes() {
   const handleToggleStatus = async (analise: AnaliseCVComCandidato) => {
     const novoStatus = analise.status === 'pre_aprovado' ? 'reprovado' : 'pre_aprovado'
 
-    // Otimistic update
+    // Optimistic update
     setAnalises((prev) => prev.map((a) => (a.id === analise.id ? { ...a, status: novoStatus } : a)))
 
     try {
-      // 4. Ao mudar o status, atualize o banco de dados (tabela analise_cv).
-      const { error: analiseError } = await supabase
-        .from('analise_cv')
-        .update({ status: novoStatus, atualizado_em: new Date().toISOString() })
-        .eq('id', analise.id)
+      // 4. Update status in db
+      await vagaDetalhesService.updateStatus(analise.id, novoStatus)
 
-      if (analiseError) throw analiseError
-
-      try {
-        await vagaDetalhesService.updateStatus(analise.id, novoStatus)
-      } catch (e) {
-        console.warn('Erro ao atualizar via serviço, mas DB foi atualizado com sucesso.', e)
-      }
-
-      const candidateId = analise.candidato?.id || (analise as any).cv_id
+      const candidateId = analise.candidato?.id || analise.cv_id
       if (candidateId) {
         if (novoStatus === 'pre_aprovado') {
           const {
             data: { user },
           } = await supabase.auth.getUser()
           if (user) {
-            // 5. Se mudar para "pré_aprovado", adicione o CV ao Kanban como "Novo"
+            // 5. Adicione o CV ao Kanban como "Novo"
             let { data: etapa } = await supabase
               .from('etapas')
               .select('id')
@@ -332,14 +326,17 @@ export default function VagaDetalhes() {
               .maybeSingle()
 
             if (!etapa) {
-              const { data: fallbackEtapa } = await supabase
+              const { data: newEtapa } = await supabase
                 .from('etapas')
+                .insert({
+                  nome: 'Novo',
+                  ordem: 0,
+                  cor: 'bg-blue-100',
+                  user_id: user.id,
+                })
                 .select('id')
-                .eq('user_id', user.id)
-                .order('ordem', { ascending: true })
-                .limit(1)
                 .single()
-              etapa = fallbackEtapa
+              etapa = newEtapa
             }
 
             if (etapa) {
@@ -347,22 +344,22 @@ export default function VagaDetalhes() {
             }
           }
         } else {
-          // 6. Se mudar para "reprovado", remova o CV do Kanban.
+          // 6. Remova o CV do Kanban
           await supabase.from('candidatos').update({ etapa_id: null }).eq('id', candidateId)
         }
         window.dispatchEvent(new CustomEvent('kanban:reload'))
       }
 
-      // 8. Recarregue a lista de CVs após mudar o status.
+      // 8. Recarregue a lista
       await fetchData(true)
 
-      // 7. Mostre toast de sucesso
+      // 7. Toast
       toast({
         title: 'Status atualizado com sucesso',
         description:
           novoStatus === 'pre_aprovado'
-            ? `O currículo de ${analise.candidato?.nome || 'candidato'} foi adicionado ao Kanban.`
-            : `O currículo de ${analise.candidato?.nome || 'candidato'} foi removido do Kanban.`,
+            ? `Candidato qualificado e adicionado ao Kanban.`
+            : `Candidato não qualificado e removido do Kanban.`,
       })
     } catch (err) {
       // Revert if error
