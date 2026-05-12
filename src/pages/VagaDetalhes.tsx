@@ -270,23 +270,26 @@ export default function VagaDetalhes() {
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<'todos' | 'qualificados' | 'nao_qualificados'>('todos')
 
-  const fetchData = useCallback(async () => {
-    if (!id) return
-    try {
-      setLoading(true)
-      setError(null)
-      const [vagaData, analisesData] = await Promise.all([
-        vagaDetalhesService.getVaga(id),
-        vagaDetalhesService.getAnalises(id),
-      ])
-      setVaga(vagaData)
-      setAnalises(analisesData)
-    } catch (err: any) {
-      setError('Não foi possível carregar os detalhes da vaga. ' + err.message)
-    } finally {
-      setLoading(false)
-    }
-  }, [id])
+  const fetchData = useCallback(
+    async (silent = false) => {
+      if (!id) return
+      try {
+        if (!silent) setLoading(true)
+        setError(null)
+        const [vagaData, analisesData] = await Promise.all([
+          vagaDetalhesService.getVaga(id),
+          vagaDetalhesService.getAnalises(id),
+        ])
+        setVaga(vagaData)
+        setAnalises(analisesData)
+      } catch (err: any) {
+        if (!silent) setError('Não foi possível carregar os detalhes da vaga. ' + err.message)
+      } finally {
+        if (!silent) setLoading(false)
+      }
+    },
+    [id],
+  )
 
   useEffect(() => {
     fetchData()
@@ -301,9 +304,9 @@ export default function VagaDetalhes() {
     try {
       await vagaDetalhesService.updateStatus(analise.id, novoStatus)
 
-      if (novoStatus === 'pre_aprovado') {
-        const candidateId = analise.candidato?.id || (analise as any).cv_id
-        if (candidateId) {
+      const candidateId = analise.candidato?.id || (analise as any).cv_id
+      if (candidateId) {
+        if (novoStatus === 'pre_aprovado') {
           const {
             data: { user },
           } = await supabase.auth.getUser()
@@ -318,22 +321,22 @@ export default function VagaDetalhes() {
 
             if (etapa) {
               await supabase.from('candidatos').update({ etapa_id: etapa.id }).eq('id', candidateId)
-
-              window.dispatchEvent(new CustomEvent('kanban:reload'))
             }
           }
+        } else {
+          await supabase.from('candidatos').update({ etapa_id: null }).eq('id', candidateId)
         }
+        window.dispatchEvent(new CustomEvent('kanban:reload'))
       }
 
+      await fetchData(true)
+
       toast({
-        title:
-          novoStatus === 'pre_aprovado'
-            ? 'Currículo qualificado e adicionado ao Kanban'
-            : 'Status atualizado',
+        title: 'Status atualizado com sucesso',
         description:
           novoStatus === 'pre_aprovado'
             ? `O currículo de ${analise.candidato?.nome || 'candidato'} foi adicionado ao Kanban.`
-            : `O currículo de ${analise.candidato?.nome || 'candidato'} foi marcado como Não Qualificado.`,
+            : `O currículo de ${analise.candidato?.nome || 'candidato'} foi removido do Kanban.`,
       })
     } catch (err) {
       // Revert if error
@@ -341,7 +344,7 @@ export default function VagaDetalhes() {
         prev.map((a) => (a.id === analise.id ? { ...a, status: analise.status } : a)),
       )
       toast({
-        title: 'Erro ao atualizar',
+        title: 'Erro ao atualizar status',
         description: 'Não foi possível atualizar o status do currículo. Tente novamente.',
         variant: 'destructive',
       })
@@ -384,7 +387,7 @@ export default function VagaDetalhes() {
           <AlertTitle>Erro</AlertTitle>
           <AlertDescription className="flex flex-col items-start gap-4">
             <p>{error || 'Vaga não encontrada.'}</p>
-            <Button variant="outline" size="sm" onClick={fetchData}>
+            <Button variant="outline" size="sm" onClick={() => fetchData(false)}>
               <RefreshCw className="h-4 w-4 mr-2" />
               Tentar novamente
             </Button>
