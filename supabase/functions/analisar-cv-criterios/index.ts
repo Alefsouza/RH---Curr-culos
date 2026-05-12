@@ -242,6 +242,38 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
       analiseData = data
     }
 
+    if (status === 'pre_aprovado') {
+      let { data: etapaNovos } = await supabaseAdmin
+        .from('etapas')
+        .select('id')
+        .eq('user_id', user.id)
+        .ilike('nome', 'Novos')
+        .maybeSingle()
+
+      if (!etapaNovos) {
+        const { data: novaEtapa } = await supabaseAdmin
+          .from('etapas')
+          .insert({
+            nome: 'Novos',
+            ordem: 0,
+            cor: 'bg-blue-100',
+            user_id: user.id,
+          })
+          .select('id')
+          .single()
+        etapaNovos = novaEtapa
+      }
+
+      if (etapaNovos) {
+        await supabaseAdmin.from('candidato_etapa').insert({
+          candidato_id: cv_id,
+          etapa_id: etapaNovos.id,
+          usuario_id: user.id,
+        })
+        await supabaseAdmin.from('candidatos').update({ etapa_id: etapaNovos.id }).eq('id', cv_id)
+      }
+    }
+
     return new Response(JSON.stringify({ data: { success: true, analise: analiseData } }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
