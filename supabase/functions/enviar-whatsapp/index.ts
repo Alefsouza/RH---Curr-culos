@@ -111,10 +111,26 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    const telefone = candidato.telefone
+    console.log('Buscando número de WhatsApp em mensagens_whatsapp')
+    const { data: mensagemWpp, error: msgError } = await supabase
+      .from('mensagens_whatsapp')
+      .select('numero_whatsapp')
+      .eq('candidato_id', candidato_id)
+      .order('criado_em', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (msgError) {
+      console.log('Erro ao buscar número em mensagens_whatsapp:', msgError.message)
+    }
+
+    const telefone = mensagemWpp?.numero_whatsapp
     if (!telefone) {
       return new Response(
-        JSON.stringify({ success: false, message: 'O candidato não possui telefone cadastrado.' }),
+        JSON.stringify({
+          success: false,
+          message: 'Número de WhatsApp não encontrado para este candidato',
+        }),
         {
           status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
