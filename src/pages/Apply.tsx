@@ -174,12 +174,15 @@ export default function ApplyPage() {
 
       if (funcData?.candidato_id && vagaId) {
         try {
+          console.log('cv_id:', funcData.candidato_id)
+          console.log('vaga_id:', vagaId)
+
           const { error: analisarError } = await supabase.functions.invoke(
             'analisar-cv-criterios',
             {
               body: {
-                console.log('cv_id:', funcData.candidato_id);
-                console.log('vaga_id:', vagaId);
+                cv_id: funcData.candidato_id,
+                vaga_id: vagaId,
               },
             },
           )
