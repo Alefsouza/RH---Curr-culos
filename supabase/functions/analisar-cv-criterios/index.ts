@@ -279,9 +279,14 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
       )
     }
 
+    let aiStatus = resultJson.status ? String(resultJson.status).toLowerCase().trim() : 'reprovado'
     let status =
-      resultJson.status === 'pre_aprovado' || resultJson.status === 'reprovado'
-        ? resultJson.status
+      aiStatus === 'pre_aprovado' ||
+      aiStatus === 'pré-aprovado' ||
+      aiStatus === 'pre_aprovada' ||
+      aiStatus === 'aprovado' ||
+      aiStatus === 'pre aprovado'
+        ? 'pre_aprovado'
         : 'reprovado'
     let motivo = resultJson.motivo || 'Análise concluída sem detalhes adicionais.'
 
@@ -329,15 +334,20 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
     }
 
     if (status === 'pre_aprovado') {
-      let { data: etapaNovos } = await supabaseAdmin
+      let { data: etapaNovos, error: etapaError } = await supabaseAdmin
         .from('etapas')
         .select('id')
         .eq('user_id', user.id)
         .ilike('nome', 'Novos')
+        .limit(1)
         .maybeSingle()
 
+      if (etapaError) {
+        console.error('Erro ao buscar etapa Novos:', etapaError)
+      }
+
       if (!etapaNovos) {
-        const { data: novaEtapa } = await supabaseAdmin
+        const { data: novaEtapa, error: insertEtapaError } = await supabaseAdmin
           .from('etapas')
           .insert({
             nome: 'Novos',
@@ -347,16 +357,34 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
           })
           .select('id')
           .single()
+
+        if (insertEtapaError) {
+          console.error('Erro ao criar etapa Novos:', insertEtapaError)
+        }
         etapaNovos = novaEtapa
       }
 
       if (etapaNovos) {
-        await supabaseAdmin.from('candidato_etapa').insert({
-          candidato_id: cv_id,
-          etapa_id: etapaNovos.id,
-          usuario_id: user.id,
-        })
-        await supabaseAdmin.from('candidatos').update({ etapa_id: etapaNovos.id }).eq('id', cv_id)
+        const { error: insertCandidatoEtapaError } = await supabaseAdmin
+          .from('candidato_etapa')
+          .insert({
+            candidato_id: cv_id,
+            etapa_id: etapaNovos.id,
+            usuario_id: user.id,
+          })
+
+        if (insertCandidatoEtapaError) {
+          console.error('Erro ao inserir candidato_etapa:', insertCandidatoEtapaError)
+        }
+
+        const { error: updateCandidatoError } = await supabaseAdmin
+          .from('candidatos')
+          .update({ etapa_id: etapaNovos.id })
+          .eq('id', cv_id)
+
+        if (updateCandidatoError) {
+          console.error('Erro ao atualizar candidato:', updateCandidatoError)
+        }
       }
     }
 
