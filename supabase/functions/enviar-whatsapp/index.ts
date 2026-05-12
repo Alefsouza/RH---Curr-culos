@@ -172,9 +172,14 @@ Deno.serve(async (req: Request) => {
             await new Promise((resolve) => setTimeout(resolve, backoff))
             return sendWhatsAppWithRetry(phone, message, retries - 1, backoff * 2)
           }
-          throw new Error(`Erro na UAZAPI: ${response.status} - ${response.statusText}`)
+          let errorDetails = ''
+          try {
+            errorDetails = await response.text()
+          } catch (e) {}
+          throw new Error(
+            `Erro na UAZAPI: ${response.status} - ${response.statusText} | Detalhes: ${errorDetails}`,
+          )
         }
-
         return await response.json()
       } catch (error: any) {
         if (retries > 0 && (error.message?.includes('503') || error.message?.includes('fetch'))) {
@@ -191,17 +196,23 @@ Deno.serve(async (req: Request) => {
     console.log('5. Enviando mensagem via UAZAPI')
     let isSuccess = false
     let responseData = null
+    let errorMessage = null
     try {
       if (uazapiKey) {
         responseData = await sendWhatsAppWithRetry(formattedPhone, mensagemTexto)
         isSuccess =
           responseData?.success === true || responseData?.status === 'success' || !!responseData
+        if (!isSuccess) {
+          errorMessage = 'A API retornou sucesso falso: ' + JSON.stringify(responseData)
+          console.error('Falha lógica na UAZAPI:', errorMessage)
+        }
       } else {
         console.log('Aviso: UAZAPI_KEY não configurada. Simulando envio para ambiente de teste.')
         isSuccess = true
       }
     } catch (error: any) {
-      console.error('Erro ao tentar enviar WhatsApp:', error.message)
+      errorMessage = error.message
+      console.error('Erro ao tentar enviar WhatsApp (catch):', errorMessage)
     }
 
     console.log(`6. Registrando status de envio: ${isSuccess ? 'enviada' : 'falha'}`)
@@ -218,10 +229,16 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!isSuccess) {
+      // Retornamos 200 com flag success=false para não interromper o fluxo do frontend
       return new Response(
-        JSON.stringify({ error: 'Falha ao enviar mensagem via WhatsApp pela API.' }),
+        JSON.stringify({
+          success: false,
+          message:
+            'A mensagem não pôde ser enviada via WhatsApp, mas o fluxo continuará. Verifique os logs.',
+          detalhe: errorMessage,
+        }),
         {
-          status: 500,
+          status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         },
       )
