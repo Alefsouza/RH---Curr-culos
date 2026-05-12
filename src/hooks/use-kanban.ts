@@ -35,6 +35,15 @@ export function useKanban() {
     loadData()
   }, [loadData])
 
+  useEffect(() => {
+    const handleCandidateDelete = (event: any) => {
+      const id = event.detail.candidateId
+      setCandidates((prev) => prev.filter((c) => c.id !== id))
+    }
+    window.addEventListener('kanban:delete-candidate', handleCandidateDelete)
+    return () => window.removeEventListener('kanban:delete-candidate', handleCandidateDelete)
+  }, [])
+
   const moveCandidate = useCallback(
     async (candidateId: string, newStageId: string) => {
       const previousCandidates = [...candidates]
@@ -61,12 +70,11 @@ export function useKanban() {
         )
 
         toast({
-          title: 'Candidato movido!',
-          description: `${candidate?.name} movido para ${stage?.name}.`,
+          title: 'Currículo movido com sucesso',
         })
       } catch (err: any) {
         setCandidates(previousCandidates)
-        toast({ variant: 'destructive', title: 'Erro ao mover', description: err.message })
+        toast({ variant: 'destructive', title: 'Erro ao mover currículo. Tente novamente.' })
       }
     },
     [candidates, stages, toast],

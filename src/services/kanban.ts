@@ -15,10 +15,14 @@ export async function fetchStages() {
 }
 
 export async function fetchCandidates() {
-  const { data, error } = await supabase.from('candidatos').select(`
+  const { data, error } = await supabase
+    .from('candidatos')
+    .select(`
     *,
-    vagas ( titulo )
+    vagas ( titulo ),
+    analise_cv!inner ( status )
   `)
+    .eq('analise_cv.status', 'pre_aprovado')
   if (error) throw error
   return data.map((d) => ({
     id: d.id,
@@ -54,4 +58,10 @@ export async function updateCandidateStage(candidateId: string, stageId: string)
   } catch (e) {
     console.error('Erro ao invocar envio de WhatsApp:', e)
   }
+}
+
+export async function deleteCandidate(candidateId: string) {
+  await supabase.from('analise_cv').delete().eq('cv_id', candidateId)
+  const { error } = await supabase.from('candidatos').delete().eq('id', candidateId)
+  if (error) throw error
 }

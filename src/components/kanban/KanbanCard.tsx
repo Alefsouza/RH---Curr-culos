@@ -2,8 +2,11 @@ import React from 'react'
 import { Candidate } from '@/types/kanban'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Mail, Phone, GripVertical, ExternalLink } from 'lucide-react'
+import { Mail, Phone, GripVertical, ExternalLink, Trash2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { Button } from '@/components/ui/button'
+import { deleteCandidate } from '@/services/kanban'
+import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
 interface KanbanCardProps {
@@ -20,11 +23,28 @@ const sourceColors: Record<string, string> = {
 }
 
 export function KanbanCard({ candidate, isDragging, onDragStart, onDragEnd }: KanbanCardProps) {
+  const { toast } = useToast()
+
   const handleDragStart = (e: React.DragEvent) => {
     e.dataTransfer.setData('text/plain', candidate.id)
     e.dataTransfer.effectAllowed = 'move'
     // Small delay to allow the drag image to be generated before we dim the original
     setTimeout(() => onDragStart(candidate.id), 0)
+  }
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!confirm('Deseja excluir este currículo do Kanban?')) return
+    try {
+      await deleteCandidate(candidate.id)
+      toast({ title: 'Currículo excluído com sucesso.' })
+      window.dispatchEvent(
+        new CustomEvent('kanban:delete-candidate', { detail: { candidateId: candidate.id } }),
+      )
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Erro ao excluir currículo. Tente novamente.' })
+    }
   }
 
   return (
@@ -40,8 +60,18 @@ export function KanbanCard({ candidate, isDragging, onDragStart, onDragEnd }: Ka
       <div className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity">
         <GripVertical size={16} />
       </div>
+      <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 text-slate-400 hover:text-red-600 hover:bg-red-50"
+          onClick={handleDelete}
+        >
+          <Trash2 size={14} />
+        </Button>
+      </div>
       <CardContent className="p-4 pl-7 space-y-3">
-        <div>
+        <div className="pr-4">
           <h4 className="font-semibold text-slate-800 leading-tight hover:text-primary transition-colors">
             <Link
               to={`/candidato/${candidate.id}`}
