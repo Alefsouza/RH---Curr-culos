@@ -178,8 +178,8 @@ export default function ApplyPage() {
             'analisar-cv-criterios',
             {
               body: {
-                cv_id: funcData.candidato_id,
-                vaga_id: vagaId,
+                console.log('cv_id:', funcData.candidato_id);
+                console.log('vaga_id:', vagaId);
               },
             },
           )
