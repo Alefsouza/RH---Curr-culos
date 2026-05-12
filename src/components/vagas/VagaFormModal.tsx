@@ -21,7 +21,6 @@ import {
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { VagaComEstatisticas, vagasService } from '@/services/vagas'
 import { useAuth } from '@/hooks/use-auth'
 import { toast } from 'sonner'
@@ -134,7 +133,7 @@ export function VagaFormModal({ isOpen, onClose, vaga, onSaved }: VagaFormModalP
           <DialogTitle>{vaga ? 'Editar Vaga' : 'Nova Vaga'}</DialogTitle>
         </DialogHeader>
 
-        <ScrollArea className="px-6 flex-grow">
+        <div className="px-6 overflow-y-auto flex-1 min-h-0">
           <Form {...form}>
             <form id="vaga-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 pb-6">
               <FormField
@@ -285,7 +284,7 @@ export function VagaFormModal({ isOpen, onClose, vaga, onSaved }: VagaFormModalP
               />
             </form>
           </Form>
-        </ScrollArea>
+        </div>
 
         <DialogFooter className="p-6 pt-4 border-t">
           <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>
