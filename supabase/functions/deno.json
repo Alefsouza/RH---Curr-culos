@@ -3,10 +3,10 @@
     "outlook-webhook": 7,
     "process-resume": 8,
     "analyze-resume": 21,
-    "enviar-whatsapp": 5,
-    "test-whatsapp": 3,
+    "enviar-whatsapp": 6,
+    "test-whatsapp": 4,
     "manage-users": 3,
     "analisar-cv-criterios": 10,
-    "enviar-mensagem-whatsapp": 1
+    "enviar-mensagem-whatsapp": 2
   }
 }
