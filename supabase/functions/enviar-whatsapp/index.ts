@@ -76,9 +76,12 @@ Deno.serve(async (req: Request) => {
 
     if (!template || !template.texto) {
       return new Response(
-        JSON.stringify({ error: 'Template de mensagem não encontrado para esta etapa.' }),
+        JSON.stringify({
+          success: false,
+          message: 'Template de mensagem não encontrado para esta etapa.',
+        }),
         {
-          status: 400,
+          status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         },
       )
@@ -93,18 +96,21 @@ Deno.serve(async (req: Request) => {
       .single()
 
     if (candidatoError || !candidato) {
-      return new Response(JSON.stringify({ error: 'Candidato não encontrado.' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(
+        JSON.stringify({ success: false, message: 'Candidato não encontrado.' }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
     }
 
     const telefone = candidato.telefone
     if (!telefone) {
       return new Response(
-        JSON.stringify({ error: 'O candidato não possui telefone cadastrado.' }),
+        JSON.stringify({ success: false, message: 'O candidato não possui telefone cadastrado.' }),
         {
-          status: 400,
+          status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         },
       )
@@ -115,10 +121,11 @@ Deno.serve(async (req: Request) => {
     if (cleanPhone.length < 10 || cleanPhone.length > 13) {
       return new Response(
         JSON.stringify({
-          error: 'O telefone do candidato é inválido. Formato brasileiro esperado.',
+          success: false,
+          message: 'O telefone do candidato é inválido. Formato brasileiro esperado.',
         }),
         {
-          status: 400,
+          status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         },
       )

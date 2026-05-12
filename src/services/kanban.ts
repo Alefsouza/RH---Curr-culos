@@ -53,6 +53,9 @@ export async function updateCandidateStage(candidateId: string, stageId: string)
         .invoke('enviar-whatsapp', {
           body: { candidato_id: candidateId, etapa_id: stageId },
         })
+        .then(({ error }) => {
+          if (error) console.error('Erro no Edge Function enviar-whatsapp:', error)
+        })
         .catch(console.error)
     }
   } catch (e) {

@@ -47,10 +47,13 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!template || !template.texto) {
-      return new Response(JSON.stringify({ error: 'Mensagem não configurada para esta etapa' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(
+        JSON.stringify({ success: false, message: 'Mensagem não configurada para esta etapa' }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
     }
 
     const { data: msgWpp, error: wppError } = await supabase
@@ -67,10 +70,13 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!msgWpp || !msgWpp.numero_whatsapp) {
-      return new Response(JSON.stringify({ error: 'Número de WhatsApp não encontrado' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(
+        JSON.stringify({ success: false, message: 'Número de WhatsApp não encontrado' }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
     }
 
     const { data: candidato, error: candError } = await supabase
