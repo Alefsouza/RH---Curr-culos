@@ -1,11 +1,11 @@
 {
   "_versions": {
     "outlook-webhook": 4,
-    "process-resume": 4,
+    "process-resume": 5,
     "analyze-resume": 18,
     "enviar-whatsapp": 2,
     "test-whatsapp": 2,
     "manage-users": 2,
-    "analisar-cv-criterios": 4
+    "analisar-cv-criterios": 5
   }
 }
