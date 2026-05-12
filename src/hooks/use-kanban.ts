@@ -44,13 +44,18 @@ export function useKanban() {
       const id = event.detail.stageId
       setStages((prev) => prev.filter((s) => s.id !== id))
     }
+    const handleReload = () => {
+      loadData()
+    }
     window.addEventListener('kanban:delete-candidate', handleCandidateDelete)
     window.addEventListener('kanban:delete-stage', handleStageDelete)
+    window.addEventListener('kanban:reload', handleReload)
     return () => {
       window.removeEventListener('kanban:delete-candidate', handleCandidateDelete)
       window.removeEventListener('kanban:delete-stage', handleStageDelete)
+      window.removeEventListener('kanban:reload', handleReload)
     }
-  }, [])
+  }, [loadData])
 
   const moveCandidate = useCallback(
     async (candidateId: string, newStageId: string) => {

@@ -23,6 +23,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { useToast } from '@/hooks/use-toast'
+import { supabase } from '@/lib/supabase/client'
 import {
   AlertCircle,
   RefreshCw,
@@ -299,9 +300,40 @@ export default function VagaDetalhes() {
 
     try {
       await vagaDetalhesService.updateStatus(analise.id, novoStatus)
+
+      if (novoStatus === 'pre_aprovado') {
+        const candidateId = analise.candidato?.id || (analise as any).cv_id
+        if (candidateId) {
+          const {
+            data: { user },
+          } = await supabase.auth.getUser()
+          if (user) {
+            const { data: etapa } = await supabase
+              .from('etapas')
+              .select('id')
+              .eq('user_id', user.id)
+              .order('ordem', { ascending: true })
+              .limit(1)
+              .single()
+
+            if (etapa) {
+              await supabase.from('candidatos').update({ etapa_id: etapa.id }).eq('id', candidateId)
+
+              window.dispatchEvent(new CustomEvent('kanban:reload'))
+            }
+          }
+        }
+      }
+
       toast({
-        title: 'Status atualizado',
-        description: `O currículo de ${analise.candidato?.nome || 'candidato'} foi marcado como ${novoStatus === 'pre_aprovado' ? 'Qualificado' : 'Não Qualificado'}.`,
+        title:
+          novoStatus === 'pre_aprovado'
+            ? 'Currículo qualificado e adicionado ao Kanban'
+            : 'Status atualizado',
+        description:
+          novoStatus === 'pre_aprovado'
+            ? `O currículo de ${analise.candidato?.nome || 'candidato'} foi adicionado ao Kanban.`
+            : `O currículo de ${analise.candidato?.nome || 'candidato'} foi marcado como Não Qualificado.`,
       })
     } catch (err) {
       // Revert if error
