@@ -53,11 +53,16 @@ export function KanbanCard({ candidate, isDragging, onDragStart, onDragEnd }: Ka
       onDragStart={handleDragStart}
       onDragEnd={onDragEnd}
       className={cn(
-        'group relative cursor-grab active:cursor-grabbing border-border hover:border-primary/30 hover:shadow-elevation transition-all duration-200 bg-white',
-        isDragging && 'opacity-50 scale-95 shadow-elevation rotate-2',
+        'group relative cursor-grab active:cursor-grabbing border-border hover:border-primary/30 hover:shadow-elevation hover:opacity-80 opacity-100 transition-all duration-200 bg-white',
+        isDragging && '!opacity-90 scale-95 shadow-elevation',
       )}
     >
-      <div className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div
+        className={cn(
+          'absolute left-2 top-1/2 -translate-y-1/2 text-slate-300 transition-opacity',
+          isDragging ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+        )}
+      >
         <GripVertical size={16} />
       </div>
       <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
