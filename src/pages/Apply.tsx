@@ -18,6 +18,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Progress } from '@/components/ui/progress'
 import { UploadCloud, CheckCircle2, AlertCircle, FileText, Loader2, Briefcase } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useToast } from '@/hooks/use-toast'
 
 const formSchema = z.object({
   nome: z.string().min(2, 'Nome é obrigatório'),
@@ -29,6 +30,7 @@ type FormData = z.infer<typeof formSchema>
 
 export default function ApplyPage() {
   const { userId } = useParams()
+  const { toast } = useToast()
   const [vagas, setVagas] = useState<any[]>([])
   const [vagaId, setVagaId] = useState('')
   const [file, setFile] = useState<File | null>(null)
@@ -168,6 +170,36 @@ export default function ApplyPage() {
 
       if (funcError) throw new Error('Erro ao analisar e processar o currículo.')
       if (funcData?.error) throw new Error(funcData.error)
+
+      if (funcData?.candidato_id && vagaId) {
+        try {
+          const { error: analisarError } = await supabase.functions.invoke(
+            'analisar-cv-criterios',
+            {
+              body: {
+                cv_id: funcData.candidato_id,
+                vaga_id: vagaId,
+              },
+            },
+          )
+
+          if (analisarError) {
+            toast({
+              title: 'Erro ao analisar currículo',
+              variant: 'destructive',
+            })
+          } else {
+            toast({
+              title: 'Currículo analisado com sucesso',
+            })
+          }
+        } catch (e) {
+          toast({
+            title: 'Erro ao analisar currículo',
+            variant: 'destructive',
+          })
+        }
+      }
 
       setProgress(100)
       setExtractedData(funcData.dados_extraidos)
