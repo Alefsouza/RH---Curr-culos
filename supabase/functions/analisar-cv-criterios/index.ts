@@ -100,11 +100,46 @@ Deno.serve(async (req: Request) => {
       ...extracted,
     }
 
-    const criterios = vaga.criterios_qualificacao || 'Sem critérios definidos.'
+    let criteriosText = 'Sem critérios definidos.'
+    let localizacoesText = 'Nenhuma restrição de local'
+    let raioKm = 0
 
-    const promptText = `Analise este currículo comparado com estes critérios de qualificação. Retorne um JSON com: status (pre_aprovado ou reprovado), motivo (explicação breve em português).
-Currículo: ${JSON.stringify(cvData)}
-Critérios: ${JSON.stringify(criterios)}`
+    if (vaga.criterios_qualificacao && typeof vaga.criterios_qualificacao === 'object') {
+      const critObj = vaga.criterios_qualificacao as any
+      criteriosText = critObj.texto_livre || JSON.stringify(critObj)
+      if (Array.isArray(critObj.localizacoes) && critObj.localizacoes.length > 0) {
+        localizacoesText = critObj.localizacoes
+          .map((l: any) => {
+            return [l.endereco, l.cidade, l.estado].filter(Boolean).join(', ')
+          })
+          .join(' | ')
+      }
+      raioKm = critObj.raio_km || 0
+    } else if (typeof vaga.criterios_qualificacao === 'string') {
+      criteriosText = vaga.criterios_qualificacao
+    }
+
+    const enderecoCV =
+      extracted.endereco ||
+      extracted.location ||
+      extracted.cidade ||
+      'Endereço não explícito; inferir dos dados do currículo se possível.'
+
+    const promptText = `Analise este currículo comparado com estes critérios:
+- Critérios textuais: ${criteriosText}
+- Localizações aceitas: ${localizacoesText}
+- Raio de aceitação: ${raioKm} km
+
+Endereço do candidato: ${enderecoCV}
+
+Dados completos do currículo:
+${JSON.stringify(cvData)}
+
+Retorne ESTRITAMENTE um JSON com as seguintes chaves:
+- status (pre_aprovado ou reprovado)
+- motivo (explicação breve em português)
+- validacao_localizacao (true se dentro do raio ou sem restrição, false se fora do raio)
+- distancia_km (distância estimada em km, ou 0 se não aplicável)`
 
     const openaiKey =
       Deno.env.get('OPENIA_KEY') || Deno.env.get('OPENAI_API_KEY') || Deno.env.get('OPENAI_KEY')
@@ -162,11 +197,23 @@ Critérios: ${JSON.stringify(criterios)}`
       )
     }
 
-    const status =
+    let status =
       resultJson.status === 'pre_aprovado' || resultJson.status === 'reprovado'
         ? resultJson.status
         : 'reprovado'
-    const motivo = resultJson.motivo || 'Análise concluída sem detalhes adicionais.'
+    let motivo = resultJson.motivo || 'Análise concluída sem detalhes adicionais.'
+    const validacaoLocalizacao = resultJson.validacao_localizacao
+
+    if (validacaoLocalizacao === false) {
+      status = 'reprovado'
+      if (
+        !motivo.toLowerCase().includes('localização') &&
+        !motivo.toLowerCase().includes('distância') &&
+        !motivo.toLowerCase().includes('raio')
+      ) {
+        motivo = `Reprovado por localização: Distância estimada de ${resultJson.distancia_km || '?'} km ultrapassa o limite aceitável. ${motivo}`
+      }
+    }
 
     const { data: existing } = await supabaseAdmin
       .from('analise_cv')
