@@ -125,7 +125,7 @@ Deno.serve(async (req: Request) => {
 
       if (extractedText && extractedText.length > 50) {
         console.log('Texto extraído com sucesso usando pdf-parse')
-        const extractionPrompt = `Extraia todo o texto deste currículo em português. Retorne em JSON estruturado com os seguintes campos: nome (string), email (string), telefone (string), experiencia_profissional (array de strings), skills (array de strings), formacao_academica (array de strings). Retorne APENAS o JSON, sem explicações.
+        const extractionPrompt = `Extraia todo o texto deste currículo em português. Retorne em JSON estruturado com os seguintes campos: nome (string), email (string), telefone (string), endereco (string), experiencia_profissional (array de strings), skills (array de strings), formacao_academica (array de strings). Retorne APENAS o JSON, sem explicações.
         
 Texto do currículo:
 ${extractedText.substring(0, 15000)}`
@@ -152,7 +152,7 @@ ${extractedText.substring(0, 15000)}`
               content: [
                 {
                   type: 'text',
-                  text: 'Extraia todo o texto deste currículo em português. Retorne em JSON estruturado com: nome, email, telefone, experiencia_profissional, skills, formacao_academica. Retorne APENAS o JSON.',
+                  text: 'Extraia todo o texto deste currículo em português. Retorne em JSON estruturado com: nome, email, telefone, endereco, experiencia_profissional, skills, formacao_academica. Retorne APENAS o JSON.',
                 },
                 { type: 'image_url', image_url: { url: dataUrl } },
               ],

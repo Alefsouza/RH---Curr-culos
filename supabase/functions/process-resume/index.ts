@@ -112,13 +112,14 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const extractionPrompt = `Extraia os seguintes dados do currículo: nome, email, telefone, experiencia profissional, skills, formacao academica.
+    const extractionPrompt = `Extraia os seguintes dados do currículo: nome, email, telefone, endereco, experiencia profissional, skills, formacao academica.
 Se algum dado não for encontrado, retorne null ou um array vazio.
 Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
 {
   "nome": "string",
   "email": "string",
   "telefone": "string",
+  "endereco": "string",
   "experiencia_profissional": ["string"],
   "skills": ["string"],
   "formacao_academica": ["string"]
