@@ -169,7 +169,15 @@ export default function CandidateDetails() {
   const resendMessage = async (etapaId: string, msgId: string) => {
     setResendingId(msgId)
     try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      const token = session?.access_token
+
       const { data, error } = await supabase.functions.invoke('enviar-whatsapp', {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
         body: { candidato_id: candidate.id, etapa_id: etapaId },
       })
       if (error) throw error
