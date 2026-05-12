@@ -3,6 +3,8 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 import jwt from 'npm:jsonwebtoken'
 
+// Trigger deployment
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
