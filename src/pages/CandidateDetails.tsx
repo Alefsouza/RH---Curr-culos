@@ -67,14 +67,27 @@ export default function CandidateDetails() {
         .select(`
           *,
           vagas ( titulo ),
-          etapas ( nome, cor ),
-          duplicado:candidatos!candidatos_duplicado_de_fkey ( id, nome )
+          etapas ( nome, cor )
         `)
         .eq('id', id)
         .single()
 
       if (candErr) throw candErr
-      setCandidate(candData)
+
+      let duplicado = null
+      if (candData.duplicado_de) {
+        const { data: dupData } = await supabase
+          .from('candidatos')
+          .select('id, nome')
+          .eq('id', candData.duplicado_de)
+          .single()
+
+        if (dupData) {
+          duplicado = dupData
+        }
+      }
+
+      setCandidate({ ...candData, duplicado })
       setEditData({
         nome: candData.nome || '',
         email: candData.email || '',
