@@ -52,11 +52,9 @@ Deno.serve(async (req: Request) => {
 
     const { candidato_id, etapa_id } = body
 
-    if (!candidato_id || !etapa_id) {
+    if (!candidato_id) {
       return new Response(
-        JSON.stringify({
-          error: 'Dados obrigatórios faltando: candidato_id e etapa_id são necessários.',
-        }),
+        JSON.stringify({ error: 'Dados obrigatórios faltando: candidato_id é necessário.' }),
         {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -68,16 +66,40 @@ Deno.serve(async (req: Request) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
     const supabase = createClient(supabaseUrl, supabaseKey)
 
-    console.log('2. Buscando template da etapa', etapa_id)
-    const { data: template, error: templateError } = await supabase
-      .from('templates_mensagem')
-      .select('*')
-      .eq('etapa_id', etapa_id)
-      .eq('user_id', userId)
-      .maybeSingle()
+    let template = null
 
-    if (templateError) {
-      console.log('Erro ao buscar template:', templateError.message)
+    if (etapa_id) {
+      console.log('2. Buscando template da etapa', etapa_id)
+      const { data, error: templateError } = await supabase
+        .from('templates_mensagem')
+        .select('*')
+        .eq('etapa_id', etapa_id)
+        .eq('user_id', userId)
+        .maybeSingle()
+
+      if (templateError) {
+        console.log('Erro ao buscar template:', templateError.message)
+      }
+      template = data
+    } else {
+      console.log('2. Buscando último template do candidato', candidato_id)
+      const { data: lastMsg } = await supabase
+        .from('mensagens_whatsapp')
+        .select('template_id')
+        .eq('candidato_id', candidato_id)
+        .order('criado_em', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (lastMsg?.template_id) {
+        const { data: tData } = await supabase
+          .from('templates_mensagem')
+          .select('*')
+          .eq('id', lastMsg.template_id)
+          .eq('user_id', userId)
+          .maybeSingle()
+        template = tData
+      }
     }
 
     if (!template || !template.texto) {
@@ -254,7 +276,7 @@ Deno.serve(async (req: Request) => {
     console.log(`6. Registrando status de envio: ${isSuccess ? 'enviada' : 'falha'}`)
     const { error: insertError } = await supabase.from('mensagens_whatsapp').insert({
       candidato_id: candidato.id,
-      etapa_id: etapa_id,
+      etapa_id: etapa_id || template.etapa_id || null,
       template_id: template.id,
       status: isSuccess ? 'enviada' : 'falha',
       user_id: userId,
