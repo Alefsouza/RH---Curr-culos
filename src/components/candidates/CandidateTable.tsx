@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { MoreVertical, Trash2, Edit, FileText, ExternalLink } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
+import { Switch } from '@/components/ui/switch'
 
 const statusColors: Record<string, string> = {
   qualificado: 'bg-green-100 text-green-800 hover:bg-green-200',
@@ -36,10 +37,12 @@ export function CandidateTable({
   candidates,
   onEdit,
   onDelete,
+  onToggleStatus,
 }: {
   candidates: any[]
   onEdit: (c: any) => void
   onDelete: (id: string) => void
+  onToggleStatus: (id: string, status: string | null, vagaId: string | null) => void
 }) {
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('pt-BR', {
@@ -97,7 +100,7 @@ export function CandidateTable({
               <TableHead>Nome</TableHead>
               <TableHead>Vaga</TableHead>
               <TableHead>Etapa</TableHead>
-              <TableHead>Análise</TableHead>
+              <TableHead>Qualificado</TableHead>
               <TableHead>Data</TableHead>
               <TableHead className="w-[80px]"></TableHead>
             </TableRow>
@@ -126,11 +129,19 @@ export function CandidateTable({
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  <Badge
-                    className={`font-normal ${statusColors[c.status_analise] || statusColors.pendente}`}
-                  >
-                    {statusLabels[c.status_analise] || 'Pendente'}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={c.status_analise_cv === 'pre_aprovado'}
+                      onCheckedChange={() => onToggleStatus(c.id, c.status_analise_cv, c.vaga_id)}
+                    />
+                    <span className="text-xs text-slate-500">
+                      {c.status_analise_cv === 'pre_aprovado'
+                        ? 'Sim'
+                        : c.status_analise_cv === 'reprovado'
+                          ? 'Não'
+                          : '-'}
+                    </span>
+                  </div>
                 </TableCell>
                 <TableCell className="text-sm text-slate-500">{formatDate(c.criado_em)}</TableCell>
                 <TableCell>
@@ -167,13 +178,21 @@ export function CandidateTable({
                   <p className="text-xs text-slate-500 mb-1">Vaga</p>
                   <p className="truncate font-medium text-slate-700">{c.vaga}</p>
                 </div>
-                <div>
-                  <p className="text-xs text-slate-500 mb-1">Status</p>
-                  <Badge
-                    className={`text-[10px] ${statusColors[c.status_analise] || statusColors.pendente}`}
-                  >
-                    {statusLabels[c.status_analise] || 'Pendente'}
-                  </Badge>
+                <div className="flex flex-col">
+                  <p className="text-xs text-slate-500 mb-1">Qualificado</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Switch
+                      checked={c.status_analise_cv === 'pre_aprovado'}
+                      onCheckedChange={() => onToggleStatus(c.id, c.status_analise_cv, c.vaga_id)}
+                    />
+                    <span className="text-xs text-slate-500">
+                      {c.status_analise_cv === 'pre_aprovado'
+                        ? 'Sim'
+                        : c.status_analise_cv === 'reprovado'
+                          ? 'Não'
+                          : '-'}
+                    </span>
+                  </div>
                 </div>
               </div>
             </CardContent>

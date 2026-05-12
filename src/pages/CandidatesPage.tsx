@@ -1,5 +1,10 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { getCandidatesList, deleteCandidate, updateCandidate } from '@/services/candidates'
+import {
+  getCandidatesList,
+  deleteCandidate,
+  updateCandidate,
+  updateAnaliseCvStatus,
+} from '@/services/candidates'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -8,12 +13,20 @@ import { useToast } from '@/hooks/use-toast'
 import { CandidateTable } from '@/components/candidates/CandidateTable'
 import { CandidateEditDialog } from '@/components/candidates/CandidateEditDialog'
 import { CandidateDeleteDialog } from '@/components/candidates/CandidateDeleteDialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 export default function CandidatesPage() {
   const [candidates, setCandidates] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('todos')
   const [editData, setEditData] = useState<any | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const { toast } = useToast()
@@ -36,13 +49,37 @@ export default function CandidatesPage() {
   }, [loadData])
 
   const filtered = useMemo(() => {
-    return candidates.filter(
-      (c) =>
+    return candidates.filter((c) => {
+      const matchSearch =
         c.nome.toLowerCase().includes(search.toLowerCase()) ||
         c.email.toLowerCase().includes(search.toLowerCase()) ||
-        c.vaga.toLowerCase().includes(search.toLowerCase()),
-    )
-  }, [candidates, search])
+        c.vaga.toLowerCase().includes(search.toLowerCase())
+
+      let matchStatus = true
+      if (statusFilter === 'pre_aprovado') {
+        matchStatus = c.status_analise_cv === 'pre_aprovado'
+      } else if (statusFilter === 'reprovado') {
+        matchStatus = c.status_analise_cv === 'reprovado'
+      }
+
+      return matchSearch && matchStatus
+    })
+  }, [candidates, search, statusFilter])
+
+  const handleToggleStatus = async (
+    candidateId: string,
+    currentStatus: string | null,
+    vagaId: string | null,
+  ) => {
+    const newStatus = currentStatus === 'pre_aprovado' ? 'reprovado' : 'pre_aprovado'
+    try {
+      await updateAnaliseCvStatus(candidateId, vagaId, newStatus)
+      toast({ title: 'Status atualizado com sucesso' })
+      loadData()
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Erro ao atualizar status', description: err.message })
+    }
+  }
 
   const handleDelete = async () => {
     if (!deleteId) return
@@ -102,14 +139,26 @@ export default function CandidatesPage() {
             Gerencie todos os talentos cadastrados no processo seletivo.
           </p>
         </div>
-        <div className="relative w-full sm:w-[320px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <Input
-            placeholder="Buscar por nome, e-mail ou vaga..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 h-11 focus-visible:ring-primary"
-          />
+        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-full sm:w-[180px] h-11">
+              <SelectValue placeholder="Filtrar por Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos</SelectItem>
+              <SelectItem value="pre_aprovado">Qualificados</SelectItem>
+              <SelectItem value="reprovado">Não Qualificados</SelectItem>
+            </SelectContent>
+          </Select>
+          <div className="relative w-full sm:w-[280px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <Input
+              placeholder="Buscar por nome, e-mail ou vaga..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 h-11 focus-visible:ring-primary"
+            />
+          </div>
         </div>
       </div>
 
@@ -126,7 +175,12 @@ export default function CandidatesPage() {
           </p>
         </div>
       ) : (
-        <CandidateTable candidates={filtered} onEdit={setEditData} onDelete={setDeleteId} />
+        <CandidateTable
+          candidates={filtered}
+          onEdit={setEditData}
+          onDelete={setDeleteId}
+          onToggleStatus={handleToggleStatus}
+        />
       )}
 
       <CandidateEditDialog
