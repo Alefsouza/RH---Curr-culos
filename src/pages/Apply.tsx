@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
@@ -30,6 +30,7 @@ type FormData = z.infer<typeof formSchema>
 
 export default function ApplyPage() {
   const { userId } = useParams()
+  const navigate = useNavigate()
   const { toast } = useToast()
   const [vagas, setVagas] = useState<any[]>([])
   const [vagaId, setVagaId] = useState('')
@@ -493,7 +494,16 @@ export default function ApplyPage() {
                   )}
                 </div>
 
-                <div className="pt-6 border-t border-slate-100 flex justify-end">
+                <div className="pt-6 border-t border-slate-100 flex justify-end gap-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="lg"
+                    className="w-full sm:w-auto px-8 h-12 text-base"
+                    onClick={() => navigate('/dashboard')}
+                  >
+                    Voltar
+                  </Button>
                   <Button type="submit" size="lg" className="w-full sm:w-auto px-8 h-12 text-base">
                     Enviar Inscrição
                   </Button>
