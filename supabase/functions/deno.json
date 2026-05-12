@@ -6,6 +6,7 @@
     "enviar-whatsapp": 5,
     "test-whatsapp": 3,
     "manage-users": 3,
-    "analisar-cv-criterios": 10
+    "analisar-cv-criterios": 10,
+    "enviar-mensagem-whatsapp": 1
   }
 }
