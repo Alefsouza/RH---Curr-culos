@@ -109,14 +109,11 @@ Critérios: ${JSON.stringify(criterios)}`
     const openaiKey =
       Deno.env.get('OPENIA_KEY') || Deno.env.get('OPENAI_API_KEY') || Deno.env.get('OPENAI_KEY')
     if (!openaiKey) {
-      console.log('ERRO: Chave da API não configurada.')
-      return new Response(
-        JSON.stringify({ error: 'Configuração do servidor ausente (API Key).' }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
-      )
+      console.log('ERRO: OPENIA_KEY não configurada')
+      return new Response(JSON.stringify({ error: 'Chave OpenAI não configurada' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
     const openai = new OpenAI({ apiKey: openaiKey })
@@ -128,7 +125,7 @@ Critérios: ${JSON.stringify(criterios)}`
     ): Promise<any> => {
       try {
         const response = await openai.chat.completions.create({
-          model: 'gemini-3-pro-preview',
+          model: 'gpt-4-turbo',
           temperature: 1.0,
           messages: [{ role: 'user', content: prompt }],
           response_format: { type: 'json_object' },
