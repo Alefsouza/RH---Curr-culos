@@ -172,7 +172,29 @@ ${pdfText.substring(0, 15000)}`
       }
     }
 
-    // 5. Insert Candidate
+    // 5. Stage "Novos"
+    let { data: etapa } = await supabase
+      .from('etapas')
+      .select('id')
+      .eq('user_id', user_id)
+      .ilike('nome', 'Novos')
+      .maybeSingle()
+
+    if (!etapa) {
+      const { data: newEtapa } = await supabase
+        .from('etapas')
+        .insert({
+          nome: 'Novos',
+          ordem: 0,
+          cor: 'bg-blue-100',
+          user_id: user_id,
+        })
+        .select('id')
+        .single()
+      etapa = newEtapa
+    }
+
+    // 6. Insert Candidate
     const { data: publicUrlData } = supabase.storage.from('curriculos').getPublicUrl(filePath)
 
     const { data: newCandidate, error: insertCandidateError } = await supabase
@@ -185,6 +207,7 @@ ${pdfText.substring(0, 15000)}`
         curriculo_url: publicUrlData.publicUrl,
         vaga_id: vaga_id || null,
         user_id: user_id,
+        etapa_id: etapa?.id,
       })
       .select('id')
       .single()
@@ -195,35 +218,12 @@ ${pdfText.substring(0, 15000)}`
     }
     const candidatoId = newCandidate.id
 
-    // 6. Stage "Nunca Responderam"
-    let { data: etapa } = await supabase
-      .from('etapas')
-      .select('id')
-      .eq('user_id', user_id)
-      .ilike('nome', 'Nunca Responderam')
-      .single()
-
-    if (!etapa) {
-      const { data: newEtapa } = await supabase
-        .from('etapas')
-        .insert({
-          nome: 'Nunca Responderam',
-          ordem: 0,
-          cor: 'bg-gray-200',
-          user_id: user_id,
-        })
-        .select('id')
-        .single()
-      etapa = newEtapa
-    }
-
     if (etapa) {
       await supabase.from('candidato_etapa').insert({
         candidato_id: candidatoId,
         etapa_id: etapa.id,
         usuario_id: user_id,
       })
-      await supabase.from('candidatos').update({ etapa_id: etapa.id }).eq('id', candidatoId)
     }
 
     // 7. Analyze against job criteria

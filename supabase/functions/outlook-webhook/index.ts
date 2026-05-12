@@ -189,7 +189,29 @@ ${pdfText.substring(0, 15000)}
       }
     }
 
-    // 7. Inserir Candidato
+    // 7. Etapa "Novos"
+    let { data: etapa } = await supabase
+      .from('etapas')
+      .select('id')
+      .eq('user_id', userId)
+      .ilike('nome', 'Novos')
+      .maybeSingle()
+
+    if (!etapa) {
+      const { data: newEtapa } = await supabase
+        .from('etapas')
+        .insert({
+          nome: 'Novos',
+          ordem: 0,
+          cor: 'bg-blue-100',
+          user_id: userId,
+        })
+        .select('id')
+        .single()
+      etapa = newEtapa
+    }
+
+    // 8. Inserir Candidato
     const { data: newCandidate, error: insertCandidateError } = await supabase
       .from('candidatos')
       .insert({
@@ -198,6 +220,7 @@ ${pdfText.substring(0, 15000)}
         telefone: extractedData.telefone || null,
         fonte: 'outlook',
         user_id: userId,
+        etapa_id: etapa?.id,
       })
       .select('id')
       .single()
@@ -205,35 +228,12 @@ ${pdfText.substring(0, 15000)}
     if (insertCandidateError) throw insertCandidateError
     const candidatoId = newCandidate.id
 
-    // 8. Etapa "Nunca Responderam"
-    let { data: etapa } = await supabase
-      .from('etapas')
-      .select('id')
-      .eq('user_id', userId)
-      .ilike('nome', 'Nunca Responderam')
-      .maybeSingle()
-
-    if (!etapa) {
-      const { data: newEtapa } = await supabase
-        .from('etapas')
-        .insert({
-          nome: 'Nunca Responderam',
-          ordem: 0,
-          cor: 'bg-gray-200',
-          user_id: userId,
-        })
-        .select('id')
-        .single()
-      etapa = newEtapa
-    }
-
     if (etapa) {
       await supabase.from('candidato_etapa').insert({
         candidato_id: candidatoId,
         etapa_id: etapa.id,
         usuario_id: userId,
       })
-      await supabase.from('candidatos').update({ etapa_id: etapa.id }).eq('id', candidatoId)
     }
 
     // 9 & 10. Analisar contra vagas abertas

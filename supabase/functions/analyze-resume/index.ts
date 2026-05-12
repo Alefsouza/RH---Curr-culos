@@ -221,6 +221,22 @@ ${extractedText.substring(0, 15000)}`
 
     const { data: publicUrlData } = supabase.storage.from('curriculos').getPublicUrl(filePath)
 
+    let { data: etapa } = await supabase
+      .from('etapas')
+      .select('id')
+      .eq('user_id', userId)
+      .ilike('nome', 'Novos')
+      .maybeSingle()
+
+    if (!etapa) {
+      const { data: newEtapa } = await supabase
+        .from('etapas')
+        .insert({ nome: 'Novos', ordem: 0, cor: 'bg-blue-100', user_id: userId })
+        .select('id')
+        .single()
+      etapa = newEtapa
+    }
+
     const { data: newCandidate, error: insertError } = await supabase
       .from('candidatos')
       .insert({
@@ -231,6 +247,7 @@ ${extractedText.substring(0, 15000)}`
         curriculo_url: publicUrlData.publicUrl,
         vaga_id: vaga_id,
         user_id: userId,
+        etapa_id: etapa?.id,
         dados_extraidos: extractedData,
       })
       .select('id')
@@ -239,27 +256,10 @@ ${extractedText.substring(0, 15000)}`
     if (insertError) throw insertError
     candidatoId = newCandidate.id
 
-    let { data: etapa } = await supabase
-      .from('etapas')
-      .select('id')
-      .eq('user_id', userId)
-      .ilike('nome', 'Nunca Responderam')
-      .maybeSingle()
-
-    if (!etapa) {
-      const { data: newEtapa } = await supabase
-        .from('etapas')
-        .insert({ nome: 'Nunca Responderam', ordem: 0, cor: 'bg-slate-200', user_id: userId })
-        .select('id')
-        .single()
-      etapa = newEtapa
-    }
-
     if (etapa) {
       await supabase
         .from('candidato_etapa')
         .insert({ candidato_id: candidatoId, etapa_id: etapa.id, usuario_id: userId })
-      await supabase.from('candidatos').update({ etapa_id: etapa.id }).eq('id', candidatoId)
     }
 
     const analisesRealizadas = []
