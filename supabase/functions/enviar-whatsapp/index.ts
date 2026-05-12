@@ -222,7 +222,8 @@ Deno.serve(async (req: Request) => {
       template_id: template.id,
       status: isSuccess ? 'enviada' : 'falha',
       user_id: userId,
-    })
+      numero_whatsapp: formattedPhone,
+    } as any)
 
     if (insertError) {
       console.error('Erro ao registrar a mensagem no banco de dados:', insertError.message)
