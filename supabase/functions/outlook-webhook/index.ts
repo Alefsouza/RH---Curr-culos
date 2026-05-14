@@ -173,7 +173,7 @@ ${pdfText.substring(0, 15000)}
     if (cleanTelefone) orConditions.push(`telefone.eq."${cleanTelefone}"`)
     if (cleanNome) orConditions.push(`nome.eq."${cleanNome}"`)
 
-    let candidatoId
+    let candidatoId;
 
     if (orConditions.length > 0) {
       const { data: duplicates, error: searchError } = await supabase
@@ -185,17 +185,14 @@ ${pdfText.substring(0, 15000)}
       if (searchError) console.error('Erro ao buscar duplicados:', searchError)
 
       if (duplicates && duplicates.length > 0) {
-        candidatoId = duplicates[0].id
-
-        await supabase
-          .from('candidatos')
-          .update({
-            nome: extractedData.nome,
-            email: extractedData.email || null,
-            telefone: extractedData.telefone || null,
-            dados_extraidos: extractedData,
-          })
-          .eq('id', candidatoId)
+        candidatoId = duplicates[0].id;
+        
+        await supabase.from('candidatos').update({
+          nome: extractedData.nome,
+          email: extractedData.email || null,
+          telefone: extractedData.telefone || null,
+          dados_extraidos: extractedData,
+        }).eq('id', candidatoId)
       }
     }
 
@@ -223,7 +220,7 @@ ${pdfText.substring(0, 15000)}
       .from('candidatos')
       .select('etapa_id')
       .eq('id', candidatoId)
-      .single()
+      .single();
 
     if (!currentCandidate?.etapa_id) {
       let { data: etapa } = await supabase
