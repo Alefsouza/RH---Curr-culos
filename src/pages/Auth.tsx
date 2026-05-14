@@ -52,12 +52,12 @@ export default function AuthPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
-      <Card className="w-full max-w-md shadow-lg border-slate-200/60">
+    <div className="min-h-screen flex items-center justify-center bg-secondary/30 p-4">
+      <Card className="w-full max-w-md shadow-elevation border-border/60">
         <CardHeader className="space-y-1 text-center">
           <div className="flex justify-center mb-4">
-            <div className="bg-blue-600 p-3 rounded-xl shadow-sm">
-              <Briefcase className="h-6 w-6 text-white" />
+            <div className="bg-primary p-3 rounded-xl shadow-sm">
+              <Briefcase className="h-6 w-6 text-primary-foreground" />
             </div>
           </div>
           <CardTitle className="text-2xl">{isLogin ? 'Entrar' : 'Criar Conta'}</CardTitle>
@@ -104,7 +104,7 @@ export default function AuthPage() {
             </div>
             <Button
               type="submit"
-              className="w-full bg-blue-600 hover:bg-blue-700"
+              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
               disabled={loading}
             >
               {loading ? 'Aguarde...' : isLogin ? 'Entrar' : 'Cadastrar'}
@@ -114,7 +114,7 @@ export default function AuthPage() {
         <CardFooter>
           <Button
             variant="link"
-            className="w-full text-sm text-slate-500"
+            className="w-full text-sm text-muted-foreground hover:text-primary"
             onClick={() => setIsLogin(!isLogin)}
           >
             {isLogin ? 'Não tem uma conta? Cadastre-se' : 'Já tem uma conta? Entre'}
