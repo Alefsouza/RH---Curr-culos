@@ -3,6 +3,7 @@ import { Candidate, Stage } from '@/types/kanban'
 import { useToast } from '@/hooks/use-toast'
 import { fetchStages, fetchCandidates, updateCandidateStage } from '@/services/kanban'
 import { useAuth } from '@/hooks/use-auth'
+import { supabase } from '@/lib/supabase/client'
 
 export function useKanban() {
   const { user } = useAuth()
@@ -33,6 +34,21 @@ export function useKanban() {
 
   useEffect(() => {
     loadData()
+
+    const channel = supabase
+      .channel('kanban-updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'candidatos' }, () =>
+        loadData(),
+      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'analises' }, () => loadData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'analise_cv' }, () =>
+        loadData(),
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [loadData])
 
   useEffect(() => {

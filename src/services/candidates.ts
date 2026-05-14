@@ -36,6 +36,33 @@ export async function getCandidatesList() {
         )
       : []
 
+    const latestIa = sortedAnalises[0]
+    const latestCv = sortedAnaliseCv[0]
+
+    let resolvedStatus = null
+
+    if (latestCv && latestIa) {
+      if (new Date(latestCv.atualizado_em).getTime() >= new Date(latestIa.criado_em).getTime()) {
+        resolvedStatus = latestCv.status
+      } else {
+        resolvedStatus =
+          latestIa.resultado === 'qualificado'
+            ? 'pre_aprovado'
+            : latestIa.resultado === 'nao_qualificado'
+              ? 'reprovado'
+              : null
+      }
+    } else if (latestIa) {
+      resolvedStatus =
+        latestIa.resultado === 'qualificado'
+          ? 'pre_aprovado'
+          : latestIa.resultado === 'nao_qualificado'
+            ? 'reprovado'
+            : null
+    } else if (latestCv) {
+      resolvedStatus = latestCv.status
+    }
+
     return {
       id: c.id,
       nome: c.nome,
@@ -52,8 +79,8 @@ export async function getCandidatesList() {
           ? c.etapas[0]?.cor
           : c.etapas.cor
         : 'bg-slate-200',
-      status_analise: sortedAnalises.length > 0 ? sortedAnalises[0].resultado : 'pendente',
-      status_analise_cv: sortedAnaliseCv.length > 0 ? sortedAnaliseCv[0].status : null,
+      status_analise: latestIa ? latestIa.resultado : 'pendente',
+      status_analise_cv: resolvedStatus,
       duplicado_de: c.duplicado_de,
     }
   })

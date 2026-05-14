@@ -239,8 +239,8 @@ ${pdfText.substring(0, 15000)}`
 
       const { data: publicUrlData } = supabase.storage.from('curriculos').getPublicUrl(filePath)
       const finalVagaId = vaga_id
-      
-      let candidatoId;
+
+      let candidatoId
 
       if (orConditions.length > 0) {
         console.log('Verificando candidatos duplicados no sistema...')
@@ -256,17 +256,22 @@ ${pdfText.substring(0, 15000)}`
         }
 
         if (duplicates && duplicates.length > 0) {
-          candidatoId = duplicates[0].id;
-          console.log(`Aviso: Foram encontrados candidatos duplicados. Atualizando registro ${candidatoId}...`)
-          
-          const { error: updateError } = await supabase.from('candidatos').update({
-            nome: finalNome,
-            email: finalEmail,
-            telefone: finalTelefone,
-            curriculo_url: publicUrlData.publicUrl,
-            dados_extraidos: extractedData,
-            vaga_id: finalVagaId || duplicates[0].vaga_id,
-          }).eq('id', candidatoId)
+          candidatoId = duplicates[0].id
+          console.log(
+            `Aviso: Foram encontrados candidatos duplicados. Atualizando registro ${candidatoId}...`,
+          )
+
+          const { error: updateError } = await supabase
+            .from('candidatos')
+            .update({
+              nome: finalNome,
+              email: finalEmail,
+              telefone: finalTelefone,
+              curriculo_url: publicUrlData.publicUrl,
+              dados_extraidos: extractedData,
+              vaga_id: finalVagaId || duplicates[0].vaga_id,
+            })
+            .eq('id', candidatoId)
 
           if (updateError) {
             console.error('Erro ao atualizar candidato duplicado:', updateError)
@@ -280,7 +285,7 @@ ${pdfText.substring(0, 15000)}`
       if (!candidatoId) {
         // 5. Insert Candidate
         console.log('Preparando para inserir o novo candidato na base de dados...')
-        
+
         console.log(`Inserindo candidato com vaga_id processado: ${finalVagaId}`)
 
         const { data: newCandidate, error: insertCandidateError } = await supabase
@@ -307,12 +312,12 @@ ${pdfText.substring(0, 15000)}`
       }
 
       // 6. Verificar Etapa Atual
-      console.log('Verificando se o candidato já possui uma etapa...');
+      console.log('Verificando se o candidato já possui uma etapa...')
       const { data: currentCandidate } = await supabase
         .from('candidatos')
         .select('etapa_id')
         .eq('id', candidatoId)
-        .single();
+        .single()
 
       if (!currentCandidate?.etapa_id) {
         console.log('Buscando etapa padrão "Nunca Responderam"...')
@@ -366,7 +371,7 @@ ${pdfText.substring(0, 15000)}`
           console.log('Candidato inserido na etapa corretamente.')
         }
       } else {
-        console.log('Candidato já está em uma etapa. Mantendo a etapa atual.');
+        console.log('Candidato já está em uma etapa. Mantendo a etapa atual.')
       }
 
       // 7. Analyze against job criteria

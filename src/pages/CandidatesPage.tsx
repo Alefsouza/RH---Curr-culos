@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import { supabase } from '@/lib/supabase/client'
 import {
   getCandidatesList,
   deleteCandidate,
@@ -46,6 +47,23 @@ export default function CandidatesPage() {
 
   useEffect(() => {
     loadData()
+
+    const channel = supabase
+      .channel('candidates-updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'analises' }, () => {
+        loadData()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'analise_cv' }, () => {
+        loadData()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'candidatos' }, () => {
+        loadData()
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [loadData])
 
   const filtered = useMemo(() => {
