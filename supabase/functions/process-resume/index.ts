@@ -1,15 +1,9 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { corsHeaders } from '../_shared/cors.ts'
 import OpenAI from 'npm:openai@4'
 import { Buffer } from 'node:buffer'
 import pdf from 'npm:pdf-parse@1.1.1'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, x-supabase-client-platform, apikey, content-type',
-}
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -118,14 +112,13 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const extractionPrompt = `Extraia os seguintes dados do currículo: nome, email, telefone, endereco, experiencia profissional, skills, formacao academica.
+    const extractionPrompt = `Extraia os seguintes dados do currículo: nome, email, telefone, experiencia profissional, skills, formacao academica.
 Se algum dado não for encontrado, retorne null ou um array vazio.
 Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
 {
   "nome": "string",
   "email": "string",
   "telefone": "string",
-  "endereco": "string",
   "experiencia_profissional": ["string"],
   "skills": ["string"],
   "formacao_academica": ["string"]
@@ -178,29 +171,7 @@ ${pdfText.substring(0, 15000)}`
       }
     }
 
-    // 5. Stage "Novos"
-    let { data: etapa } = await supabase
-      .from('etapas')
-      .select('id')
-      .eq('user_id', user_id)
-      .ilike('nome', 'Novos')
-      .maybeSingle()
-
-    if (!etapa) {
-      const { data: newEtapa } = await supabase
-        .from('etapas')
-        .insert({
-          nome: 'Novos',
-          ordem: 0,
-          cor: 'bg-blue-100',
-          user_id: user_id,
-        })
-        .select('id')
-        .single()
-      etapa = newEtapa
-    }
-
-    // 6. Insert Candidate
+    // 5. Insert Candidate
     const { data: publicUrlData } = supabase.storage.from('curriculos').getPublicUrl(filePath)
 
     const { data: newCandidate, error: insertCandidateError } = await supabase
@@ -213,7 +184,6 @@ ${pdfText.substring(0, 15000)}`
         curriculo_url: publicUrlData.publicUrl,
         vaga_id: vaga_id || null,
         user_id: user_id,
-        etapa_id: etapa?.id,
       })
       .select('id')
       .single()
@@ -224,12 +194,35 @@ ${pdfText.substring(0, 15000)}`
     }
     const candidatoId = newCandidate.id
 
+    // 6. Stage "Nunca Responderam"
+    let { data: etapa } = await supabase
+      .from('etapas')
+      .select('id')
+      .eq('user_id', user_id)
+      .ilike('nome', 'Nunca Responderam')
+      .single()
+
+    if (!etapa) {
+      const { data: newEtapa } = await supabase
+        .from('etapas')
+        .insert({
+          nome: 'Nunca Responderam',
+          ordem: 0,
+          cor: 'bg-gray-200',
+          user_id: user_id,
+        })
+        .select('id')
+        .single()
+      etapa = newEtapa
+    }
+
     if (etapa) {
       await supabase.from('candidato_etapa').insert({
         candidato_id: candidatoId,
         etapa_id: etapa.id,
         usuario_id: user_id,
       })
+      await supabase.from('candidatos').update({ etapa_id: etapa.id }).eq('id', candidatoId)
     }
 
     // 7. Analyze against job criteria
