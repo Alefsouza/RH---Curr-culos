@@ -294,12 +294,3 @@ export function KanbanColumn({
             >
               Cancelar
             </Button>
-            <Button onClick={handleSaveEdit} disabled={isSaving}>
-              {isSaving ? 'Salvando...' : 'Salvar'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
-  )
-}
