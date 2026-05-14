@@ -1,59 +1,20 @@
 // AVOID UPDATING THIS FILE DIRECTLY. It is automatically generated.
-export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[]
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
 
 export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: '14.5'
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
-      analise_cv: {
-        Row: {
-          atualizado_em: string
-          criado_em: string
-          cv_id: string
-          id: string
-          motivo: string | null
-          status: string | null
-          vaga_id: string
-        }
-        Insert: {
-          atualizado_em?: string
-          criado_em?: string
-          cv_id: string
-          id?: string
-          motivo?: string | null
-          status?: string | null
-          vaga_id: string
-        }
-        Update: {
-          atualizado_em?: string
-          criado_em?: string
-          cv_id?: string
-          id?: string
-          motivo?: string | null
-          status?: string | null
-          vaga_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: 'analise_cv_cv_id_fkey'
-            columns: ['cv_id']
-            isOneToOne: false
-            referencedRelation: 'candidatos'
-            referencedColumns: ['id']
-          },
-          {
-            foreignKeyName: 'analise_cv_vaga_id_fkey'
-            columns: ['vaga_id']
-            isOneToOne: false
-            referencedRelation: 'vagas'
-            referencedColumns: ['id']
-          },
-        ]
-      }
       analises: {
         Row: {
           candidato_id: string | null
@@ -84,25 +45,25 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: 'analises_candidato_id_fkey'
-            columns: ['candidato_id']
+            foreignKeyName: "analises_candidato_id_fkey"
+            columns: ["candidato_id"]
             isOneToOne: false
-            referencedRelation: 'candidatos'
-            referencedColumns: ['id']
+            referencedRelation: "candidatos"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: 'analises_user_id_fkey'
-            columns: ['user_id']
+            foreignKeyName: "analises_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
-            referencedRelation: 'usuarios'
-            referencedColumns: ['id']
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: 'analises_vaga_id_fkey'
-            columns: ['vaga_id']
+            foreignKeyName: "analises_vaga_id_fkey"
+            columns: ["vaga_id"]
             isOneToOne: false
-            referencedRelation: 'vagas'
-            referencedColumns: ['id']
+            referencedRelation: "vagas"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -133,25 +94,25 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: 'candidato_etapa_candidato_id_fkey'
-            columns: ['candidato_id']
+            foreignKeyName: "candidato_etapa_candidato_id_fkey"
+            columns: ["candidato_id"]
             isOneToOne: false
-            referencedRelation: 'candidatos'
-            referencedColumns: ['id']
+            referencedRelation: "candidatos"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: 'candidato_etapa_etapa_id_fkey'
-            columns: ['etapa_id']
+            foreignKeyName: "candidato_etapa_etapa_id_fkey"
+            columns: ["etapa_id"]
             isOneToOne: false
-            referencedRelation: 'etapas'
-            referencedColumns: ['id']
+            referencedRelation: "etapas"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: 'candidato_etapa_usuario_id_fkey'
-            columns: ['usuario_id']
+            foreignKeyName: "candidato_etapa_usuario_id_fkey"
+            columns: ["usuario_id"]
             isOneToOne: false
-            referencedRelation: 'usuarios'
-            referencedColumns: ['id']
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -203,32 +164,32 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: 'candidatos_duplicado_de_fkey'
-            columns: ['duplicado_de']
+            foreignKeyName: "candidatos_duplicado_de_fkey"
+            columns: ["duplicado_de"]
             isOneToOne: false
-            referencedRelation: 'candidatos'
-            referencedColumns: ['id']
+            referencedRelation: "candidatos"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: 'candidatos_etapa_id_fkey'
-            columns: ['etapa_id']
+            foreignKeyName: "candidatos_etapa_id_fkey"
+            columns: ["etapa_id"]
             isOneToOne: false
-            referencedRelation: 'etapas'
-            referencedColumns: ['id']
+            referencedRelation: "etapas"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: 'candidatos_user_id_fkey'
-            columns: ['user_id']
+            foreignKeyName: "candidatos_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
-            referencedRelation: 'usuarios'
-            referencedColumns: ['id']
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: 'candidatos_vaga_id_fkey'
-            columns: ['vaga_id']
+            foreignKeyName: "candidatos_vaga_id_fkey"
+            columns: ["vaga_id"]
             isOneToOne: false
-            referencedRelation: 'vagas'
-            referencedColumns: ['id']
+            referencedRelation: "vagas"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -259,11 +220,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: 'etapas_user_id_fkey'
-            columns: ['user_id']
+            foreignKeyName: "etapas_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
-            referencedRelation: 'usuarios'
-            referencedColumns: ['id']
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -303,32 +264,32 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: 'mensagens_whatsapp_candidato_id_fkey'
-            columns: ['candidato_id']
+            foreignKeyName: "mensagens_whatsapp_candidato_id_fkey"
+            columns: ["candidato_id"]
             isOneToOne: false
-            referencedRelation: 'candidatos'
-            referencedColumns: ['id']
+            referencedRelation: "candidatos"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: 'mensagens_whatsapp_etapa_id_fkey'
-            columns: ['etapa_id']
+            foreignKeyName: "mensagens_whatsapp_etapa_id_fkey"
+            columns: ["etapa_id"]
             isOneToOne: false
-            referencedRelation: 'etapas'
-            referencedColumns: ['id']
+            referencedRelation: "etapas"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: 'mensagens_whatsapp_template_id_fkey'
-            columns: ['template_id']
+            foreignKeyName: "mensagens_whatsapp_template_id_fkey"
+            columns: ["template_id"]
             isOneToOne: false
-            referencedRelation: 'templates_mensagem'
-            referencedColumns: ['id']
+            referencedRelation: "templates_mensagem"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: 'mensagens_whatsapp_user_id_fkey'
-            columns: ['user_id']
+            foreignKeyName: "mensagens_whatsapp_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
-            referencedRelation: 'usuarios'
-            referencedColumns: ['id']
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -359,18 +320,18 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: 'templates_mensagem_etapa_id_fkey'
-            columns: ['etapa_id']
+            foreignKeyName: "templates_mensagem_etapa_id_fkey"
+            columns: ["etapa_id"]
             isOneToOne: false
-            referencedRelation: 'etapas'
-            referencedColumns: ['id']
+            referencedRelation: "etapas"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: 'templates_mensagem_user_id_fkey'
-            columns: ['user_id']
+            foreignKeyName: "templates_mensagem_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
-            referencedRelation: 'usuarios'
-            referencedColumns: ['id']
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -425,11 +386,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: 'vagas_user_id_fkey'
-            columns: ['user_id']
+            foreignKeyName: "vagas_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
-            referencedRelation: 'usuarios'
-            referencedColumns: ['id']
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -449,31 +410,33 @@ export type Database = {
   }
 }
 
-type DatabaseWithoutInternals = Omit<Database, '__InternalSupabase'>
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
 
-type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, 'public'>]
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
 
 export type Tables<
   DefaultSchemaTableNameOrOptions extends
-    | keyof (DefaultSchema['Tables'] & DefaultSchema['Views'])
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables'] &
-        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Views'])
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
     : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
-  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables'] &
-      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Views'])[TableName] extends {
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
       Row: infer R
     }
     ? R
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema['Tables'] & DefaultSchema['Views'])
-    ? (DefaultSchema['Tables'] & DefaultSchema['Views'])[DefaultSchemaTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
         Row: infer R
       }
       ? R
@@ -482,23 +445,23 @@ export type Tables<
 
 export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema['Tables']
+    | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables']
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
     : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
-  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables'][TableName] extends {
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Insert: infer I
     }
     ? I
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema['Tables']
-    ? DefaultSchema['Tables'][DefaultSchemaTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
         Insert: infer I
       }
       ? I
@@ -507,23 +470,23 @@ export type TablesInsert<
 
 export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema['Tables']
+    | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables']
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
     : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
-  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables'][TableName] extends {
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Update: infer U
     }
     ? U
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema['Tables']
-    ? DefaultSchema['Tables'][DefaultSchemaTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
         Update: infer U
       }
       ? U
@@ -532,36 +495,36 @@ export type TablesUpdate<
 
 export type Enums<
   DefaultSchemaEnumNameOrOptions extends
-    | keyof DefaultSchema['Enums']
+    | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
   EnumName extends DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions['schema']]['Enums']
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
     : never = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
-  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions['schema']]['Enums'][EnumName]
-  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema['Enums']
-    ? DefaultSchema['Enums'][DefaultSchemaEnumNameOrOptions]
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
     : never
 
 export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
-    | keyof DefaultSchema['CompositeTypes']
+    | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
   CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions['schema']]['CompositeTypes']
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
     : never = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
-  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions['schema']]['CompositeTypes'][CompositeTypeName]
-  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema['CompositeTypes']
-    ? DefaultSchema['CompositeTypes'][PublicCompositeTypeNameOrOptions]
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
     : never
 
 export const Constants = {
@@ -569,6 +532,7 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
 
 // ====== DATABASE EXTENDED CONTEXT (auto-generated) ======
 // This section contains actual PostgreSQL column types, constraints, RLS policies,
@@ -580,14 +544,6 @@ export const Constants = {
 // --- COLUMN TYPES (actual PostgreSQL types) ---
 // Use this to know the real database type when writing migrations.
 // "string" in TypeScript types above may be uuid, text, varchar, timestamptz, etc.
-// Table: analise_cv
-//   id: uuid (not null, default: gen_random_uuid())
-//   cv_id: uuid (not null)
-//   vaga_id: uuid (not null)
-//   status: text (nullable)
-//   motivo: text (nullable)
-//   criado_em: timestamp with time zone (not null, default: now())
-//   atualizado_em: timestamp with time zone (not null, default: now())
 // Table: analises
 //   id: uuid (not null, default: gen_random_uuid())
 //   candidato_id: uuid (nullable)
@@ -656,11 +612,6 @@ export const Constants = {
 //   user_id: uuid (not null)
 
 // --- CONSTRAINTS ---
-// Table: analise_cv
-//   FOREIGN KEY analise_cv_cv_id_fkey: FOREIGN KEY (cv_id) REFERENCES candidatos(id) ON DELETE CASCADE
-//   PRIMARY KEY analise_cv_pkey: PRIMARY KEY (id)
-//   CHECK analise_cv_status_check: CHECK ((status = ANY (ARRAY['pre_aprovado'::text, 'reprovado'::text])))
-//   FOREIGN KEY analise_cv_vaga_id_fkey: FOREIGN KEY (vaga_id) REFERENCES vagas(id) ON DELETE CASCADE
 // Table: analises
 //   FOREIGN KEY analises_candidato_id_fkey: FOREIGN KEY (candidato_id) REFERENCES candidatos(id) ON DELETE CASCADE
 //   PRIMARY KEY analises_pkey: PRIMARY KEY (id)
@@ -683,7 +634,8 @@ export const Constants = {
 // Table: mensagens_whatsapp
 //   FOREIGN KEY mensagens_whatsapp_candidato_id_fkey: FOREIGN KEY (candidato_id) REFERENCES candidatos(id) ON DELETE CASCADE
 //   FOREIGN KEY mensagens_whatsapp_etapa_id_fkey: FOREIGN KEY (etapa_id) REFERENCES etapas(id) ON DELETE CASCADE
-//   CHECK mensagens_whatsapp_numero_check: CHECK ((numero_whatsapp ~ '^[0-9]{10,15}'::text))
+//   CHECK mensagens_whatsapp_numero_check: CHECK ((numero_whatsapp ~ '^[0-9]{10,15}
+::text))
 //   PRIMARY KEY mensagens_whatsapp_pkey: PRIMARY KEY (id)
 //   FOREIGN KEY mensagens_whatsapp_template_id_fkey: FOREIGN KEY (template_id) REFERENCES templates_mensagem(id) ON DELETE SET NULL
 //   FOREIGN KEY mensagens_whatsapp_user_id_fkey: FOREIGN KEY (user_id) REFERENCES usuarios(id) ON DELETE CASCADE
@@ -699,16 +651,6 @@ export const Constants = {
 //   FOREIGN KEY vagas_user_id_fkey: FOREIGN KEY (user_id) REFERENCES usuarios(id) ON DELETE CASCADE
 
 // --- ROW LEVEL SECURITY POLICIES ---
-// Table: analise_cv
-//   Policy "analise_cv_delete" (DELETE, PERMISSIVE) roles={authenticated}
-//     USING: (EXISTS ( SELECT 1    FROM candidatos c   WHERE ((c.id = analise_cv.cv_id) AND (c.user_id = auth.uid()))))
-//   Policy "analise_cv_insert" (INSERT, PERMISSIVE) roles={authenticated}
-//     WITH CHECK: (EXISTS ( SELECT 1    FROM candidatos c   WHERE ((c.id = analise_cv.cv_id) AND (c.user_id = auth.uid()))))
-//   Policy "analise_cv_select" (SELECT, PERMISSIVE) roles={authenticated}
-//     USING: (EXISTS ( SELECT 1    FROM candidatos c   WHERE ((c.id = analise_cv.cv_id) AND (c.user_id = auth.uid()))))
-//   Policy "analise_cv_update" (UPDATE, PERMISSIVE) roles={authenticated}
-//     USING: (EXISTS ( SELECT 1    FROM candidatos c   WHERE ((c.id = analise_cv.cv_id) AND (c.user_id = auth.uid()))))
-//     WITH CHECK: (EXISTS ( SELECT 1    FROM candidatos c   WHERE ((c.id = analise_cv.cv_id) AND (c.user_id = auth.uid()))))
 // Table: analises
 //   Policy "analises_delete" (DELETE, PERMISSIVE) roles={authenticated}
 //     USING: (auth.uid() = user_id)
@@ -796,13 +738,13 @@ export const Constants = {
 //   BEGIN
 //     INSERT INTO public.usuarios (id, email, nome, is_admin)
 //     VALUES (
-//       NEW.id,
-//       NEW.email,
-//       NEW.raw_user_meta_data->>'name',
+//       NEW.id, 
+//       NEW.email, 
+//       NEW.raw_user_meta_data->>'name', 
 //       COALESCE((NEW.raw_user_meta_data->>'is_admin')::boolean, false)
 //     )
 //     ON CONFLICT (id) DO NOTHING;
-//
+//     
 //     -- Insert default stages
 //     INSERT INTO public.etapas (id, nome, ordem, cor, user_id) VALUES
 //       (gen_random_uuid(), 'Candidatos', 1, 'bg-slate-200', NEW.id),
@@ -811,72 +753,9 @@ export const Constants = {
 //       (gen_random_uuid(), 'Entrevista Técnica', 4, 'bg-orange-100', NEW.id),
 //       (gen_random_uuid(), 'Proposta', 5, 'bg-green-100', NEW.id),
 //       (gen_random_uuid(), 'Contratado', 6, 'bg-emerald-200', NEW.id);
-//
+//   
 //     RETURN NEW;
 //   END;
 //   $function$
-//
-// FUNCTION sync_analise_to_analise_cv()
-//   CREATE OR REPLACE FUNCTION public.sync_analise_to_analise_cv()
-//    RETURNS trigger
-//    LANGUAGE plpgsql
-//    SECURITY DEFINER
-//   AS $function$
-//   DECLARE
-//       mapped_status text;
-//   BEGIN
-//       -- Only proceed if both references are available
-//       IF NEW.candidato_id IS NULL OR NEW.vaga_id IS NULL THEN
-//           RETURN NEW;
-//       END IF;
-//
-//       -- Map result from analises to analise_cv status
-//       IF NEW.resultado = 'qualificado' THEN
-//           mapped_status := 'pre_aprovado';
-//       ELSIF NEW.resultado = 'nao_qualificado' THEN
-//           mapped_status := 'reprovado';
-//       ELSE
-//           mapped_status := NULL;
-//       END IF;
-//
-//       IF mapped_status IS NOT NULL THEN
-//           -- UPSERT approach for analise_cv
-//           UPDATE public.analise_cv
-//           SET status = mapped_status,
-//               motivo = 'Sincronizado automaticamente da análise de IA (Atualização)',
-//               atualizado_em = NOW()
-//           WHERE cv_id = NEW.candidato_id AND vaga_id = NEW.vaga_id;
-//
-//           IF NOT FOUND THEN
-//               INSERT INTO public.analise_cv (cv_id, vaga_id, status, motivo)
-//               VALUES (NEW.candidato_id, NEW.vaga_id, mapped_status, 'Sincronizado automaticamente da análise de IA (Novo)');
-//           END IF;
-//       END IF;
-//
-//       RETURN NEW;
-//   END;
-//   $function$
-//
-// FUNCTION update_atualizado_em_column()
-//   CREATE OR REPLACE FUNCTION public.update_atualizado_em_column()
-//    RETURNS trigger
-//    LANGUAGE plpgsql
-//   AS $function$
-//   BEGIN
-//       NEW.atualizado_em = NOW();
-//       RETURN NEW;
-//   END;
-//   $function$
-//
+//   
 
-// --- TRIGGERS ---
-// Table: analise_cv
-//   update_analise_cv_atualizado_em: CREATE TRIGGER update_analise_cv_atualizado_em BEFORE UPDATE ON public.analise_cv FOR EACH ROW EXECUTE FUNCTION update_atualizado_em_column()
-// Table: analises
-//   on_analise_update_sync_cv: CREATE TRIGGER on_analise_update_sync_cv AFTER INSERT OR UPDATE OF resultado ON public.analises FOR EACH ROW EXECUTE FUNCTION sync_analise_to_analise_cv()
-
-// --- INDEXES ---
-// Table: analise_cv
-//   CREATE INDEX analise_cv_cv_id_idx ON public.analise_cv USING btree (cv_id)
-//   CREATE INDEX analise_cv_vaga_id_idx ON public.analise_cv USING btree (vaga_id)
-//   CREATE UNIQUE INDEX idx_analise_cv_unique_cv_vaga ON public.analise_cv USING btree (cv_id, vaga_id)
