@@ -253,6 +253,8 @@ export default function CandidateDetails() {
     : []
   const skills = Array.isArray(extraidos.skills) ? extraidos.skills : []
   const formacao = Array.isArray(extraidos.formacao_academica) ? extraidos.formacao_academica : []
+  const endereco =
+    extraidos.endereco || extraidos.location || extraidos.cidade || extraidos.estado || null
 
   return (
     <div className="container mx-auto p-4 md:p-6 max-w-6xl space-y-6 animate-fade-in">
@@ -289,6 +291,11 @@ export default function CandidateDetails() {
               <User className="w-4 h-4 mr-1.5 text-slate-400" /> Fonte:{' '}
               {candidate.fonte || 'Desconhecida'}
             </span>
+            {endereco && (
+              <span className="flex items-center text-xs text-slate-500 border rounded px-2 py-0.5 bg-slate-50">
+                Endereço extraído: {endereco}
+              </span>
+            )}
           </div>
         </div>
 
@@ -512,6 +519,15 @@ export default function CandidateDetails() {
                             <li key={i}>{p}</li>
                           ))}
                         </ul>
+                      </div>
+                    )}
+
+                    {a.detalhes?.motivo && (
+                      <div className="bg-amber-50/50 p-3 rounded-md border border-amber-100 mt-4">
+                        <span className="font-semibold text-amber-800 flex items-center gap-1.5 mb-1">
+                          Motivo (Regra / Localização)
+                        </span>
+                        <p className="text-slate-600 text-sm">{a.detalhes.motivo}</p>
                       </div>
                     )}
                   </CardContent>

@@ -131,15 +131,17 @@ export function CandidateTable({
                 <TableCell>
                   <div className="flex items-center gap-2">
                     <Switch
-                      checked={c.status_analise_cv === 'pre_aprovado'}
-                      onCheckedChange={() => onToggleStatus(c.id, c.status_analise_cv, c.vaga_id)}
+                      checked={c.status_analise === 'qualificado'}
+                      onCheckedChange={() => onToggleStatus(c.id, c.status_analise, c.vaga_id)}
                     />
                     <span className="text-xs text-slate-500">
-                      {c.status_analise_cv === 'pre_aprovado'
+                      {c.status_analise === 'qualificado'
                         ? 'Sim'
-                        : c.status_analise_cv === 'reprovado'
+                        : c.status_analise === 'nao_qualificado'
                           ? 'Não'
-                          : '-'}
+                          : c.status_analise === 'revisar'
+                            ? 'Revisar'
+                            : '-'}
                     </span>
                   </div>
                 </TableCell>
@@ -182,15 +184,17 @@ export function CandidateTable({
                   <p className="text-xs text-slate-500 mb-1">Qualificado</p>
                   <div className="flex items-center gap-2 mt-1">
                     <Switch
-                      checked={c.status_analise_cv === 'pre_aprovado'}
-                      onCheckedChange={() => onToggleStatus(c.id, c.status_analise_cv, c.vaga_id)}
+                      checked={c.status_analise === 'qualificado'}
+                      onCheckedChange={() => onToggleStatus(c.id, c.status_analise, c.vaga_id)}
                     />
                     <span className="text-xs text-slate-500">
-                      {c.status_analise_cv === 'pre_aprovado'
+                      {c.status_analise === 'qualificado'
                         ? 'Sim'
-                        : c.status_analise_cv === 'reprovado'
+                        : c.status_analise === 'nao_qualificado'
                           ? 'Não'
-                          : '-'}
+                          : c.status_analise === 'revisar'
+                            ? 'Revisar'
+                            : '-'}
                     </span>
                   </div>
                 </div>

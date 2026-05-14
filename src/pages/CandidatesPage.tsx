@@ -4,7 +4,7 @@ import {
   getCandidatesList,
   deleteCandidate,
   updateCandidate,
-  updateAnaliseCvStatus,
+  updateAnaliseStatus,
 } from '@/services/candidates'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -53,9 +53,6 @@ export default function CandidatesPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'analises' }, () => {
         loadData()
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'analise_cv' }, () => {
-        loadData()
-      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'candidatos' }, () => {
         loadData()
       })
@@ -74,10 +71,12 @@ export default function CandidatesPage() {
         c.vaga.toLowerCase().includes(search.toLowerCase())
 
       let matchStatus = true
-      if (statusFilter === 'pre_aprovado') {
-        matchStatus = c.status_analise_cv === 'pre_aprovado'
-      } else if (statusFilter === 'reprovado') {
-        matchStatus = c.status_analise_cv === 'reprovado'
+      if (statusFilter === 'qualificado') {
+        matchStatus = c.status_analise === 'qualificado'
+      } else if (statusFilter === 'nao_qualificado') {
+        matchStatus = c.status_analise === 'nao_qualificado'
+      } else if (statusFilter === 'revisar') {
+        matchStatus = c.status_analise === 'revisar'
       }
 
       return matchSearch && matchStatus
@@ -89,9 +88,14 @@ export default function CandidatesPage() {
     currentStatus: string | null,
     vagaId: string | null,
   ) => {
-    const newStatus = currentStatus === 'pre_aprovado' ? 'reprovado' : 'pre_aprovado'
+    const newStatus = currentStatus === 'qualificado' ? 'nao_qualificado' : 'qualificado'
     try {
-      await updateAnaliseCvStatus(candidateId, vagaId, newStatus)
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) throw new Error('Usuário não autenticado')
+
+      await updateAnaliseStatus(candidateId, vagaId, newStatus, user.id)
       toast({ title: 'Status atualizado com sucesso' })
       loadData()
     } catch (err: any) {
@@ -164,8 +168,9 @@ export default function CandidatesPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="todos">Todos</SelectItem>
-              <SelectItem value="pre_aprovado">Qualificados</SelectItem>
-              <SelectItem value="reprovado">Não Qualificados</SelectItem>
+              <SelectItem value="qualificado">Qualificados</SelectItem>
+              <SelectItem value="nao_qualificado">Não Qualificados</SelectItem>
+              <SelectItem value="revisar">Para Revisão</SelectItem>
             </SelectContent>
           </Select>
           <div className="relative w-full sm:w-[280px]">

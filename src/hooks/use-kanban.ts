@@ -41,9 +41,6 @@ export function useKanban() {
         loadData(),
       )
       .on('postgres_changes', { event: '*', schema: 'public', table: 'analises' }, () => loadData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'analise_cv' }, () =>
-        loadData(),
-      )
       .subscribe()
 
     return () => {
@@ -75,6 +72,16 @@ export function useKanban() {
 
   const moveCandidate = useCallback(
     async (candidateId: string, newStageId: string) => {
+      // Validate if candidateId is a valid UUID
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      if (!candidateId || !uuidRegex.test(candidateId)) {
+        console.warn(
+          'Operação de arrastar ignorada. O ID do candidato não é um UUID válido:',
+          candidateId,
+        )
+        return
+      }
+
       const previousCandidates = [...candidates]
 
       setCandidates((prev) => {
