@@ -1,8 +1,8 @@
 {
   "_versions": {
-    "outlook-webhook": 10,
-    "process-resume": 11,
-    "analyze-resume": 24,
+    "outlook-webhook": 11,
+    "process-resume": 12,
+    "analyze-resume": 25,
     "enviar-whatsapp": 10,
     "test-whatsapp": 5,
     "manage-users": 4,

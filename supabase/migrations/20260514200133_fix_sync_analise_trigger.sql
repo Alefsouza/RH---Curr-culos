@@ -51,7 +51,7 @@ BEGIN
     
     -- In case of exact same timestamp, clean arbitrarily
     DELETE FROM public.analise_cv a USING (
-      SELECT MIN(id) as id, cv_id, vaga_id
+      SELECT MIN(id::text)::uuid as id, cv_id, vaga_id
       FROM public.analise_cv 
       GROUP BY cv_id, vaga_id HAVING COUNT(*) > 1
     ) b WHERE a.cv_id = b.cv_id AND a.vaga_id = b.vaga_id AND a.id <> b.id;
