@@ -98,7 +98,20 @@ export default function CandidateDetails() {
         .from('analises')
         .select('*, vagas(titulo)')
         .eq('candidato_id', id)
-      if (analisesData) setAnalises(analisesData)
+        .order('criado_em', { ascending: false })
+
+      // Deduplicate analises by vaga_id to only show the latest analysis per job
+      if (analisesData) {
+        const uniqueAnalises: any[] = []
+        const seenVagas = new Set()
+        for (const a of analisesData) {
+          if (!seenVagas.has(a.vaga_id)) {
+            seenVagas.add(a.vaga_id)
+            uniqueAnalises.push(a)
+          }
+        }
+        setAnalises(uniqueAnalises)
+      }
 
       const { data: histData } = await supabase
         .from('candidato_etapa')

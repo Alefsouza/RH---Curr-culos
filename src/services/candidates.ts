@@ -15,33 +15,48 @@ export async function getCandidatesList() {
       vaga_id,
       vagas ( titulo ),
       etapas ( nome, cor ),
-      analises ( resultado ),
-      analise_cv ( id, status, vaga_id )
+      analises ( resultado, criado_em ),
+      analise_cv ( id, status, vaga_id, atualizado_em )
     `)
     .order('criado_em', { ascending: false })
 
   if (error) throw error
 
-  return data.map((c: any) => ({
-    id: c.id,
-    nome: c.nome,
-    email: c.email || '',
-    telefone: c.telefone || '',
-    curriculo_url: c.curriculo_url,
-    fonte: c.fonte || 'Site',
-    criado_em: c.criado_em,
-    vaga_id: c.vaga_id,
-    vaga: c.vagas ? (Array.isArray(c.vagas) ? c.vagas[0]?.titulo : c.vagas.titulo) : 'Sem vaga',
-    etapa: c.etapas ? (Array.isArray(c.etapas) ? c.etapas[0]?.nome : c.etapas.nome) : 'Sem etapa',
-    etapa_cor: c.etapas
-      ? Array.isArray(c.etapas)
-        ? c.etapas[0]?.cor
-        : c.etapas.cor
-      : 'bg-slate-200',
-    status_analise: c.analises && c.analises.length > 0 ? c.analises[0].resultado : 'pendente',
-    status_analise_cv: c.analise_cv && c.analise_cv.length > 0 ? c.analise_cv[0].status : null,
-    duplicado_de: c.duplicado_de,
-  }))
+  return data.map((c: any) => {
+    // Sort to get the latest analise and analise_cv
+    const sortedAnalises = c.analises
+      ? [...c.analises].sort(
+          (a: any, b: any) => new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime(),
+        )
+      : []
+    const sortedAnaliseCv = c.analise_cv
+      ? [...c.analise_cv].sort(
+          (a: any, b: any) =>
+            new Date(b.atualizado_em || 0).getTime() - new Date(a.atualizado_em || 0).getTime(),
+        )
+      : []
+
+    return {
+      id: c.id,
+      nome: c.nome,
+      email: c.email || '',
+      telefone: c.telefone || '',
+      curriculo_url: c.curriculo_url,
+      fonte: c.fonte || 'Site',
+      criado_em: c.criado_em,
+      vaga_id: c.vaga_id,
+      vaga: c.vagas ? (Array.isArray(c.vagas) ? c.vagas[0]?.titulo : c.vagas.titulo) : 'Sem vaga',
+      etapa: c.etapas ? (Array.isArray(c.etapas) ? c.etapas[0]?.nome : c.etapas.nome) : 'Sem etapa',
+      etapa_cor: c.etapas
+        ? Array.isArray(c.etapas)
+          ? c.etapas[0]?.cor
+          : c.etapas.cor
+        : 'bg-slate-200',
+      status_analise: sortedAnalises.length > 0 ? sortedAnalises[0].resultado : 'pendente',
+      status_analise_cv: sortedAnaliseCv.length > 0 ? sortedAnaliseCv[0].status : null,
+      duplicado_de: c.duplicado_de,
+    }
+  })
 }
 
 export async function updateAnaliseCvStatus(cv_id: string, vaga_id: string | null, status: string) {

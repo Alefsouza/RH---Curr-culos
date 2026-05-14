@@ -173,6 +173,8 @@ ${pdfText.substring(0, 15000)}
     if (cleanTelefone) orConditions.push(`telefone.eq."${cleanTelefone}"`)
     if (cleanNome) orConditions.push(`nome.eq."${cleanNome}"`)
 
+    let candidatoId
+
     if (orConditions.length > 0) {
       const { data: duplicates, error: searchError } = await supabase
         .from('candidatos')
@@ -183,56 +185,76 @@ ${pdfText.substring(0, 15000)}
       if (searchError) console.error('Erro ao buscar duplicados:', searchError)
 
       if (duplicates && duplicates.length > 0) {
-        const idsToDelete = duplicates.map((d) => d.id)
-        await supabase.from('candidatos').delete().in('id', idsToDelete)
+        candidatoId = duplicates[0].id
+
+        await supabase
+          .from('candidatos')
+          .update({
+            nome: extractedData.nome,
+            email: extractedData.email || null,
+            telefone: extractedData.telefone || null,
+            dados_extraidos: extractedData,
+          })
+          .eq('id', candidatoId)
       }
     }
 
-    // 7. Inserir Candidato
-    const { data: newCandidate, error: insertCandidateError } = await supabase
-      .from('candidatos')
-      .insert({
-        nome: extractedData.nome,
-        email: extractedData.email || null,
-        telefone: extractedData.telefone || null,
-        fonte: 'outlook',
-        user_id: userId,
-      })
-      .select('id')
-      .single()
-
-    if (insertCandidateError) throw insertCandidateError
-    const candidatoId = newCandidate.id
-
-    // 8. Etapa "Nunca Responderam"
-    let { data: etapa } = await supabase
-      .from('etapas')
-      .select('id')
-      .eq('user_id', userId)
-      .ilike('nome', 'Nunca Responderam')
-      .maybeSingle()
-
-    if (!etapa) {
-      const { data: newEtapa } = await supabase
-        .from('etapas')
+    if (!candidatoId) {
+      // 7. Inserir Candidato
+      const { data: newCandidate, error: insertCandidateError } = await supabase
+        .from('candidatos')
         .insert({
-          nome: 'Nunca Responderam',
-          ordem: 0,
-          cor: 'bg-gray-200',
+          nome: extractedData.nome,
+          email: extractedData.email || null,
+          telefone: extractedData.telefone || null,
+          dados_extraidos: extractedData,
+          fonte: 'outlook',
           user_id: userId,
         })
         .select('id')
         .single()
-      etapa = newEtapa
+
+      if (insertCandidateError) throw insertCandidateError
+      candidatoId = newCandidate.id
     }
 
-    if (etapa) {
-      await supabase.from('candidato_etapa').insert({
-        candidato_id: candidatoId,
-        etapa_id: etapa.id,
-        usuario_id: userId,
-      })
-      await supabase.from('candidatos').update({ etapa_id: etapa.id }).eq('id', candidatoId)
+    // 8. Verificar Etapa Atual
+    const { data: currentCandidate } = await supabase
+      .from('candidatos')
+      .select('etapa_id')
+      .eq('id', candidatoId)
+      .single()
+
+    if (!currentCandidate?.etapa_id) {
+      let { data: etapa } = await supabase
+        .from('etapas')
+        .select('id')
+        .eq('user_id', userId)
+        .ilike('nome', 'Nunca Responderam')
+        .maybeSingle()
+
+      if (!etapa) {
+        const { data: newEtapa } = await supabase
+          .from('etapas')
+          .insert({
+            nome: 'Nunca Responderam',
+            ordem: 0,
+            cor: 'bg-gray-200',
+            user_id: userId,
+          })
+          .select('id')
+          .single()
+        etapa = newEtapa
+      }
+
+      if (etapa) {
+        await supabase.from('candidato_etapa').insert({
+          candidato_id: candidatoId,
+          etapa_id: etapa.id,
+          usuario_id: userId,
+        })
+        await supabase.from('candidatos').update({ etapa_id: etapa.id }).eq('id', candidatoId)
+      }
     }
 
     // 9 & 10. Analisar contra vagas abertas

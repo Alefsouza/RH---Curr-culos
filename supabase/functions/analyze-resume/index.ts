@@ -237,11 +237,16 @@ ${pdfText.substring(0, 15000)}`
         orConditions.push(`telefone.eq."${safeTel}"`)
       }
 
+      const { data: publicUrlData } = supabase.storage.from('curriculos').getPublicUrl(filePath)
+      const finalVagaId = vaga_id
+
+      let candidatoId
+
       if (orConditions.length > 0) {
         console.log('Verificando candidatos duplicados no sistema...')
         const { data: duplicates, error: dupError } = await supabase
           .from('candidatos')
-          .select('id')
+          .select('id, vaga_id, etapa_id')
           .eq('user_id', user_id)
           .or(orConditions.join(','))
 
@@ -251,103 +256,122 @@ ${pdfText.substring(0, 15000)}`
         }
 
         if (duplicates && duplicates.length > 0) {
+          candidatoId = duplicates[0].id
           console.log(
-            `Aviso: Foram encontrados ${duplicates.length} candidatos duplicados. Removendo registros obsoletos...`,
+            `Aviso: Foram encontrados candidatos duplicados. Atualizando registro ${candidatoId}...`,
           )
-          const idsToDelete = duplicates.map((d) => d.id)
-          const { error: deleteError } = await supabase
-            .from('candidatos')
-            .delete()
-            .in('id', idsToDelete)
 
-          if (deleteError) {
-            console.error('Erro ao remover candidatos duplicados:', deleteError)
-            throw deleteError
+          const { error: updateError } = await supabase
+            .from('candidatos')
+            .update({
+              nome: finalNome,
+              email: finalEmail,
+              telefone: finalTelefone,
+              curriculo_url: publicUrlData.publicUrl,
+              dados_extraidos: extractedData,
+              vaga_id: finalVagaId || duplicates[0].vaga_id,
+            })
+            .eq('id', candidatoId)
+
+          if (updateError) {
+            console.error('Erro ao atualizar candidato duplicado:', updateError)
+            throw updateError
           }
-          console.log('Registros duplicados removidos com sucesso.')
         } else {
           console.log('Nenhum candidato duplicado detectado.')
         }
       }
 
-      // 5. Insert Candidate
-      console.log('Preparando para inserir o novo candidato na base de dados...')
-      const { data: publicUrlData } = supabase.storage.from('curriculos').getPublicUrl(filePath)
-      const finalVagaId = vaga_id
+      if (!candidatoId) {
+        // 5. Insert Candidate
+        console.log('Preparando para inserir o novo candidato na base de dados...')
 
-      console.log(`Inserindo candidato com vaga_id processado: ${finalVagaId}`)
+        console.log(`Inserindo candidato com vaga_id processado: ${finalVagaId}`)
 
-      const { data: newCandidate, error: insertCandidateError } = await supabase
-        .from('candidatos')
-        .insert({
-          nome: finalNome,
-          email: finalEmail,
-          telefone: finalTelefone,
-          fonte: 'site',
-          curriculo_url: publicUrlData.publicUrl,
-          vaga_id: finalVagaId,
-          user_id: user_id,
-        })
-        .select('id')
-        .single()
-
-      if (insertCandidateError) {
-        console.error('Erro ao inserir candidato na tabela:', insertCandidateError)
-        throw insertCandidateError
-      }
-      const candidatoId = newCandidate.id
-      console.log(`Sucesso: Candidato registrado no banco de dados. ID Gerado: ${candidatoId}`)
-
-      // 6. Stage "Nunca Responderam"
-      console.log('Buscando etapa padrão "Nunca Responderam"...')
-      let { data: etapa, error: etapaError } = await supabase
-        .from('etapas')
-        .select('id')
-        .eq('user_id', user_id)
-        .ilike('nome', 'Nunca Responderam')
-        .maybeSingle()
-
-      if (etapaError) {
-        console.error('Erro ao consultar etapas do usuário:', etapaError)
-        throw etapaError
-      }
-
-      if (!etapa) {
-        console.log('A etapa "Nunca Responderam" não foi encontrada. Criando nova etapa...')
-        const { data: newEtapa, error: insertEtapaError } = await supabase
-          .from('etapas')
+        const { data: newCandidate, error: insertCandidateError } = await supabase
+          .from('candidatos')
           .insert({
-            nome: 'Nunca Responderam',
-            ordem: 0,
-            cor: 'bg-slate-200',
+            nome: finalNome,
+            email: finalEmail,
+            telefone: finalTelefone,
+            fonte: 'site',
+            curriculo_url: publicUrlData.publicUrl,
+            dados_extraidos: extractedData,
+            vaga_id: finalVagaId,
             user_id: user_id,
           })
           .select('id')
           .single()
 
-        if (insertEtapaError) {
-          console.error('Erro ao criar a nova etapa:', insertEtapaError)
-          throw insertEtapaError
+        if (insertCandidateError) {
+          console.error('Erro ao inserir candidato na tabela:', insertCandidateError)
+          throw insertCandidateError
         }
-        etapa = newEtapa
-        console.log('Nova etapa "Nunca Responderam" criada com sucesso.')
+        candidatoId = newCandidate.id
+        console.log(`Sucesso: Candidato registrado no banco de dados. ID Gerado: ${candidatoId}`)
       }
 
-      if (etapa) {
-        console.log(`Relacionando o candidato à etapa de ID: ${etapa.id}`)
-        const { error: relError } = await supabase.from('candidato_etapa').insert({
-          candidato_id: candidatoId,
-          etapa_id: etapa.id,
-          usuario_id: user_id,
-        })
-        if (relError) throw relError
+      // 6. Verificar Etapa Atual
+      console.log('Verificando se o candidato já possui uma etapa...')
+      const { data: currentCandidate } = await supabase
+        .from('candidatos')
+        .select('etapa_id')
+        .eq('id', candidatoId)
+        .single()
 
-        const { error: updError } = await supabase
-          .from('candidatos')
-          .update({ etapa_id: etapa.id })
-          .eq('id', candidatoId)
-        if (updError) throw updError
-        console.log('Candidato inserido na etapa corretamente.')
+      if (!currentCandidate?.etapa_id) {
+        console.log('Buscando etapa padrão "Nunca Responderam"...')
+        let { data: etapa, error: etapaError } = await supabase
+          .from('etapas')
+          .select('id')
+          .eq('user_id', user_id)
+          .ilike('nome', 'Nunca Responderam')
+          .maybeSingle()
+
+        if (etapaError) {
+          console.error('Erro ao consultar etapas do usuário:', etapaError)
+          throw etapaError
+        }
+
+        if (!etapa) {
+          console.log('A etapa "Nunca Responderam" não foi encontrada. Criando nova etapa...')
+          const { data: newEtapa, error: insertEtapaError } = await supabase
+            .from('etapas')
+            .insert({
+              nome: 'Nunca Responderam',
+              ordem: 0,
+              cor: 'bg-slate-200',
+              user_id: user_id,
+            })
+            .select('id')
+            .single()
+
+          if (insertEtapaError) {
+            console.error('Erro ao criar a nova etapa:', insertEtapaError)
+            throw insertEtapaError
+          }
+          etapa = newEtapa
+          console.log('Nova etapa "Nunca Responderam" criada com sucesso.')
+        }
+
+        if (etapa) {
+          console.log(`Relacionando o candidato à etapa de ID: ${etapa.id}`)
+          const { error: relError } = await supabase.from('candidato_etapa').insert({
+            candidato_id: candidatoId,
+            etapa_id: etapa.id,
+            usuario_id: user_id,
+          })
+          if (relError) throw relError
+
+          const { error: updError } = await supabase
+            .from('candidatos')
+            .update({ etapa_id: etapa.id })
+            .eq('id', candidatoId)
+          if (updError) throw updError
+          console.log('Candidato inserido na etapa corretamente.')
+        }
+      } else {
+        console.log('Candidato já está em uma etapa. Mantendo a etapa atual.')
       }
 
       // 7. Analyze against job criteria

@@ -158,71 +158,95 @@ ${pdfText.substring(0, 15000)}`
       orConditions.push(`telefone.eq."${safeTel}"`)
     }
 
+    const { data: publicUrlData } = supabase.storage.from('curriculos').getPublicUrl(filePath)
+
+    let candidatoId
+
     if (orConditions.length > 0) {
       const { data: duplicates } = await supabase
         .from('candidatos')
-        .select('id')
+        .select('id, vaga_id')
         .eq('user_id', user_id)
         .or(orConditions.join(','))
 
       if (duplicates && duplicates.length > 0) {
-        const idsToDelete = duplicates.map((d) => d.id)
-        await supabase.from('candidatos').delete().in('id', idsToDelete)
+        candidatoId = duplicates[0].id
+
+        await supabase
+          .from('candidatos')
+          .update({
+            nome: finalNome,
+            email: finalEmail,
+            telefone: finalTelefone,
+            curriculo_url: publicUrlData.publicUrl,
+            dados_extraidos: extractedData,
+            vaga_id: vaga_id || duplicates[0].vaga_id,
+          })
+          .eq('id', candidatoId)
       }
     }
 
-    // 5. Insert Candidate
-    const { data: publicUrlData } = supabase.storage.from('curriculos').getPublicUrl(filePath)
-
-    const { data: newCandidate, error: insertCandidateError } = await supabase
-      .from('candidatos')
-      .insert({
-        nome: finalNome,
-        email: finalEmail,
-        telefone: finalTelefone,
-        fonte: 'site',
-        curriculo_url: publicUrlData.publicUrl,
-        vaga_id: vaga_id || null,
-        user_id: user_id,
-      })
-      .select('id')
-      .single()
-
-    if (insertCandidateError) {
-      console.error('Erro ao inserir candidato:', insertCandidateError)
-      throw insertCandidateError
-    }
-    const candidatoId = newCandidate.id
-
-    // 6. Stage "Nunca Responderam"
-    let { data: etapa } = await supabase
-      .from('etapas')
-      .select('id')
-      .eq('user_id', user_id)
-      .ilike('nome', 'Nunca Responderam')
-      .single()
-
-    if (!etapa) {
-      const { data: newEtapa } = await supabase
-        .from('etapas')
+    if (!candidatoId) {
+      // 5. Insert Candidate
+      const { data: newCandidate, error: insertCandidateError } = await supabase
+        .from('candidatos')
         .insert({
-          nome: 'Nunca Responderam',
-          ordem: 0,
-          cor: 'bg-gray-200',
+          nome: finalNome,
+          email: finalEmail,
+          telefone: finalTelefone,
+          fonte: 'site',
+          curriculo_url: publicUrlData.publicUrl,
+          dados_extraidos: extractedData,
+          vaga_id: vaga_id || null,
           user_id: user_id,
         })
         .select('id')
         .single()
-      etapa = newEtapa
+
+      if (insertCandidateError) {
+        console.error('Erro ao inserir candidato:', insertCandidateError)
+        throw insertCandidateError
+      }
+      candidatoId = newCandidate.id
     }
 
-    if (etapa) {
-      await supabase.from('candidato_etapa').insert({
-        candidato_id: candidatoId,
-        etapa_id: etapa.id,
-        usuario_id: user_id,
-      })
-      await supabase.from('candidatos').update({ etapa_id: etapa.id }).eq('id', candidatoId)
+    // 6. Verificar Etapa Atual
+    const { data: currentCandidate } = await supabase
+      .from('candidatos')
+      .select('etapa_id')
+      .eq('id', candidatoId)
+      .single()
+
+    if (!currentCandidate?.etapa_id) {
+      let { data: etapa } = await supabase
+        .from('etapas')
+        .select('id')
+        .eq('user_id', user_id)
+        .ilike('nome', 'Nunca Responderam')
+        .maybeSingle()
+
+      if (!etapa) {
+        const { data: newEtapa } = await supabase
+          .from('etapas')
+          .insert({
+            nome: 'Nunca Responderam',
+            ordem: 0,
+            cor: 'bg-gray-200',
+            user_id: user_id,
+          })
+          .select('id')
+          .single()
+        etapa = newEtapa
+      }
+
+      if (etapa) {
+        await supabase.from('candidato_etapa').insert({
+          candidato_id: candidatoId,
+          etapa_id: etapa.id,
+          usuario_id: user_id,
+        })
+        await supabase.from('candidatos').update({ etapa_id: etapa.id }).eq('id', candidatoId)
+      }
     }
 
     // 7. Analyze against job criteria
