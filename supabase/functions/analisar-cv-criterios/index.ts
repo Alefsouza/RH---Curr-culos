@@ -1,71 +1,83 @@
-import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
-import { createClient } from 'jsr:@supabase/supabase-js@2';
-import OpenAI from 'npm:openai@4';
+import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
+import { createClient } from 'jsr:@supabase/supabase-js@2'
+import OpenAI from 'npm:openai@4'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, x-supabase-client-platform, apikey, content-type',
-};
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, x-supabase-client-platform, apikey, content-type',
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const authHeader = req.headers.get('authorization');
+    const authHeader = req.headers.get('authorization')
     if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Autorização ausente." }), { 
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      });
+      return new Response(JSON.stringify({ error: 'Autorização ausente.' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
-    
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') || ''
+
     const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } }
-    });
+      global: { headers: { Authorization: authHeader } },
+    })
 
-    const { data: { user }, error: userError } = await supabaseAuth.auth.getUser();
+    const {
+      data: { user },
+      error: userError,
+    } = await supabaseAuth.auth.getUser()
     if (userError || !user) {
-      return new Response(JSON.stringify({ error: "Usuário não autenticado." }), { 
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      });
+      return new Response(JSON.stringify({ error: 'Usuário não autenticado.' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
-    const bodyText = await req.text();
-    let body;
+    const bodyText = await req.text()
+    let body
     try {
-      body = JSON.parse(bodyText);
+      body = JSON.parse(bodyText)
     } catch (e) {
-      return new Response(JSON.stringify({ error: "Payload inválido. Formato JSON esperado." }), { 
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      });
+      return new Response(JSON.stringify({ error: 'Payload inválido. Formato JSON esperado.' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
-    const { cv_id, vaga_id } = body;
+    const { cv_id, vaga_id } = body
 
     if (!cv_id || !vaga_id) {
-      return new Response(JSON.stringify({ error: "Os parâmetros cv_id e vaga_id são obrigatórios." }), { 
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      });
+      return new Response(
+        JSON.stringify({ error: 'Os parâmetros cv_id e vaga_id são obrigatórios.' }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
     }
 
-    const supabaseAdmin = createClient(supabaseUrl, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '');
+    const supabaseAdmin = createClient(supabaseUrl, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '')
 
     const { data: candidato, error: candidatoError } = await supabaseAdmin
       .from('candidatos')
       .select('*')
       .eq('id', cv_id)
       .eq('user_id', user.id)
-      .single();
+      .single()
 
     if (candidatoError || !candidato) {
-      return new Response(JSON.stringify({ error: "Currículo não encontrado ou acesso negado." }), { 
-        status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      });
+      return new Response(JSON.stringify({ error: 'Currículo não encontrado ou acesso negado.' }), {
+        status: 404,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
     const { data: vaga, error: vagaError } = await supabaseAdmin
@@ -73,116 +85,137 @@ Deno.serve(async (req: Request) => {
       .select('*')
       .eq('id', vaga_id)
       .eq('user_id', user.id)
-      .single();
+      .single()
 
     if (vagaError || !vaga) {
-      return new Response(JSON.stringify({ error: "Vaga não encontrada ou acesso negado." }), { 
-        status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      });
+      return new Response(JSON.stringify({ error: 'Vaga não encontrada ou acesso negado.' }), {
+        status: 404,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
-    const extracted = typeof candidato.dados_extraidos === 'object' && candidato.dados_extraidos !== null 
-      ? candidato.dados_extraidos 
-      : {};
-      
+    const extracted =
+      typeof candidato.dados_extraidos === 'object' && candidato.dados_extraidos !== null
+        ? candidato.dados_extraidos
+        : {}
+
     const cvData = {
       nome: candidato.nome,
       email: candidato.email,
       telefone: candidato.telefone,
-      ...extracted
-    };
-
-    let criteriosText = "Sem critérios definidos.";
-    let localizacoesVaga: string[] = [];
-    let raioKm = 0;
-
-    if (vaga.criterios_qualificacao && typeof vaga.criterios_qualificacao === 'object') {
-      const critObj = vaga.criterios_qualificacao as any;
-      criteriosText = critObj.texto_livre || JSON.stringify(critObj);
-      if (Array.isArray(critObj.localizacoes) && critObj.localizacoes.length > 0) {
-        localizacoesVaga = critObj.localizacoes.map((l: any) => {
-          return [l.endereco, l.cidade, l.estado].filter(Boolean).join(', ');
-        });
-      }
-      raioKm = critObj.raio_km || 0;
-    } else if (typeof vaga.criterios_qualificacao === 'string') {
-      criteriosText = vaga.criterios_qualificacao;
+      ...extracted,
     }
 
-    const enderecoCV = extracted.endereco || extracted.location || extracted.cidade || extracted.estado || "";
+    let criteriosText = 'Sem critérios definidos.'
+    let localizacoesVaga: string[] = []
+    let raioKm = 0
 
-    const googleApiKey = Deno.env.get('GOOGLE_API_KEY');
-    let menorDistanciaKm: number = 0;
-    let qualificadoPorLocalizacao = true;
-    let distanciaCalculada = false;
+    if (vaga.criterios_qualificacao && typeof vaga.criterios_qualificacao === 'object') {
+      const critObj = vaga.criterios_qualificacao as any
+      criteriosText = critObj.texto_livre || JSON.stringify(critObj)
+      if (Array.isArray(critObj.localizacoes) && critObj.localizacoes.length > 0) {
+        localizacoesVaga = critObj.localizacoes.map((l: any) => {
+          return [l.endereco, l.cidade, l.estado].filter(Boolean).join(', ')
+        })
+      }
+      raioKm = critObj.raio_km || 0
+    } else if (typeof vaga.criterios_qualificacao === 'string') {
+      criteriosText = vaga.criterios_qualificacao
+    }
+
+    const enderecoCV =
+      extracted.endereco || extracted.location || extracted.cidade || extracted.estado || ''
+
+    const googleApiKey = Deno.env.get('GOOGLE_API_KEY')
+    let menorDistanciaKm: number = 0
+    let qualificadoPorLocalizacao = true
+    let distanciaCalculada = false
 
     if (localizacoesVaga.length > 0 && raioKm > 0) {
       if (!enderecoCV) {
-        qualificadoPorLocalizacao = false;
-        distanciaCalculada = false;
+        qualificadoPorLocalizacao = false
+        distanciaCalculada = false
       } else if (!googleApiKey) {
-        console.error("GOOGLE_API_KEY não configurada.");
-        return new Response(JSON.stringify({ error: "Erro de configuração do servidor: Google Maps API Key ausente." }), { 
-          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        });
+        console.error('GOOGLE_API_KEY não configurada.')
+        return new Response(
+          JSON.stringify({
+            error: 'Erro de configuração do servidor: Google Maps API Key ausente.',
+          }),
+          {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          },
+        )
       } else {
-        const callGoogleMapsWithRetry = async (origin: string, destination: string, retries = 3, delays = [2000, 4000, 8000]): Promise<number | null> => {
+        const callGoogleMapsWithRetry = async (
+          origin: string,
+          destination: string,
+          retries = 3,
+          delays = [2000, 4000, 8000],
+        ): Promise<number | null> => {
           try {
-            const url = new URL("https://maps.googleapis.com/maps/api/distancematrix/json");
-            url.searchParams.append("origins", origin);
-            url.searchParams.append("destinations", destination);
-            url.searchParams.append("key", googleApiKey);
-            url.searchParams.append("units", "metric");
+            const url = new URL('https://maps.googleapis.com/maps/api/distancematrix/json')
+            url.searchParams.append('origins', origin)
+            url.searchParams.append('destinations', destination)
+            url.searchParams.append('key', googleApiKey)
+            url.searchParams.append('units', 'metric')
 
-            const response = await fetch(url.toString(), { method: 'POST' });
+            const response = await fetch(url.toString(), { method: 'POST' })
             if (!response.ok) {
-                if (response.status === 503 && retries > 0) {
-                    throw new Error("503");
-                }
-                throw new Error(`HTTP Error ${response.status}`);
+              if (response.status === 503 && retries > 0) {
+                throw new Error('503')
+              }
+              throw new Error(`HTTP Error ${response.status}`)
             }
-            const data = await response.json();
-            
-            if (data.status === "OK" && data.rows && data.rows[0].elements && data.rows[0].elements[0].status === "OK") {
-              const distanceMeters = data.rows[0].elements[0].distance.value;
-              return distanceMeters / 1000;
+            const data = await response.json()
+
+            if (
+              data.status === 'OK' &&
+              data.rows &&
+              data.rows[0].elements &&
+              data.rows[0].elements[0].status === 'OK'
+            ) {
+              const distanceMeters = data.rows[0].elements[0].distance.value
+              return distanceMeters / 1000
             }
-            return null;
+            return null
           } catch (error: any) {
             if (retries > 0) {
-              const delay = delays[3 - retries] || 8000;
-              console.log(`Erro Google Maps. Tentando novamente em ${delay}ms... (${retries} tentativas)`);
-              await new Promise(res => setTimeout(res, delay));
-              return callGoogleMapsWithRetry(origin, destination, retries - 1, delays);
+              const delay = delays[3 - retries] || 8000
+              console.log(
+                `Erro Google Maps. Tentando novamente em ${delay}ms... (${retries} tentativas)`,
+              )
+              await new Promise((res) => setTimeout(res, delay))
+              return callGoogleMapsWithRetry(origin, destination, retries - 1, delays)
             }
-            console.error("Erro final Google Maps:", error);
-            return null;
+            console.error('Erro final Google Maps:', error)
+            return null
           }
         }
 
-        let minC: number | null = null;
+        let minC: number | null = null
         for (const locVaga of localizacoesVaga) {
-          const dist = await callGoogleMapsWithRetry(enderecoCV, locVaga);
+          const dist = await callGoogleMapsWithRetry(enderecoCV, locVaga)
           if (dist !== null) {
             if (minC === null || dist < minC) {
-              minC = dist;
+              minC = dist
             }
           }
         }
 
         if (minC !== null) {
-          menorDistanciaKm = minC;
-          qualificadoPorLocalizacao = menorDistanciaKm <= raioKm;
-          distanciaCalculada = true;
+          menorDistanciaKm = minC
+          qualificadoPorLocalizacao = menorDistanciaKm <= raioKm
+          distanciaCalculada = true
         } else {
-          qualificadoPorLocalizacao = false;
+          qualificadoPorLocalizacao = false
         }
       }
     }
 
     const promptText = `Analise este currículo comparado com estes critérios:
 - Critérios textuais: ${criteriosText}
-- Localização do candidato: ${enderecoCV || "Não informado"}
+- Localização do candidato: ${enderecoCV || 'Não informado'}
 - Distância até a vaga: ${distanciaCalculada ? menorDistanciaKm.toFixed(2) : 0} km
 - Raio aceito: ${raioKm} km
 - Qualificado por localização: ${qualificadoPorLocalizacao}
@@ -194,61 +227,87 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
 - status (pre_aprovado ou reprovado)
 - motivo (explicação breve em português)
 - validacao_localizacao (true se dentro do raio, false se fora)
-- distancia_km (distância calculada)`;
+- distancia_km (distância calculada)`
 
-    const openaiKey = Deno.env.get('OPENIA_KEY') || Deno.env.get('OPENAI_API_KEY') || Deno.env.get('OPENAI_KEY');
+    const openaiKey =
+      Deno.env.get('OPENIA_KEY') || Deno.env.get('OPENAI_API_KEY') || Deno.env.get('OPENAI_KEY')
     if (!openaiKey) {
-      console.log("ERRO: OPENIA_KEY não configurada");
-      return new Response(JSON.stringify({ error: "Chave OpenAI não configurada" }), { 
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      });
+      console.log('ERRO: OPENIA_KEY não configurada')
+      return new Response(JSON.stringify({ error: 'Chave OpenAI não configurada' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
-    const openai = new OpenAI({ apiKey: openaiKey });
+    const openai = new OpenAI({ apiKey: openaiKey })
 
-    const callOpenAIWithRetry = async (prompt: string, retries = 3, delays = [2000, 4000, 8000]): Promise<any> => {
+    const callOpenAIWithRetry = async (
+      prompt: string,
+      retries = 3,
+      delays = [2000, 4000, 8000],
+    ): Promise<any> => {
       try {
         const response = await openai.chat.completions.create({
-          model: "gpt-4-turbo",
+          model: 'gpt-4-turbo',
           temperature: 1.0,
-          messages: [{ role: "user", content: prompt }],
-          response_format: { type: "json_object" }
-        });
-        const content = response.choices[0]?.message?.content;
-        return content ? JSON.parse(content) : {};
+          messages: [{ role: 'user', content: prompt }],
+          response_format: { type: 'json_object' },
+        })
+        const content = response.choices[0]?.message?.content
+        return content ? JSON.parse(content) : {}
       } catch (error: any) {
         if (error.status === 503 && retries > 0) {
-          const delay = delays[3 - retries] || 8000;
-          console.log(`Erro 503: Serviço indisponível. Tentando novamente em ${delay}ms... (${retries} tentativas)`);
-          await new Promise(res => setTimeout(res, delay));
-          return callOpenAIWithRetry(prompt, retries - 1, delays);
+          const delay = delays[3 - retries] || 8000
+          console.log(
+            `Erro 503: Serviço indisponível. Tentando novamente em ${delay}ms... (${retries} tentativas)`,
+          )
+          await new Promise((res) => setTimeout(res, delay))
+          return callOpenAIWithRetry(prompt, retries - 1, delays)
         }
-        throw error;
+        throw error
       }
-    };
-
-    let resultJson;
-    try {
-      resultJson = await callOpenAIWithRetry(promptText);
-    } catch (e: any) {
-      console.error("Erro na chamada da API:", e);
-      return new Response(JSON.stringify({ error: "Serviço de análise temporariamente indisponível. Tente novamente em alguns instantes." }), { 
-        status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      });
     }
 
-    let aiStatus = resultJson.status ? String(resultJson.status).toLowerCase().trim() : 'reprovado';
-    let status = (aiStatus === 'pre_aprovado' || aiStatus === 'pré-aprovado' || aiStatus === 'pre_aprovada' || aiStatus === 'aprovado' || aiStatus === 'pre aprovado') ? 'pre_aprovado' : 'reprovado';
-    let motivo = resultJson.motivo || 'Análise concluída sem detalhes adicionais.';
+    let resultJson
+    try {
+      resultJson = await callOpenAIWithRetry(promptText)
+    } catch (e: any) {
+      console.error('Erro na chamada da API:', e)
+      return new Response(
+        JSON.stringify({
+          error:
+            'Serviço de análise temporariamente indisponível. Tente novamente em alguns instantes.',
+        }),
+        {
+          status: 503,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
+    }
+
+    let aiStatus = resultJson.status ? String(resultJson.status).toLowerCase().trim() : 'reprovado'
+    let status =
+      aiStatus === 'pre_aprovado' ||
+      aiStatus === 'pré-aprovado' ||
+      aiStatus === 'pre_aprovada' ||
+      aiStatus === 'aprovado' ||
+      aiStatus === 'pre aprovado'
+        ? 'pre_aprovado'
+        : 'reprovado'
+    let motivo = resultJson.motivo || 'Análise concluída sem detalhes adicionais.'
 
     if (localizacoesVaga.length > 0 && raioKm > 0) {
       if (!enderecoCV) {
-        status = 'reprovado';
-        motivo = `Reprovado por localização: O endereço do candidato não foi encontrado no currículo. ${motivo}`;
+        status = 'reprovado'
+        motivo = `Reprovado por localização: O endereço do candidato não foi encontrado no currículo. ${motivo}`
       } else if (distanciaCalculada && !qualificadoPorLocalizacao) {
-        status = 'reprovado';
-        if (!motivo.toLowerCase().includes('localização') && !motivo.toLowerCase().includes('distância') && !motivo.toLowerCase().includes('raio')) {
-          motivo = `Reprovado por localização: Distância calculada de ${menorDistanciaKm.toFixed(2)} km ultrapassa o limite aceitável de ${raioKm} km. ${motivo}`;
+        status = 'reprovado'
+        if (
+          !motivo.toLowerCase().includes('localização') &&
+          !motivo.toLowerCase().includes('distância') &&
+          !motivo.toLowerCase().includes('raio')
+        ) {
+          motivo = `Reprovado por localização: Distância calculada de ${menorDistanciaKm.toFixed(2)} km ultrapassa o limite aceitável de ${raioKm} km. ${motivo}`
         }
       }
     }
@@ -258,26 +317,26 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
       .select('id')
       .eq('cv_id', cv_id)
       .eq('vaga_id', vaga_id)
-      .maybeSingle();
+      .maybeSingle()
 
-    let analiseData;
+    let analiseData
     if (existing) {
       const { data, error: updateError } = await supabaseAdmin
         .from('analise_cv')
         .update({ status, motivo, atualizado_em: new Date().toISOString() })
         .eq('id', existing.id)
         .select()
-        .single();
-      if (updateError) throw updateError;
-      analiseData = data;
+        .single()
+      if (updateError) throw updateError
+      analiseData = data
     } else {
       const { data, error: insertError } = await supabaseAdmin
         .from('analise_cv')
         .insert({ cv_id, vaga_id, status, motivo })
         .select()
-        .single();
-      if (insertError) throw insertError;
-      analiseData = data;
+        .single()
+      if (insertError) throw insertError
+      analiseData = data
     }
 
     if (status === 'pre_aprovado') {
@@ -287,10 +346,10 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
         .eq('user_id', user.id)
         .ilike('nome', 'Novos')
         .limit(1)
-        .maybeSingle();
+        .maybeSingle()
 
       if (etapaError) {
-        console.error("Erro ao buscar etapa Novos:", etapaError);
+        console.error('Erro ao buscar etapa Novos:', etapaError)
       }
 
       if (!etapaNovos) {
@@ -300,74 +359,86 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
             nome: 'Novos',
             ordem: 0,
             cor: 'bg-blue-100',
-            user_id: user.id
+            user_id: user.id,
           })
           .select('id')
-          .single();
-          
+          .single()
+
         if (insertEtapaError) {
-          console.error("Erro ao criar etapa Novos:", insertEtapaError);
+          console.error('Erro ao criar etapa Novos:', insertEtapaError)
         }
-        etapaNovos = novaEtapa;
+        etapaNovos = novaEtapa
       }
 
       if (etapaNovos) {
-        const { error: insertCandidatoEtapaError } = await supabaseAdmin.from('candidato_etapa').insert({
-          candidato_id: cv_id,
-          etapa_id: etapaNovos.id,
-          usuario_id: user.id
-        });
-        
+        const { error: insertCandidatoEtapaError } = await supabaseAdmin
+          .from('candidato_etapa')
+          .insert({
+            candidato_id: cv_id,
+            etapa_id: etapaNovos.id,
+            usuario_id: user.id,
+          })
+
         if (insertCandidatoEtapaError) {
-          console.error("Erro ao inserir candidato_etapa:", insertCandidatoEtapaError);
+          console.error('Erro ao inserir candidato_etapa:', insertCandidatoEtapaError)
         }
 
-        const { error: updateCandidatoError } = await supabaseAdmin.from('candidatos').update({ etapa_id: etapaNovos.id }).eq('id', cv_id);
-        
+        const { error: updateCandidatoError } = await supabaseAdmin
+          .from('candidatos')
+          .update({ etapa_id: etapaNovos.id })
+          .eq('id', cv_id)
+
         if (updateCandidatoError) {
-          console.error("Erro ao atualizar candidato:", updateCandidatoError);
+          console.error('Erro ao atualizar candidato:', updateCandidatoError)
         }
       }
     }
 
-    let numero_whatsapp = null;
+    let numero_whatsapp = null
     try {
-      const promptWhatsApp = `Extraia o número de telefone/WhatsApp do currículo. Retorne APENAS o número no formato: 11999999999\n\nCurrículo:\n${JSON.stringify(cvData)}`;
+      const promptWhatsApp = `Extraia o número de telefone/WhatsApp do currículo. Retorne APENAS o número no formato: 11999999999\n\nCurrículo:\n${JSON.stringify(cvData)}`
       const responseWpp = await openai.chat.completions.create({
-        model: "gpt-4-turbo",
+        model: 'gpt-4-turbo',
         temperature: 0.1,
-        messages: [{ role: "user", content: promptWhatsApp }]
-      });
-      const extractedText = responseWpp.choices[0]?.message?.content?.trim() || "";
-      const cleanPhone = extractedText.replace(/\D/g, '');
+        messages: [{ role: 'user', content: promptWhatsApp }],
+      })
+      const extractedText = responseWpp.choices[0]?.message?.content?.trim() || ''
+      const cleanPhone = extractedText.replace(/\D/g, '')
       if (cleanPhone.length === 11) {
-        numero_whatsapp = cleanPhone;
+        numero_whatsapp = cleanPhone
       }
     } catch (e: any) {
-      console.error("Erro ao extrair WhatsApp:", e);
+      console.error('Erro ao extrair WhatsApp:', e)
     }
 
     if (numero_whatsapp) {
       const { error: insertMsgError } = await supabaseAdmin.from('mensagens_whatsapp').insert({
         candidato_id: cv_id,
         numero_whatsapp: numero_whatsapp,
-        user_id: user.id
-      });
+        user_id: user.id,
+      })
       if (insertMsgError) {
-        console.error("Erro ao salvar em mensagens_whatsapp:", insertMsgError);
+        console.error('Erro ao salvar em mensagens_whatsapp:', insertMsgError)
       }
     } else {
-      console.log("Número de WhatsApp não encontrado no currículo");
+      console.log('Número de WhatsApp não encontrado no currículo')
     }
 
-    return new Response(JSON.stringify({ data: { success: true, analise: analiseData, numero_whatsapp } }), { 
-      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-    });
-
+    return new Response(
+      JSON.stringify({ data: { success: true, analise: analiseData, numero_whatsapp } }),
+      {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      },
+    )
   } catch (error: any) {
-    console.error("Erro interno:", error);
-    return new Response(JSON.stringify({ error: "Ocorreu um erro interno no servidor.", detalhes: error.message }), { 
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-    });
+    console.error('Erro interno:', error)
+    return new Response(
+      JSON.stringify({ error: 'Ocorreu um erro interno no servidor.', detalhes: error.message }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      },
+    )
   }
-});
+})

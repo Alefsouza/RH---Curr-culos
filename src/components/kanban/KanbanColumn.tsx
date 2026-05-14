@@ -71,8 +71,12 @@ export function KanbanColumn({
     e.preventDefault()
     setIsDragOver(false)
     const candidateId = e.dataTransfer.getData('text/plain')
-    if (candidateId) {
-      onDrop(candidateId, stage.id)
+
+    // Verifica se o ID extraído é um UUID válido antes de disparar a requisição
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+    if (candidateId && uuidRegex.test(candidateId.trim())) {
+      onDrop(candidateId.trim(), stage.id)
     }
   }
 

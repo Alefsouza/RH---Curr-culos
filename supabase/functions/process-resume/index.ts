@@ -160,7 +160,7 @@ ${pdfText.substring(0, 15000)}`
 
     const { data: publicUrlData } = supabase.storage.from('curriculos').getPublicUrl(filePath)
 
-    let candidatoId;
+    let candidatoId
 
     if (orConditions.length > 0) {
       const { data: duplicates } = await supabase
@@ -170,16 +170,19 @@ ${pdfText.substring(0, 15000)}`
         .or(orConditions.join(','))
 
       if (duplicates && duplicates.length > 0) {
-        candidatoId = duplicates[0].id;
-        
-        await supabase.from('candidatos').update({
-          nome: finalNome,
-          email: finalEmail,
-          telefone: finalTelefone,
-          curriculo_url: publicUrlData.publicUrl,
-          dados_extraidos: extractedData,
-          vaga_id: vaga_id || duplicates[0].vaga_id,
-        }).eq('id', candidatoId);
+        candidatoId = duplicates[0].id
+
+        await supabase
+          .from('candidatos')
+          .update({
+            nome: finalNome,
+            email: finalEmail,
+            telefone: finalTelefone,
+            curriculo_url: publicUrlData.publicUrl,
+            dados_extraidos: extractedData,
+            vaga_id: vaga_id || duplicates[0].vaga_id,
+          })
+          .eq('id', candidatoId)
       }
     }
 
@@ -212,7 +215,7 @@ ${pdfText.substring(0, 15000)}`
       .from('candidatos')
       .select('etapa_id')
       .eq('id', candidatoId)
-      .single();
+      .single()
 
     if (!currentCandidate?.etapa_id) {
       let { data: etapa } = await supabase
