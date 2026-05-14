@@ -161,7 +161,7 @@ ${pdfText.substring(0, 15000)}`
 
     const { data: publicUrlData } = supabase.storage.from('curriculos').getPublicUrl(filePath)
 
-    let candidatoId;
+    let candidatoId
 
     if (orConditions.length > 0) {
       const { data: duplicates } = await supabase
@@ -171,16 +171,19 @@ ${pdfText.substring(0, 15000)}`
         .or(orConditions.join(','))
 
       if (duplicates && duplicates.length > 0) {
-        candidatoId = duplicates[0].id;
-        
-        await supabase.from('candidatos').update({
-          nome: finalNome,
-          email: finalEmail,
-          telefone: finalTelefone,
-          curriculo_url: publicUrlData.publicUrl,
-          dados_extraidos: extractedData,
-          vaga_id: vaga_id || duplicates[0].vaga_id,
-        }).eq('id', candidatoId);
+        candidatoId = duplicates[0].id
+
+        await supabase
+          .from('candidatos')
+          .update({
+            nome: finalNome,
+            email: finalEmail,
+            telefone: finalTelefone,
+            curriculo_url: publicUrlData.publicUrl,
+            dados_extraidos: extractedData,
+            vaga_id: vaga_id || duplicates[0].vaga_id,
+          })
+          .eq('id', candidatoId)
       }
     }
 
@@ -213,23 +216,23 @@ ${pdfText.substring(0, 15000)}`
       .from('candidatos')
       .select('etapa_id')
       .eq('id', candidatoId)
-      .single();
+      .single()
 
     if (!currentCandidate?.etapa_id) {
       let { data: etapa } = await supabase
         .from('etapas')
         .select('id')
         .eq('user_id', user_id)
-        .ilike('nome', 'Nunca Responderam')
+        .ilike('nome', 'Novos')
         .maybeSingle()
 
       if (!etapa) {
         const { data: newEtapa } = await supabase
           .from('etapas')
           .insert({
-            nome: 'Nunca Responderam',
+            nome: 'Novos',
             ordem: 0,
-            cor: 'bg-gray-200',
+            cor: 'bg-blue-100',
             user_id: user_id,
           })
           .select('id')
@@ -253,68 +256,80 @@ ${pdfText.substring(0, 15000)}`
       const { data: vaga } = await supabase.from('vagas').select('*').eq('id', vaga_id).single()
 
       if (vaga) {
-        let criteriosText = "Sem critérios definidos.";
-        let localizacoesVaga: string[] = [];
-        let raioKm = 0;
+        let criteriosText = 'Sem critérios definidos.'
+        let localizacoesVaga: string[] = []
+        let raioKm = 0
 
         if (vaga.criterios_qualificacao && typeof vaga.criterios_qualificacao === 'object') {
-          const critObj = vaga.criterios_qualificacao as any;
-          criteriosText = critObj.texto_livre || JSON.stringify(critObj);
+          const critObj = vaga.criterios_qualificacao as any
+          criteriosText = critObj.texto_livre || JSON.stringify(critObj)
           if (Array.isArray(critObj.localizacoes) && critObj.localizacoes.length > 0) {
-            localizacoesVaga = critObj.localizacoes.map((l: any) => [l.endereco, l.cidade, l.estado].filter(Boolean).join(', '));
+            localizacoesVaga = critObj.localizacoes.map((l: any) =>
+              [l.endereco, l.cidade, l.estado].filter(Boolean).join(', '),
+            )
           }
-          raioKm = critObj.raio_km || 0;
+          raioKm = critObj.raio_km || 0
         } else if (typeof vaga.criterios_qualificacao === 'string') {
-          criteriosText = vaga.criterios_qualificacao;
+          criteriosText = vaga.criterios_qualificacao
         }
 
-        const enderecoCV = extractedData.endereco || "";
-        let menorDistanciaKm: number | null = null;
-        let qualificadoPorLocalizacao = true;
-        let distanciaCalculada = false;
+        const enderecoCV = extractedData.endereco || ''
+        let menorDistanciaKm: number | null = null
+        let qualificadoPorLocalizacao = true
+        let distanciaCalculada = false
 
-        const googleApiKey = Deno.env.get('GOOGLE_API_KEY');
+        const googleApiKey = Deno.env.get('GOOGLE_API_KEY')
 
         if (localizacoesVaga.length > 0 && raioKm > 0) {
           if (!enderecoCV) {
-            qualificadoPorLocalizacao = false;
-            distanciaCalculada = false;
+            qualificadoPorLocalizacao = false
+            distanciaCalculada = false
           } else if (googleApiKey) {
-            const callGoogleMaps = async (orig: string, dest: string, retries = 3): Promise<number | null> => {
+            const callGoogleMaps = async (
+              orig: string,
+              dest: string,
+              retries = 3,
+            ): Promise<number | null> => {
               try {
-                const url = new URL("https://maps.googleapis.com/maps/api/distancematrix/json");
-                url.searchParams.append("origins", orig);
-                url.searchParams.append("destinations", dest);
-                url.searchParams.append("key", googleApiKey);
-                url.searchParams.append("units", "metric");
-                const res = await fetch(url.toString(), { method: 'POST' });
+                const url = new URL('https://maps.googleapis.com/maps/api/distancematrix/json')
+                url.searchParams.append('origins', orig)
+                url.searchParams.append('destinations', dest)
+                url.searchParams.append('key', googleApiKey)
+                url.searchParams.append('units', 'metric')
+                const res = await fetch(url.toString(), { method: 'POST' })
                 if (!res.ok) {
-                  if (res.status === 503 && retries > 0) { await new Promise(r => setTimeout(r, 2000)); return callGoogleMaps(orig, dest, retries - 1); }
-                  return null;
+                  if (res.status === 503 && retries > 0) {
+                    await new Promise((r) => setTimeout(r, 2000))
+                    return callGoogleMaps(orig, dest, retries - 1)
+                  }
+                  return null
                 }
-                const data = await res.json();
-                if (data.status === "OK" && data.rows?.[0]?.elements?.[0]?.status === "OK") {
-                  return data.rows[0].elements[0].distance.value / 1000;
+                const data = await res.json()
+                if (data.status === 'OK' && data.rows?.[0]?.elements?.[0]?.status === 'OK') {
+                  return data.rows[0].elements[0].distance.value / 1000
                 }
-                return null;
+                return null
               } catch (e) {
-                if (retries > 0) { await new Promise(r => setTimeout(r, 2000)); return callGoogleMaps(orig, dest, retries - 1); }
-                return null;
+                if (retries > 0) {
+                  await new Promise((r) => setTimeout(r, 2000))
+                  return callGoogleMaps(orig, dest, retries - 1)
+                }
+                return null
               }
             }
 
             for (const dest of localizacoesVaga) {
-              const dist = await callGoogleMaps(enderecoCV, dest);
+              const dist = await callGoogleMaps(enderecoCV, dest)
               if (dist !== null) {
-                if (menorDistanciaKm === null || dist < menorDistanciaKm) menorDistanciaKm = dist;
+                if (menorDistanciaKm === null || dist < menorDistanciaKm) menorDistanciaKm = dist
               }
             }
 
             if (menorDistanciaKm !== null) {
-              qualificadoPorLocalizacao = menorDistanciaKm <= raioKm;
-              distanciaCalculada = true;
+              qualificadoPorLocalizacao = menorDistanciaKm <= raioKm
+              distanciaCalculada = true
             } else {
-              qualificadoPorLocalizacao = false;
+              qualificadoPorLocalizacao = false
             }
           }
         }
@@ -322,7 +337,7 @@ ${pdfText.substring(0, 15000)}`
         const analyzePrompt = `Analise o currículo para a vaga de "${vaga.titulo}".
 Descrição da vaga: ${vaga.descricao || 'Não informada'}
 Critérios Textuais: ${criteriosText}
-Localização do Candidato: ${enderecoCV || "Não informada"}
+Localização do Candidato: ${enderecoCV || 'Não informada'}
 Distância calculada: ${distanciaCalculada ? menorDistanciaKm?.toFixed(2) + ' km' : 'N/A'} (Raio aceito: ${raioKm} km)
 Qualificado por localização: ${qualificadoPorLocalizacao}
 
@@ -342,23 +357,26 @@ Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
 
         try {
           const analiseJson = await callOpenAIWithRetry(analyzePrompt)
-          
-          let statusFinal = analiseJson.resultado || 'revisar';
-          let motivoFinal = analiseJson.detalhes?.motivo || '';
+
+          let statusFinal = analiseJson.resultado || 'revisar'
+          let motivoFinal = analiseJson.detalhes?.motivo || ''
 
           if (localizacoesVaga.length > 0 && raioKm > 0) {
             if (!enderecoCV) {
-              statusFinal = 'nao_qualificado';
-              motivoFinal = `Reprovado por localização: Endereço não identificado no currículo. ${motivoFinal}`;
+              statusFinal = 'nao_qualificado'
+              motivoFinal = `Reprovado por localização: Endereço não identificado no currículo. ${motivoFinal}`
             } else if (distanciaCalculada && !qualificadoPorLocalizacao) {
-              statusFinal = 'nao_qualificado';
-              if (!motivoFinal.toLowerCase().includes('localização') && !motivoFinal.toLowerCase().includes('distância')) {
-                motivoFinal = `Reprovado por localização: Distância de ${menorDistanciaKm?.toFixed(2)} km excede o raio de ${raioKm} km. ${motivoFinal}`;
+              statusFinal = 'nao_qualificado'
+              if (
+                !motivoFinal.toLowerCase().includes('localização') &&
+                !motivoFinal.toLowerCase().includes('distância')
+              ) {
+                motivoFinal = `Reprovado por localização: Distância de ${menorDistanciaKm?.toFixed(2)} km excede o raio de ${raioKm} km. ${motivoFinal}`
               }
             }
           }
 
-          if (analiseJson.detalhes) analiseJson.detalhes.motivo = motivoFinal;
+          if (analiseJson.detalhes) analiseJson.detalhes.motivo = motivoFinal
 
           const { data: novaAnalise, error: analiseError } = await supabase
             .from('analises')
