@@ -25,7 +25,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const events = Array.isArray(body) ? body : [body]
-
+    
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
     const supabase = createClient(supabaseUrl, supabaseKey)
@@ -49,7 +49,7 @@ Deno.serve(async (req: Request) => {
       if (!messageId) continue
 
       let mappedStatus = null
-
+      
       if (typeof status === 'string') {
         const s = status.toUpperCase()
         if (s === 'SENT' || s === 'SERVER_ACK') mappedStatus = 'enviada'
@@ -70,18 +70,21 @@ Deno.serve(async (req: Request) => {
           .select('enviado_em')
           .eq('external_id', messageId)
           .single()
-
+          
         const updateData: any = { status: mappedStatus }
-
+        
         if (
-          (mappedStatus === 'enviada' || mappedStatus === 'entregue' || mappedStatus === 'lida') &&
-          existingMsg &&
+          (mappedStatus === 'enviada' || mappedStatus === 'entregue' || mappedStatus === 'lida') && 
+          existingMsg && 
           !existingMsg.enviado_em
         ) {
           updateData.enviado_em = new Date().toISOString()
         }
-
-        await supabase.from('mensagens_whatsapp').update(updateData).eq('external_id', messageId)
+        
+        await supabase
+          .from('mensagens_whatsapp')
+          .update(updateData)
+          .eq('external_id', messageId)
       }
     }
 
@@ -93,7 +96,7 @@ Deno.serve(async (req: Request) => {
     console.error('Webhook erro:', error)
     // Always return 200 for webhooks to prevent provider from retrying indefinitely on logical errors
     return new Response(JSON.stringify({ error: error.message }), {
-      status: 200,
+      status: 200, 
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
