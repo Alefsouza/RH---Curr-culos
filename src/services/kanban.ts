@@ -15,6 +15,7 @@ export async function fetchStages() {
 }
 
 export async function fetchCandidates() {
+  // Ensure we query 'analises' instead of 'analise_cv' to avoid PGRST200 errors
   const { data, error } = await supabase.from('candidatos').select(`
       *,
       vagas (titulo),

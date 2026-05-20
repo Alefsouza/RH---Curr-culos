@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase/client'
 
 export async function getCandidatesList() {
+  // Ensure we query 'analises' instead of 'analise_cv' to match the database schema
   const { data, error } = await supabase
     .from('candidatos')
     .select(`
