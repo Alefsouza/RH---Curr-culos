@@ -50,11 +50,12 @@ Deno.serve(async (req: Request) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        apikey: uazapiToken,
         token: uazapiToken,
       },
       body: JSON.stringify({
-        numero: numWpp,
-        mensagem: message,
+        number: numWpp,
+        text: message,
       }),
     })
 
@@ -73,8 +74,8 @@ Deno.serve(async (req: Request) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
+    return new Response(JSON.stringify({ error: true, detalhe: error.message }), {
+      status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
