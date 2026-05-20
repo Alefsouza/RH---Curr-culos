@@ -17,8 +17,8 @@ export async function fetchStages() {
 export async function fetchCandidates() {
   const { data, error } = await supabase.from('candidatos').select(`
       *,
-      vagas ( titulo ),
-      analises ( resultado, criado_em )
+      vagas (titulo),
+      analises (resultado, criado_em)
     `)
   if (error) throw error
 

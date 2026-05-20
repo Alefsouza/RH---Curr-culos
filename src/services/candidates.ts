@@ -13,9 +13,9 @@ export async function getCandidatesList() {
       criado_em,
       duplicado_de,
       vaga_id,
-      vagas ( titulo ),
-      etapas ( nome, cor ),
-      analises ( id, resultado, criado_em, detalhes )
+      vagas (titulo),
+      etapas (nome, cor),
+      analises (id, resultado, criado_em, detalhes)
     `)
     .order('criado_em', { ascending: false })
 
