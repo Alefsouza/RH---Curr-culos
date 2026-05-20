@@ -50,9 +50,7 @@ Deno.serve(async (req: Request) => {
 
     if (!candidato_id || !etapa_id) {
       return new Response(
-        JSON.stringify({
-          error: 'Dados obrigatórios faltando: candidato_id e etapa_id são necessários.',
-        }),
+        JSON.stringify({ error: 'Dados obrigatórios faltando: candidato_id e etapa_id são necessários.' }),
         {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -67,16 +65,19 @@ Deno.serve(async (req: Request) => {
     // 1. Buscando candidato e telefone
     const { data: candidato, error: candidatoError } = await supabase
       .from('candidatos')
-      .select('*, vagas(titulo)')
+      .select('*, vagas!candidatos_vaga_id_fkey(titulo)')
       .eq('id', candidato_id)
       .eq('user_id', userId)
       .single()
 
     if (candidatoError || !candidato) {
-      return new Response(JSON.stringify({ error: 'Candidato não encontrado.' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(
+        JSON.stringify({ error: 'Candidato não encontrado.' }),
+        {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
     }
 
     const telefone = candidato.telefone
@@ -92,7 +93,7 @@ Deno.serve(async (req: Request) => {
 
     // 2. Buscando template da etapa
     const { data: template, error: templateError } = await supabase
-      .from('templates_mensagem')
+      .from('templates_mensagens')
       .select('*')
       .eq('etapa_id', etapa_id)
       .eq('user_id', userId)
@@ -235,12 +236,7 @@ Deno.serve(async (req: Request) => {
           errorMessage = 'A API retornou sucesso falso: ' + JSON.stringify(responseData)
         } else {
           // Tenta extrair o ID da mensagem retornado pela API (ajustar conforme estrutura real da UAZAPI)
-          externalId =
-            responseData?.messageId ||
-            responseData?.id ||
-            responseData?.data?.id ||
-            responseData?.message?.messageId ||
-            null
+          externalId = responseData?.messageId || responseData?.id || responseData?.data?.id || responseData?.message?.messageId || null
         }
       } else {
         console.log('Aviso: UAZAPI_TOKEN não configurada. Simulando envio para ambiente de teste.')
