@@ -30,7 +30,7 @@ export async function getCandidatesList() {
       vaga_id,
       vagas (titulo),
       etapas (nome, cor),
-      analises!analises_candidato_id_fkey (id, resultado, criado_em, detalhes)
+      analises (id, resultado, criado_em, detalhes)
     `)
     .order('criado_em', { ascending: false })
 

@@ -19,7 +19,7 @@ export const vagaDetalhesService = {
   async getAnalises(vagaId: string): Promise<AnalisesComCandidato[]> {
     const { data, error } = await supabase
       .from('analises')
-      .select('*, candidato:candidatos!analises_candidato_id_fkey(*)')
+      .select('*, candidato:candidatos(*)')
       .eq('vaga_id', vagaId)
       .order('criado_em', { ascending: false })
 
