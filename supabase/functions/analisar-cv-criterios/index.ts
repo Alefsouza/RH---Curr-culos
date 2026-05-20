@@ -15,31 +15,9 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const authHeader = req.headers.get('authorization')
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Autorização ausente.' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') || ''
-
-    const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    })
-
-    const {
-      data: { user },
-      error: userError,
-    } = await supabaseAuth.auth.getUser()
-    if (userError || !user) {
-      return new Response(JSON.stringify({ error: 'Usuário não autenticado.' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
+    const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey)
 
     const bodyText = await req.text()
     let body
@@ -52,11 +30,11 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    const { cv_id, vaga_id } = body
+    const { cv_id, vaga_id, user_id } = body
 
-    if (!cv_id || !vaga_id) {
+    if (!cv_id || !vaga_id || !user_id) {
       return new Response(
-        JSON.stringify({ error: 'Os parâmetros cv_id e vaga_id são obrigatórios.' }),
+        JSON.stringify({ error: 'Os parâmetros cv_id, vaga_id e user_id são obrigatórios.' }),
         {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -64,13 +42,11 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    const supabaseAdmin = createClient(supabaseUrl, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '')
-
     const { data: candidato, error: candidatoError } = await supabaseAdmin
       .from('candidatos')
       .select('*')
       .eq('id', cv_id)
-      .eq('user_id', user.id)
+      .eq('user_id', user_id)
       .single()
 
     if (candidatoError || !candidato) {
@@ -84,7 +60,7 @@ Deno.serve(async (req: Request) => {
       .from('vagas')
       .select('*')
       .eq('id', vaga_id)
-      .eq('user_id', user.id)
+      .eq('user_id', user_id)
       .single()
 
     if (vagaError || !vaga) {
@@ -329,7 +305,7 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
           vaga_id: vaga_id,
           resultado: statusFinal,
           detalhes: resultJson.detalhes || {},
-          user_id: user.id,
+          user_id: user_id,
         })
         .select()
         .single()
@@ -358,7 +334,7 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
       const { error: insertMsgError } = await supabaseAdmin.from('mensagens_whatsapp').insert({
         candidato_id: cv_id,
         numero_whatsapp: numero_whatsapp,
-        user_id: user.id,
+        user_id: user_id,
       })
       if (insertMsgError) {
         console.error('Erro ao salvar em mensagens_whatsapp:', insertMsgError)

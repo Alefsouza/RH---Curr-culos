@@ -106,15 +106,15 @@ export default function ApplyPage() {
   }
 
   const onSubmit = async (data: FormData) => {
-    if (!vagaId) {
-      setErrorMsg('Vaga é obrigatória')
-      return
-    }
-
+    let finalVagaId = vagaId
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-    if (!uuidRegex.test(vagaId)) {
-      setErrorMsg('Selecione uma vaga válida')
-      return
+    if (vagaId && !uuidRegex.test(vagaId)) {
+      if (vagaId === 'none') {
+        finalVagaId = ''
+      } else {
+        setErrorMsg('Selecione uma vaga válida')
+        return
+      }
     }
 
     if (!file) {
@@ -161,7 +161,7 @@ export default function ApplyPage() {
             nome: data.nome,
             email: data.email,
             telefone: data.telefone,
-            vaga_id: vagaId,
+            vaga_id: finalVagaId || null,
             user_id: userId,
           },
         },
@@ -172,17 +172,18 @@ export default function ApplyPage() {
       if (funcError) throw new Error('Erro ao analisar e processar o currículo.')
       if (funcData?.error) throw new Error(funcData.error)
 
-      if (funcData?.candidato_id && vagaId) {
+      if (funcData?.candidato_id && finalVagaId) {
         try {
           console.log('cv_id:', funcData.candidato_id)
-          console.log('vaga_id:', vagaId)
+          console.log('vaga_id:', finalVagaId)
 
           const { error: analisarError } = await supabase.functions.invoke(
             'analisar-cv-criterios',
             {
               body: {
                 cv_id: funcData.candidato_id,
-                vaga_id: vagaId,
+                vaga_id: finalVagaId,
+                user_id: userId,
               },
             },
           )
