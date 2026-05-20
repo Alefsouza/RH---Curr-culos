@@ -14,8 +14,19 @@ export async function fetchStages() {
   }))
 }
 
+type CandidateWithRelations = {
+  id: string
+  nome: string
+  email: string | null
+  telefone: string | null
+  fonte: string | null
+  etapa_id: string | null
+  criado_em: string
+  vagas: { titulo: string } | { titulo: string }[] | null
+  analises: { resultado: string | null; criado_em: string }[] | null
+}
+
 export async function fetchCandidates() {
-  // Ensure we query 'analises' instead of 'analise_cv' to avoid PGRST200 errors
   const { data, error } = await supabase.from('candidatos').select(`
       *,
       vagas (titulo),
@@ -23,25 +34,25 @@ export async function fetchCandidates() {
     `)
   if (error) throw error
 
-  return data
-    .filter((d: any) => {
+  return (data as unknown as CandidateWithRelations[])
+    .filter((d) => {
       const sortedAnalises = d.analises
         ? [...d.analises].sort(
-            (a: any, b: any) => new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime(),
+            (a, b) => new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime(),
           )
         : []
 
       const latestIa = sortedAnalises[0]
       return latestIa?.resultado === 'qualificado'
     })
-    .map((d: any) => ({
+    .map((d) => ({
       id: d.id,
       name: d.nome,
       email: d.email || '',
       phone: d.telefone || '',
       source: d.fonte || 'Site',
       stageId: d.etapa_id || '',
-      job: (d.vagas as any)?.titulo || 'Sem Vaga',
+      job: d.vagas ? (Array.isArray(d.vagas) ? d.vagas[0]?.titulo : d.vagas.titulo) : 'Sem Vaga',
       appliedAt: d.criado_em,
     }))
 }

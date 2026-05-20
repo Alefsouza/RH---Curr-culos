@@ -1,7 +1,21 @@
 import { supabase } from '@/lib/supabase/client'
 
+type CandidatesListItem = {
+  id: string
+  nome: string
+  email: string | null
+  telefone: string | null
+  curriculo_url: string | null
+  fonte: string | null
+  criado_em: string
+  duplicado_de: string | null
+  vaga_id: string | null
+  vagas: { titulo: string } | { titulo: string }[] | null
+  etapas: { nome: string; cor: string | null } | { nome: string; cor: string | null }[] | null
+  analises: { id: string; resultado: string | null; criado_em: string; detalhes: any }[] | null
+}
+
 export async function getCandidatesList() {
-  // Ensure we query 'analises' instead of 'analise_cv' to match the database schema
   const { data, error } = await supabase
     .from('candidatos')
     .select(`
@@ -22,10 +36,10 @@ export async function getCandidatesList() {
 
   if (error) throw error
 
-  return data.map((c: any) => {
+  return (data as unknown as CandidatesListItem[]).map((c) => {
     const sortedAnalises = c.analises
       ? [...c.analises].sort(
-          (a: any, b: any) => new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime(),
+          (a, b) => new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime(),
         )
       : []
 
