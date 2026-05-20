@@ -7,6 +7,8 @@ export interface Candidate {
   stageId: string
   job: string
   appliedAt: string
+  analysisResult?: string | null
+  analysisDetails?: any
 }
 
 export interface Stage {

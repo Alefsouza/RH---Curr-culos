@@ -23,14 +23,14 @@ type CandidateWithRelations = {
   etapa_id: string | null
   criado_em: string
   vagas: { titulo: string } | { titulo: string }[] | null
-  analises: { resultado: string | null; criado_em: string }[] | null
+  analises: { resultado: string | null; detalhes: any; criado_em: string }[] | null
 }
 
 export async function fetchCandidates() {
   const { data, error } = await supabase.from('candidatos').select(`
       *,
       vagas (titulo),
-      analises (resultado, criado_em)
+      analises (resultado, detalhes, criado_em)
     `)
   if (error) throw error
 
@@ -45,16 +45,27 @@ export async function fetchCandidates() {
       const latestIa = sortedAnalises[0]
       return latestIa?.resultado === 'qualificado'
     })
-    .map((d) => ({
-      id: d.id,
-      name: d.nome,
-      email: d.email || '',
-      phone: d.telefone || '',
-      source: d.fonte || 'Site',
-      stageId: d.etapa_id || '',
-      job: d.vagas ? (Array.isArray(d.vagas) ? d.vagas[0]?.titulo : d.vagas.titulo) : 'Sem Vaga',
-      appliedAt: d.criado_em,
-    }))
+    .map((d) => {
+      const sortedAnalises = d.analises
+        ? [...d.analises].sort(
+            (a, b) => new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime(),
+          )
+        : []
+      const latestIa = sortedAnalises[0]
+
+      return {
+        id: d.id,
+        name: d.nome,
+        email: d.email || '',
+        phone: d.telefone || '',
+        source: d.fonte || 'Site',
+        stageId: d.etapa_id || '',
+        job: d.vagas ? (Array.isArray(d.vagas) ? d.vagas[0]?.titulo : d.vagas.titulo) : 'Sem Vaga',
+        appliedAt: d.criado_em,
+        analysisResult: latestIa?.resultado || null,
+        analysisDetails: latestIa?.detalhes || null,
+      }
+    })
 }
 
 export async function updateCandidateStage(candidateId: string, stageId: string) {
@@ -69,6 +80,13 @@ export async function updateCandidateStage(candidateId: string, stageId: string)
       data: { session },
     } = await supabase.auth.getSession()
     if (session) {
+      // Registrar no histórico de etapas do candidato
+      await supabase.from('candidato_etapa').insert({
+        candidato_id: candidateId,
+        etapa_id: stageId,
+        usuario_id: session.user.id,
+      })
+
       // Tenta enviar a mensagem automática via WhatsApp em background
       supabase.functions
         .invoke('enviar-whatsapp', {
@@ -80,7 +98,7 @@ export async function updateCandidateStage(candidateId: string, stageId: string)
         .catch(console.error)
     }
   } catch (e) {
-    console.error('Erro ao invocar envio de WhatsApp:', e)
+    console.error('Erro ao invocar envio de WhatsApp ou salvar histórico:', e)
   }
 }
 

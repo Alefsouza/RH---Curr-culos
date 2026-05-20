@@ -82,6 +82,14 @@ export function useKanban() {
         return
       }
 
+      if (!newStageId || !uuidRegex.test(newStageId)) {
+        console.warn(
+          'Operação de arrastar ignorada. O ID da etapa não é um UUID válido:',
+          newStageId,
+        )
+        return
+      }
+
       const previousCandidates = [...candidates]
 
       setCandidates((prev) => {
