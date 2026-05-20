@@ -33,7 +33,6 @@ export default function Layout() {
           email,
           criado_em,
           vagas ( titulo ),
-          analise_cv ( status ),
           analises ( resultado )
         `)
         .eq('user_id', user.id)
@@ -101,21 +100,15 @@ export default function Layout() {
     let statusText = 'Pendente'
     let isQualified = false
 
-    if (cv.analise_cv && cv.analise_cv.length > 0) {
-      const s = cv.analise_cv[0].status
-      if (s === 'pre_aprovado') {
-        statusText = 'Qualificado'
-        isQualified = true
-      } else if (s === 'reprovado') {
-        statusText = 'Não Qualificado'
-      }
-    } else if (cv.analises && cv.analises.length > 0) {
+    if (cv.analises && cv.analises.length > 0) {
       const r = cv.analises[0].resultado
       if (r === 'qualificado' || r === 'pre_aprovado') {
         statusText = 'Qualificado'
         isQualified = true
       } else if (r === 'nao_qualificado' || r === 'reprovado') {
         statusText = 'Não Qualificado'
+      } else if (r === 'revisar') {
+        statusText = 'Revisar'
       }
     }
 
