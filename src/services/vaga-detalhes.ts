@@ -3,7 +3,7 @@ import { Database } from '@/lib/supabase/types'
 
 export type Vaga = Database['public']['Tables']['vagas']['Row']
 export type Candidato = Database['public']['Tables']['candidatos']['Row']
-export type AnaliseCV = Database['public']['Tables']['analise_cv']['Row']
+export type AnaliseCV = Database['public']['Tables']['analises']['Row']
 
 export interface AnaliseCVComCandidato extends AnaliseCV {
   candidato: Candidato | null
@@ -18,8 +18,8 @@ export const vagaDetalhesService = {
 
   async getAnalises(vagaId: string): Promise<AnaliseCVComCandidato[]> {
     const { data, error } = await supabase
-      .from('analise_cv')
-      .select('*, candidato:candidatos(*)')
+      .from('analises')
+      .select('*, candidato:candidatos!analises_candidato_id_fkey(*)')
       .eq('vaga_id', vagaId)
       .order('criado_em', { ascending: false })
 
@@ -33,8 +33,11 @@ export const vagaDetalhesService = {
     })) as AnaliseCVComCandidato[]
   },
 
-  async updateStatus(analiseId: string, status: 'pre_aprovado' | 'reprovado'): Promise<void> {
-    const { error } = await supabase.from('analise_cv').update({ status }).eq('id', analiseId)
+  async updateStatus(analiseId: string, status: string): Promise<void> {
+    const { error } = await supabase
+      .from('analises')
+      .update({ resultado: status })
+      .eq('id', analiseId)
 
     if (error) throw error
   },

@@ -14,7 +14,7 @@ export async function getPendingReviews(filters?: {
       criado_em,
       candidato_id,
       vaga_id,
-      candidatos (
+      candidatos!analises_candidato_id_fkey (
         id,
         nome,
         email,

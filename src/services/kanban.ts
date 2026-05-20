@@ -30,7 +30,7 @@ export async function fetchCandidates() {
   const { data, error } = await supabase.from('candidatos').select(`
       *,
       vagas (titulo),
-      analises (resultado, detalhes, criado_em)
+      analises!analises_candidato_id_fkey (resultado, detalhes, criado_em)
     `)
   if (error) throw error
 
