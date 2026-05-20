@@ -13,7 +13,7 @@ export async function getEtapasComTemplates() {
   if (etapasError) throw etapasError
 
   const { data: templates, error: templatesError } = await supabase
-    .from('templates_mensagem')
+    .from('templates_mensagens')
     .select('*')
     .eq('user_id', userData.user.id)
 
@@ -30,7 +30,7 @@ export async function saveTemplate(etapaId: string, texto: string) {
   if (!userData.user) throw new Error('Não autenticado')
 
   const { data: existing } = await supabase
-    .from('templates_mensagem')
+    .from('templates_mensagens')
     .select('id')
     .eq('etapa_id', etapaId)
     .eq('user_id', userData.user.id)
@@ -38,7 +38,7 @@ export async function saveTemplate(etapaId: string, texto: string) {
 
   if (existing) {
     const { data, error } = await supabase
-      .from('templates_mensagem')
+      .from('templates_mensagens')
       .update({ texto })
       .eq('id', existing.id)
       .select()
@@ -47,7 +47,7 @@ export async function saveTemplate(etapaId: string, texto: string) {
     return data
   } else {
     const { data, error } = await supabase
-      .from('templates_mensagem')
+      .from('templates_mensagens')
       .insert({
         etapa_id: etapaId,
         texto,
