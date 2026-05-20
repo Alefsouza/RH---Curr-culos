@@ -86,19 +86,9 @@ export async function updateCandidateStage(candidateId: string, stageId: string)
         etapa_id: stageId,
         usuario_id: session.user.id,
       })
-
-      // Tenta enviar a mensagem automática via WhatsApp em background
-      supabase.functions
-        .invoke('enviar-whatsapp', {
-          body: { candidato_id: candidateId, etapa_id: stageId },
-        })
-        .then(({ error }) => {
-          if (error) console.error('Erro no Edge Function enviar-whatsapp:', error)
-        })
-        .catch(console.error)
     }
   } catch (e) {
-    console.error('Erro ao invocar envio de WhatsApp ou salvar histórico:', e)
+    console.error('Erro ao salvar histórico de etapas:', e)
   }
 }
 
