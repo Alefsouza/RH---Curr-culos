@@ -42,6 +42,7 @@ export default function DashboardPage() {
     setLoading(true)
     setError(null)
     try {
+      // Fetch data using correct 'analises' table identifier
       const [candRes, etapasRes, vagasRes, analisesRes, ceRes] = await Promise.all([
         supabase.from('candidatos').select('*').eq('user_id', user.id),
         supabase.from('etapas').select('*').eq('user_id', user.id).order('ordem'),
@@ -55,6 +56,7 @@ export default function DashboardPage() {
       ])
 
       if (candRes.error) throw candRes.error
+      if (analisesRes.error) throw analisesRes.error
 
       setData({
         candidatos: candRes.data || [],
