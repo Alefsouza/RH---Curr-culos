@@ -595,9 +595,11 @@ export default function CandidateDetails() {
                       <div
                         className={cn(
                           'p-3 rounded-full shrink-0',
-                          m.status === 'enviada'
+                          m.status === 'enviada' || m.status === 'entregue' || m.status === 'lida'
                             ? 'bg-green-100 text-green-700'
-                            : 'bg-red-100 text-red-700',
+                            : m.status === 'falha'
+                              ? 'bg-red-100 text-red-700'
+                              : 'bg-slate-100 text-slate-700',
                         )}
                       >
                         <MessageSquare className="w-5 h-5" />
@@ -606,10 +608,26 @@ export default function CandidateDetails() {
                         <h4 className="font-semibold flex items-center gap-2 text-slate-800">
                           Etapa: {m.etapas?.nome || 'Desconhecida'}
                           <Badge
-                            variant={m.status === 'enviada' ? 'default' : 'destructive'}
+                            variant={
+                              m.status === 'enviada' ||
+                              m.status === 'entregue' ||
+                              m.status === 'lida'
+                                ? 'default'
+                                : m.status === 'falha'
+                                  ? 'destructive'
+                                  : 'secondary'
+                            }
                             className="text-[10px] h-5 px-1.5 uppercase tracking-wider"
                           >
-                            {m.status === 'enviada' ? 'Enviada' : 'Falhou'}
+                            {m.status === 'enviada'
+                              ? 'Enviada'
+                              : m.status === 'entregue'
+                                ? 'Entregue'
+                                : m.status === 'lida'
+                                  ? 'Lida'
+                                  : m.status === 'falha'
+                                    ? 'Falhou'
+                                    : m.status}
                           </Badge>
                         </h4>
                         <p className="text-sm text-slate-500 mt-1 flex items-center gap-1.5">

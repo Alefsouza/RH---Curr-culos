@@ -50,7 +50,9 @@ Deno.serve(async (req: Request) => {
 
     if (!candidato_id || !etapa_id) {
       return new Response(
-        JSON.stringify({ error: 'Dados obrigatórios faltando: candidato_id e etapa_id são necessários.' }),
+        JSON.stringify({
+          error: 'Dados obrigatórios faltando: candidato_id e etapa_id são necessários.',
+        }),
         {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -71,13 +73,10 @@ Deno.serve(async (req: Request) => {
       .single()
 
     if (candidatoError || !candidato) {
-      return new Response(
-        JSON.stringify({ error: 'Candidato não encontrado.' }),
-        {
-          status: 404,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
-      )
+      return new Response(JSON.stringify({ error: 'Candidato não encontrado.' }), {
+        status: 404,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
     const telefone = candidato.telefone
@@ -225,6 +224,7 @@ Deno.serve(async (req: Request) => {
 
     let isSuccess = false
     let errorMessage = null
+    let externalId = null
 
     try {
       if (uazapiToken) {
@@ -233,6 +233,14 @@ Deno.serve(async (req: Request) => {
           responseData?.success === true || responseData?.status === 'success' || !!responseData
         if (!isSuccess) {
           errorMessage = 'A API retornou sucesso falso: ' + JSON.stringify(responseData)
+        } else {
+          // Tenta extrair o ID da mensagem retornado pela API (ajustar conforme estrutura real da UAZAPI)
+          externalId =
+            responseData?.messageId ||
+            responseData?.id ||
+            responseData?.data?.id ||
+            responseData?.message?.messageId ||
+            null
         }
       } else {
         console.log('Aviso: UAZAPI_TOKEN não configurada. Simulando envio para ambiente de teste.')
@@ -251,6 +259,7 @@ Deno.serve(async (req: Request) => {
       user_id: userId,
       numero_whatsapp: formattedPhone,
       enviado_em: isSuccess ? new Date().toISOString() : null,
+      external_id: externalId,
     } as any)
 
     if (insertError) {
