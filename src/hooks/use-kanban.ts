@@ -99,15 +99,26 @@ export function useKanban() {
       try {
         await updateCandidateStage(candidateId, newStageId)
         const candidate = candidates.find((c) => c.id === candidateId)
-        const stage = stages.find((s) => s.id === newStageId)
 
-        console.log(
-          `[WEBHOOK TRIGGER] WhatsApp notification sent to ${candidate?.phone}: "Olá ${candidate?.name}, seu status mudou para a etapa ${stage?.name}!"`,
-        )
-
-        toast({
-          title: 'Currículo movido com sucesso',
-        })
+        supabase.functions
+          .invoke('enviar-whatsapp', {
+            body: { candidato_id: candidateId, etapa_id: newStageId },
+          })
+          .then(({ data, error }) => {
+            if (error || data?.error) {
+              toast({ variant: 'destructive', title: 'Erro ao processar envio de WhatsApp' })
+            } else if (data?.warning) {
+              toast({
+                title:
+                  'Candidato movido, mas nenhuma mensagem foi enviada (sem template ou já enviado)',
+              })
+            } else if (data?.success) {
+              toast({ title: `Mensagem enviada para ${candidate?.nome || 'o candidato'}` })
+            }
+          })
+          .catch(() => {
+            toast({ variant: 'destructive', title: 'Erro ao processar envio de WhatsApp' })
+          })
       } catch (err: any) {
         setCandidates(previousCandidates)
         toast({ variant: 'destructive', title: 'Erro ao mover currículo. Tente novamente.' })

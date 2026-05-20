@@ -149,10 +149,12 @@ export default function TemplatesPage() {
   const getPreviewText = (text: string) => {
     if (!text) return ''
     return text
+      .replace(/{{nome_candidato}}/g, 'João da Silva')
+      .replace(/{{nome_vaga}}/g, 'Desenvolvedor Front-end')
+      .replace(/{{data_entrevista}}/g, '15/10/2026 às 14:00')
+      .replace(/{{link_formulario}}/g, 'https://exemplo.com/form')
       .replace(/{nome_candidato}/g, 'João da Silva')
       .replace(/{nome_vaga}/g, 'Desenvolvedor Front-end')
-      .replace(/{data_entrevista}/g, '15/10/2026 às 14:00')
-      .replace(/{link_formulario}/g, 'https://exemplo.com/form')
   }
 
   if (loading) {
@@ -307,10 +309,10 @@ export default function TemplatesPage() {
                     </Label>
                     <div className="flex flex-wrap gap-2">
                       {[
-                        '{nome_candidato}',
-                        '{nome_vaga}',
-                        '{data_entrevista}',
-                        '{link_formulario}',
+                        '{{nome_candidato}}',
+                        '{{nome_vaga}}',
+                        '{{data_entrevista}}',
+                        '{{link_formulario}}',
                       ].map((v) => (
                         <Badge
                           key={v}
@@ -328,7 +330,7 @@ export default function TemplatesPage() {
                     <Label>Texto da Mensagem</Label>
                     <Textarea
                       className="min-h-[250px] resize-y font-mono text-sm leading-relaxed"
-                      placeholder="Olá {nome_candidato}, temos uma novidade sobre a vaga de {nome_vaga}..."
+                      placeholder="Olá {{nome_candidato}}, temos uma novidade sobre a vaga de {{nome_vaga}}..."
                       value={templateTexts[etapa.id] || ''}
                       onChange={(e) =>
                         setTemplateTexts({ ...templateTexts, [etapa.id]: e.target.value })

@@ -9,16 +9,12 @@ export const corsHeaders = {
     'authorization, x-client-info, x-supabase-client-platform, apikey, content-type',
 }
 
-// Trigger deployment
-
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    console.log('1. Iniciando enviar-whatsapp')
-
     const authHeader = req.headers.get('authorization') || req.headers.get('Authorization')
     const token = authHeader?.replace('Bearer ', '')
 
@@ -52,9 +48,11 @@ Deno.serve(async (req: Request) => {
 
     const { candidato_id, etapa_id } = body
 
-    if (!candidato_id) {
+    if (!candidato_id || !etapa_id) {
       return new Response(
-        JSON.stringify({ error: 'Dados obrigatórios faltando: candidato_id é necessário.' }),
+        JSON.stringify({
+          error: 'Dados obrigatórios faltando: candidato_id e etapa_id são necessários.',
+        }),
         {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -66,46 +64,44 @@ Deno.serve(async (req: Request) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
     const supabase = createClient(supabaseUrl, supabaseKey)
 
-    let template = null
+    // 1. Buscando candidato e telefone
+    const { data: candidato, error: candidatoError } = await supabase
+      .from('candidatos')
+      .select('*, vagas(titulo)')
+      .eq('id', candidato_id)
+      .eq('user_id', userId)
+      .single()
 
-    if (etapa_id) {
-      console.log('2. Buscando template da etapa', etapa_id)
-      const { data, error: templateError } = await supabase
-        .from('templates_mensagem')
-        .select('*')
-        .eq('etapa_id', etapa_id)
-        .eq('user_id', userId)
-        .maybeSingle()
-
-      if (templateError) {
-        console.log('Erro ao buscar template:', templateError.message)
-      }
-      template = data
-    } else {
-      console.log('2. Buscando último template do candidato', candidato_id)
-      const { data: lastMsg } = await supabase
-        .from('mensagens_whatsapp')
-        .select('template_id')
-        .eq('candidato_id', candidato_id)
-        .order('criado_em', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-
-      if (lastMsg?.template_id) {
-        const { data: tData } = await supabase
-          .from('templates_mensagem')
-          .select('*')
-          .eq('id', lastMsg.template_id)
-          .eq('user_id', userId)
-          .maybeSingle()
-        template = tData
-      }
+    if (candidatoError || !candidato) {
+      return new Response(JSON.stringify({ error: 'Candidato não encontrado.' }), {
+        status: 404,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
-    if (!template || !template.texto) {
+    const telefone = candidato.telefone
+    if (!telefone) {
+      return new Response(
+        JSON.stringify({ warning: true, message: 'Candidato não possui telefone cadastrado.' }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
+    }
+
+    // 2. Buscando template da etapa
+    const { data: template, error: templateError } = await supabase
+      .from('templates_mensagem')
+      .select('*')
+      .eq('etapa_id', etapa_id)
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (templateError || !template || !template.texto) {
       return new Response(
         JSON.stringify({
-          success: false,
+          warning: true,
           message: 'Template de mensagem não encontrado para esta etapa.',
         }),
         {
@@ -115,43 +111,20 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    console.log('3. Buscando candidato', candidato_id)
-    const { data: candidato, error: candidatoError } = await supabase
-      .from('candidatos')
-      .select('*, vagas(titulo)')
-      .eq('id', candidato_id)
-      .eq('user_id', userId)
-      .single()
-
-    if (candidatoError || !candidato) {
-      return new Response(
-        JSON.stringify({ success: false, message: 'Candidato não encontrado.' }),
-        {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
-      )
-    }
-
-    console.log('Buscando número de WhatsApp em mensagens_whatsapp')
-    const { data: mensagemWpp, error: msgError } = await supabase
+    // 3. Prevenção de duplicidade (24 horas)
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    const { data: recentMsgs } = await supabase
       .from('mensagens_whatsapp')
-      .select('numero_whatsapp')
+      .select('id')
       .eq('candidato_id', candidato_id)
-      .order('criado_em', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+      .eq('template_id', template.id)
+      .gte('criado_em', twentyFourHoursAgo)
 
-    if (msgError) {
-      console.log('Erro ao buscar número em mensagens_whatsapp:', msgError.message)
-    }
-
-    const telefone = mensagemWpp?.numero_whatsapp
-    if (!telefone) {
+    if (recentMsgs && recentMsgs.length > 0) {
       return new Response(
         JSON.stringify({
-          success: false,
-          message: 'Número de WhatsApp não encontrado para este candidato',
+          warning: true,
+          message: 'Mensagem já enviada para este candidato nesta etapa nas últimas 24 horas.',
         }),
         {
           status: 200,
@@ -160,12 +133,12 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    // Validação de telefone (formato brasileiro básico)
+    // 4. Validação e formatação de telefone
     const cleanPhone = telefone.replace(/\D/g, '')
-    if (cleanPhone.length < 10 || cleanPhone.length > 13) {
+    if (cleanPhone.length < 10 || cleanPhone.length > 15) {
       return new Response(
         JSON.stringify({
-          success: false,
+          warning: true,
           message: 'O telefone do candidato é inválido. Formato brasileiro esperado.',
         }),
         {
@@ -180,7 +153,7 @@ Deno.serve(async (req: Request) => {
       formattedPhone = '55' + formattedPhone
     }
 
-    console.log('4. Substituindo variáveis na mensagem')
+    // 5. Substituindo variáveis na mensagem
     let mensagemTexto = template.texto
     const nomeCandidato = candidato.nome || ''
     const tituloVaga = Array.isArray(candidato.vagas)
@@ -191,9 +164,13 @@ Deno.serve(async (req: Request) => {
     mensagemTexto = mensagemTexto.replace(/{{nome_candidato}}/gi, nomeCandidato)
     mensagemTexto = mensagemTexto.replace(/{{vaga}}/gi, tituloVaga || 'a vaga')
     mensagemTexto = mensagemTexto.replace(/{{nome_vaga}}/gi, tituloVaga || 'a vaga')
+    // Fallback para templates antigos que usavam chave simples
+    mensagemTexto = mensagemTexto.replace(/{nome_candidato}/gi, nomeCandidato)
+    mensagemTexto = mensagemTexto.replace(/{nome_vaga}/gi, tituloVaga || 'a vaga')
 
+    // 6. Enviando via UAZAPI
     const uazapiUrl = Deno.env.get('UAZAPI_URL') || 'https://api.uazapi.com'
-    const uazapiKey = Deno.env.get('UAZAPI_KEY') || ''
+    const uazapiToken = Deno.env.get('UAZAPI_TOKEN') || Deno.env.get('UAZAPI_KEY') || ''
 
     const sendWhatsAppWithRetry = async (
       phone: string,
@@ -203,7 +180,7 @@ Deno.serve(async (req: Request) => {
     ): Promise<any> => {
       try {
         const baseUrl = uazapiUrl.endsWith('/') ? uazapiUrl.slice(0, -1) : uazapiUrl
-        const apiUrl = `${baseUrl}/message/sendText`
+        const apiUrl = `${baseUrl}/send/text`
 
         let numWpp = phone
         if (numWpp.startsWith('55') && numWpp.length >= 12) {
@@ -214,7 +191,7 @@ Deno.serve(async (req: Request) => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            token: uazapiKey,
+            token: uazapiToken,
           },
           body: JSON.stringify({
             numero: numWpp,
@@ -224,9 +201,6 @@ Deno.serve(async (req: Request) => {
 
         if (!response.ok) {
           if (response.status === 503 && retries > 0) {
-            console.log(
-              `UAZAPI retornou 503. Tentando novamente em ${backoff}ms... (${retries} tentativas restantes)`,
-            )
             await new Promise((resolve) => setTimeout(resolve, backoff))
             return sendWhatsAppWithRetry(phone, message, retries - 1, backoff * 2)
           }
@@ -241,9 +215,6 @@ Deno.serve(async (req: Request) => {
         return await response.json()
       } catch (error: any) {
         if (retries > 0 && (error.message?.includes('503') || error.message?.includes('fetch'))) {
-          console.log(
-            `Falha de conexão. Tentando novamente em ${backoff}ms... (${retries} tentativas restantes)`,
-          )
           await new Promise((resolve) => setTimeout(resolve, backoff))
           return sendWhatsAppWithRetry(phone, message, retries - 1, backoff * 2)
         }
@@ -251,36 +222,34 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    console.log('5. Enviando mensagem via UAZAPI')
     let isSuccess = false
-    let responseData = null
     let errorMessage = null
+
     try {
-      if (uazapiKey) {
-        responseData = await sendWhatsAppWithRetry(formattedPhone, mensagemTexto)
+      if (uazapiToken) {
+        const responseData = await sendWhatsAppWithRetry(formattedPhone, mensagemTexto)
         isSuccess =
           responseData?.success === true || responseData?.status === 'success' || !!responseData
         if (!isSuccess) {
           errorMessage = 'A API retornou sucesso falso: ' + JSON.stringify(responseData)
-          console.error('Falha lógica na UAZAPI:', errorMessage)
         }
       } else {
-        console.log('Aviso: UAZAPI_KEY não configurada. Simulando envio para ambiente de teste.')
+        console.log('Aviso: UAZAPI_TOKEN não configurada. Simulando envio para ambiente de teste.')
         isSuccess = true
       }
     } catch (error: any) {
       errorMessage = error.message
-      console.error('Erro ao tentar enviar WhatsApp (catch):', errorMessage)
     }
 
-    console.log(`6. Registrando status de envio: ${isSuccess ? 'enviada' : 'falha'}`)
+    // 7. Registrando status de envio
     const { error: insertError } = await supabase.from('mensagens_whatsapp').insert({
       candidato_id: candidato.id,
-      etapa_id: etapa_id || template.etapa_id || null,
+      etapa_id: etapa_id,
       template_id: template.id,
       status: isSuccess ? 'enviada' : 'falha',
       user_id: userId,
       numero_whatsapp: formattedPhone,
+      enviado_em: isSuccess ? new Date().toISOString() : null,
     } as any)
 
     if (insertError) {
@@ -288,16 +257,14 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!isSuccess) {
-      // Retornamos 200 com flag success=false para não interromper o fluxo do frontend
       return new Response(
         JSON.stringify({
-          success: false,
-          message:
-            'A mensagem não pôde ser enviada via WhatsApp, mas o fluxo continuará. Verifique os logs.',
+          error: true,
+          message: 'Erro ao processar envio de WhatsApp.',
           detalhe: errorMessage,
         }),
         {
-          status: 200,
+          status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         },
       )
