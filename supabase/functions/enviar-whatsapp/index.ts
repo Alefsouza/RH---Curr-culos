@@ -50,9 +50,7 @@ Deno.serve(async (req: Request) => {
 
     if (!candidato_id || !etapa_id) {
       return new Response(
-        JSON.stringify({
-          error: 'Dados obrigatórios faltando: candidato_id e etapa_id são necessários.',
-        }),
+        JSON.stringify({ error: 'Dados obrigatórios faltando: candidato_id e etapa_id são necessários.' }),
         {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -73,10 +71,13 @@ Deno.serve(async (req: Request) => {
       .single()
 
     if (candidatoError || !candidato) {
-      return new Response(JSON.stringify({ error: 'Candidato não encontrado.' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(
+        JSON.stringify({ error: 'Candidato não encontrado.' }),
+        {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
     }
 
     const telefone = candidato.telefone
