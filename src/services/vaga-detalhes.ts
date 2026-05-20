@@ -3,9 +3,9 @@ import { Database } from '@/lib/supabase/types'
 
 export type Vaga = Database['public']['Tables']['vagas']['Row']
 export type Candidato = Database['public']['Tables']['candidatos']['Row']
-export type AnaliseCV = Database['public']['Tables']['analises']['Row']
+export type Analises = Database['public']['Tables']['analises']['Row']
 
-export interface AnaliseCVComCandidato extends AnaliseCV {
+export interface AnalisesComCandidato extends Analises {
   candidato: Candidato | null
 }
 
@@ -16,7 +16,7 @@ export const vagaDetalhesService = {
     return data
   },
 
-  async getAnalises(vagaId: string): Promise<AnaliseCVComCandidato[]> {
+  async getAnalises(vagaId: string): Promise<AnalisesComCandidato[]> {
     const { data, error } = await supabase
       .from('analises')
       .select('*, candidato:candidatos!analises_candidato_id_fkey(*)')
@@ -30,7 +30,7 @@ export const vagaDetalhesService = {
     return (data || []).map((row: any) => ({
       ...row,
       candidato: Array.isArray(row.candidato) ? row.candidato[0] : row.candidato,
-    })) as AnaliseCVComCandidato[]
+    })) as AnalisesComCandidato[]
   },
 
   async updateStatus(analiseId: string, status: string): Promise<void> {
