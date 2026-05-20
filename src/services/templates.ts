@@ -89,6 +89,24 @@ export async function testTemplate(phone: string, message: string) {
     body: { phone, message },
   })
 
-  if (error) throw error
+  if (error) {
+    let errorMessage = error.message
+    if (error.context && typeof error.context.json === 'function') {
+      try {
+        const errData = await error.context.json()
+        if (errData.error) {
+          errorMessage = errData.error
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+    throw new Error(errorMessage || 'Erro ao comunicar com a Edge Function.')
+  }
+
+  if (data && data.error) {
+    throw new Error(data.error)
+  }
+
   return data
 }

@@ -28,10 +28,10 @@ Deno.serve(async (req: Request) => {
     }
 
     const uazapiUrl = Deno.env.get('UAZAPI_URL') || 'https://api.uazapi.com'
-    const uazapiKey = Deno.env.get('UAZAPI_KEY') || ''
+    const uazapiToken = Deno.env.get('UAZAPI_TOKEN') || Deno.env.get('UAZAPI_KEY') || ''
 
-    if (!uazapiKey) {
-      console.log('Aviso: UAZAPI_KEY não configurada. Simulando sucesso.')
+    if (!uazapiToken) {
+      console.log('Aviso: UAZAPI_TOKEN não configurada. Simulando sucesso.')
       return new Response(JSON.stringify({ success: true, simulated: true }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -45,12 +45,12 @@ Deno.serve(async (req: Request) => {
     }
 
     const baseUrl = uazapiUrl.endsWith('/') ? uazapiUrl.slice(0, -1) : uazapiUrl
-    const apiUrl = `${baseUrl}/message/sendText`
+    const apiUrl = `${baseUrl}/send/text`
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        token: uazapiKey,
+        token: uazapiToken,
       },
       body: JSON.stringify({
         numero: numWpp,
@@ -59,7 +59,11 @@ Deno.serve(async (req: Request) => {
     })
 
     if (!response.ok) {
-      throw new Error(`Erro na API do WhatsApp: ${response.status}`)
+      let errorDetails = ''
+      try {
+        errorDetails = await response.text()
+      } catch (e) {}
+      throw new Error(`Erro na API do WhatsApp: ${response.status} - ${errorDetails}`)
     }
 
     const data = await response.json()
