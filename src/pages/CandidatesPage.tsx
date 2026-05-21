@@ -203,6 +203,7 @@ export default function CandidatesPage() {
           onEdit={setEditData}
           onDelete={setDeleteId}
           onToggleStatus={handleToggleStatus}
+          onRefresh={loadData}
         />
       )}
 

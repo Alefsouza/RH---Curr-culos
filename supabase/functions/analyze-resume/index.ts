@@ -57,10 +57,13 @@ Deno.serve(async (req: Request) => {
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
       if (!uuidRegex.test(vaga_id)) {
         console.error(`Erro: vaga_id inválido (${vaga_id}). Não é um UUID válido.`)
-        return new Response(JSON.stringify({ error: 'Vaga inválida. Selecione uma vaga válida.' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
+        return new Response(
+          JSON.stringify({ error: 'Vaga inválida. Selecione uma vaga válida.' }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          },
+        )
       }
     }
 
@@ -117,11 +120,15 @@ Deno.serve(async (req: Request) => {
         const mammoth = await import('npm:mammoth')
         const data = await mammoth.extractRawText({ buffer: fileBuffer })
         extractedText = data.value
-        console.log(`Texto extraído com sucesso do DOCX. Total de caracteres: ${extractedText.length}`)
+        console.log(
+          `Texto extraído com sucesso do DOCX. Total de caracteres: ${extractedText.length}`,
+        )
       } else {
         const data = await pdf(fileBuffer)
         extractedText = data.text
-        console.log(`Texto extraído com sucesso do PDF. Total de caracteres: ${extractedText.length}`)
+        console.log(
+          `Texto extraído com sucesso do PDF. Total de caracteres: ${extractedText.length}`,
+        )
       }
     } catch (err: any) {
       console.error('Erro na extração de texto do arquivo:', err)
@@ -142,8 +149,7 @@ Deno.serve(async (req: Request) => {
       console.error('Aviso: O arquivo extraído não contém texto (pode ser uma imagem).')
       return new Response(
         JSON.stringify({
-          error:
-            'O arquivo está vazio ou não contém texto legível (pode ser uma imagem sem OCR).',
+          error: 'O arquivo está vazio ou não contém texto legível (pode ser uma imagem sem OCR).',
         }),
         {
           status: 400,

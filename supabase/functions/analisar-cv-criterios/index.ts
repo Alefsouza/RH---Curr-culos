@@ -313,6 +313,51 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
       analiseData = data
     }
 
+    if (statusFinal === 'qualificado') {
+      let isEtapaInicial = false
+      let hasNoEtapa = !candidato.etapa_id
+
+      if (candidato.etapa_id) {
+        const { data: currentEtapa } = await supabaseAdmin
+          .from('etapas')
+          .select('ordem')
+          .eq('id', candidato.etapa_id)
+          .single()
+
+        if (currentEtapa && currentEtapa.ordem === 1) {
+          isEtapaInicial = true
+        }
+      }
+
+      if (hasNoEtapa || isEtapaInicial) {
+        const { data: etapaNovos } = await supabaseAdmin
+          .from('etapas')
+          .select('id')
+          .eq('user_id', user_id)
+          .ilike('nome', 'Novos')
+          .maybeSingle()
+
+        if (etapaNovos) {
+          await supabaseAdmin.from('candidatos').update({ etapa_id: etapaNovos.id }).eq('id', cv_id)
+
+          const { data: relExists } = await supabaseAdmin
+            .from('candidato_etapa')
+            .select('id')
+            .eq('candidato_id', cv_id)
+            .eq('etapa_id', etapaNovos.id)
+            .maybeSingle()
+
+          if (!relExists) {
+            await supabaseAdmin.from('candidato_etapa').insert({
+              candidato_id: cv_id,
+              etapa_id: etapaNovos.id,
+              usuario_id: user_id,
+            })
+          }
+        }
+      }
+    }
+
     let numero_whatsapp = null
     try {
       const promptWhatsApp = `Extraia o número de telefone/WhatsApp do currículo. Retorne APENAS o número no formato: 11999999999\n\nCurrículo:\n${JSON.stringify(cvData)}`
