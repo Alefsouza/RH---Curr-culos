@@ -15,9 +15,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreVertical, Trash2, Edit, FileText, ExternalLink } from 'lucide-react'
+import { MoreVertical, Trash2, Edit, FileText, ExternalLink, Wand2, Loader2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
+import { useState } from 'react'
+import { useAuth } from '@/hooks/use-auth'
+import { reanalyzeCandidate } from '@/services/candidates'
+import { toast } from 'sonner'
 
 const statusColors: Record<string, string> = {
   qualificado: 'bg-green-100 text-green-800 hover:bg-green-200',
@@ -38,12 +42,47 @@ export function CandidateTable({
   onEdit,
   onDelete,
   onToggleStatus,
+  onRefresh,
 }: {
   candidates: any[]
   onEdit: (c: any) => void
   onDelete: (id: string) => void
   onToggleStatus: (id: string, status: string | null, vagaId: string | null) => void
+  onRefresh?: () => void
 }) {
+  const { user } = useAuth()
+  const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set())
+
+  const handleReanalyze = async (candidate: any) => {
+    if (!candidate.curriculo_url) {
+      toast.error('Este candidato não possui currículo anexado.')
+      return
+    }
+    if (!candidate.vaga_id) {
+      toast.error('Candidato não está associado a uma vaga.')
+      return
+    }
+    if (!user) return
+
+    setAnalyzingIds((prev) => new Set(prev).add(candidate.id))
+
+    try {
+      await reanalyzeCandidate(candidate.id, candidate.vaga_id, user.id)
+      toast.success('Análise concluída com sucesso!')
+      if (onRefresh) onRefresh()
+      else window.location.reload()
+    } catch (error) {
+      console.error(error)
+      toast.error('Erro ao processar análise. Tente novamente.')
+    } finally {
+      setAnalyzingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(candidate.id)
+        return next
+      })
+    }
+  }
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('pt-BR', {
       day: '2-digit',
@@ -52,43 +91,68 @@ export function CandidateTable({
     })
   }
 
-  const ActionMenu = ({ candidate }: { candidate: any }) => (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-8 w-8">
-          <MoreVertical className="h-4 w-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem asChild>
-          <Link to={`/candidato/${candidate.id}`} className="flex items-center cursor-pointer">
-            <ExternalLink className="mr-2 h-4 w-4" /> Detalhes
-          </Link>
-        </DropdownMenuItem>
-        {candidate.curriculo_url && (
+  const ActionMenu = ({ candidate }: { candidate: any }) => {
+    const isAnalyzing = analyzingIds.has(candidate.id)
+    const canReanalyze = !!(candidate.curriculo_url && candidate.vaga_id)
+
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" className="h-8 w-8">
+            {isAnalyzing ? (
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+            ) : (
+              <MoreVertical className="h-4 w-4" />
+            )}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
           <DropdownMenuItem asChild>
-            <a
-              href={candidate.curriculo_url}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center cursor-pointer"
-            >
-              <FileText className="mr-2 h-4 w-4" /> Ver Currículo
-            </a>
+            <Link to={`/candidato/${candidate.id}`} className="flex items-center cursor-pointer">
+              <ExternalLink className="mr-2 h-4 w-4" /> Detalhes
+            </Link>
           </DropdownMenuItem>
-        )}
-        <DropdownMenuItem onClick={() => onEdit(candidate)} className="cursor-pointer">
-          <Edit className="mr-2 h-4 w-4" /> Editar
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => onDelete(candidate.id)}
-          className="cursor-pointer text-red-600 focus:text-red-600"
-        >
-          <Trash2 className="mr-2 h-4 w-4" /> Excluir
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
+          {candidate.curriculo_url && (
+            <DropdownMenuItem asChild>
+              <a
+                href={candidate.curriculo_url}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center cursor-pointer"
+              >
+                <FileText className="mr-2 h-4 w-4" /> Ver Currículo
+              </a>
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem
+            onClick={() => {
+              if (!isAnalyzing && canReanalyze) {
+                handleReanalyze(candidate)
+              }
+            }}
+            className="cursor-pointer"
+            disabled={!canReanalyze || isAnalyzing}
+          >
+            {isAnalyzing ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Wand2 className="mr-2 h-4 w-4" />
+            )}
+            Reanalisar com IA
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onEdit(candidate)} className="cursor-pointer">
+            <Edit className="mr-2 h-4 w-4" /> Editar
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => onDelete(candidate.id)}
+            className="cursor-pointer text-red-600 focus:text-red-600"
+          >
+            <Trash2 className="mr-2 h-4 w-4" /> Excluir
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    )
+  }
 
   return (
     <>
@@ -110,7 +174,17 @@ export function CandidateTable({
               <TableRow key={c.id} className="hover:bg-slate-50/50">
                 <TableCell>
                   <div className="flex flex-col">
-                    <span className="font-medium text-slate-900">{c.nome}</span>
+                    <span className="font-medium text-slate-900 flex items-center gap-2">
+                      {c.nome}
+                      {analyzingIds.has(c.id) && (
+                        <Badge
+                          variant="secondary"
+                          className="h-5 text-[10px] px-1.5 animate-pulse bg-blue-100 text-blue-800"
+                        >
+                          Processando...
+                        </Badge>
+                      )}
+                    </span>
                     <span className="text-xs text-slate-500">{c.email}</span>
                   </div>
                   {c.duplicado_de && (
@@ -162,7 +236,17 @@ export function CandidateTable({
             <CardContent className="p-4 space-y-3">
               <div className="flex justify-between items-start">
                 <div>
-                  <h3 className="font-semibold text-slate-900">{c.nome}</h3>
+                  <h3 className="font-semibold text-slate-900 flex items-center gap-2">
+                    {c.nome}
+                    {analyzingIds.has(c.id) && (
+                      <Badge
+                        variant="secondary"
+                        className="h-5 text-[10px] px-1.5 animate-pulse bg-blue-100 text-blue-800"
+                      >
+                        Processando...
+                      </Badge>
+                    )}
+                  </h3>
                   <p className="text-xs text-slate-500">{c.email}</p>
                   {c.duplicado_de && (
                     <Badge

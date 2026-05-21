@@ -117,3 +117,12 @@ export async function updateCandidate(
   const { error } = await supabase.from('candidatos').update(candidateData).eq('id', id)
   if (error) throw error
 }
+
+export async function reanalyzeCandidate(cv_id: string, vaga_id: string, user_id: string) {
+  const { data, error } = await supabase.functions.invoke('analisar-cv-criterios', {
+    body: { cv_id, vaga_id, user_id },
+  })
+  if (error) throw error
+  if (data?.error) throw new Error(data.error)
+  return data
+}
