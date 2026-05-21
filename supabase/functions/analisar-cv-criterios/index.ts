@@ -324,10 +324,7 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
           .eq('id', candidato.etapa_id)
           .single()
 
-        if (
-          currentEtapa &&
-          (currentEtapa.ordem <= 1 || currentEtapa.nome.toLowerCase() === 'novos')
-        ) {
+        if (currentEtapa && (currentEtapa.ordem <= 1 || currentEtapa.nome.toLowerCase() === 'novos')) {
           isEtapaInicial = true
         }
       }
@@ -341,7 +338,10 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
           .maybeSingle()
 
         if (etapaNovos) {
-          await supabaseAdmin.from('candidatos').update({ etapa_id: etapaNovos.id }).eq('id', cv_id)
+          await supabaseAdmin
+            .from('candidatos')
+            .update({ etapa_id: etapaNovos.id })
+            .eq('id', cv_id)
 
           const { data: relExists } = await supabaseAdmin
             .from('candidato_etapa')
