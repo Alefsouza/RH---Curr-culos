@@ -3,13 +3,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 import OpenAI from 'npm:openai@4'
 import { Buffer } from 'node:buffer'
 import pdf from 'npm:pdf-parse@1.1.1'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, x-supabase-client-platform, apikey, content-type',
-}
+import { corsHeaders } from '../_shared/cors.ts'
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -63,10 +57,13 @@ Deno.serve(async (req: Request) => {
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
       if (!uuidRegex.test(vaga_id)) {
         console.error(`Erro: vaga_id inválido (${vaga_id}). Não é um UUID válido.`)
-        return new Response(JSON.stringify({ error: 'Vaga inválida. Selecione uma vaga válida.' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
+        return new Response(
+          JSON.stringify({ error: 'Vaga inválida. Selecione uma vaga válida.' }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          },
+        )
       }
     }
 
@@ -113,21 +110,32 @@ Deno.serve(async (req: Request) => {
 
     console.log(`Arquivo PDF baixado com sucesso. Tamanho: ${fileData.size} bytes`)
 
-    // 2. Parse PDF
-    console.log('Iniciando extração de texto do arquivo PDF...')
+    // 2. Parse Document (PDF or DOCX)
+    console.log('Iniciando extração de texto do arquivo...')
     const arrayBuffer = await fileData.arrayBuffer()
-    const pdfBuffer = Buffer.from(arrayBuffer)
-    let pdfText = ''
+    const fileBuffer = Buffer.from(arrayBuffer)
+    let extractedText = ''
     try {
-      const data = await pdf(pdfBuffer)
-      pdfText = data.text
-      console.log(`Texto extraído com sucesso do PDF. Total de caracteres: ${pdfText.length}`)
+      if (filePath.toLowerCase().endsWith('.docx')) {
+        const mammoth = await import('npm:mammoth')
+        const data = await mammoth.extractRawText({ buffer: fileBuffer })
+        extractedText = data.value
+        console.log(
+          `Texto extraído com sucesso do DOCX. Total de caracteres: ${extractedText.length}`,
+        )
+      } else {
+        const data = await pdf(fileBuffer)
+        extractedText = data.text
+        console.log(
+          `Texto extraído com sucesso do PDF. Total de caracteres: ${extractedText.length}`,
+        )
+      }
     } catch (err: any) {
-      console.error('Erro na extração de texto do PDF:', err)
+      console.error('Erro na extração de texto do arquivo:', err)
       return new Response(
         JSON.stringify({
           error:
-            'Erro ao extrair texto do PDF. O arquivo pode estar corrompido ou protegido por senha.',
+            'Erro ao extrair texto do arquivo. O arquivo pode estar corrompido ou protegido por senha.',
           detalhes: err.message,
         }),
         {
@@ -137,12 +145,11 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    if (!pdfText || !pdfText.trim()) {
-      console.error('Aviso: O PDF extraído não contém texto (pode ser uma imagem).')
+    if (!extractedText || !extractedText.trim()) {
+      console.error('Aviso: O arquivo extraído não contém texto (pode ser uma imagem).')
       return new Response(
         JSON.stringify({
-          error:
-            'O arquivo PDF está vazio ou não contém texto legível (pode ser uma imagem sem OCR).',
+          error: 'O arquivo está vazio ou não contém texto legível (pode ser uma imagem sem OCR).',
         }),
         {
           status: 400,
@@ -198,7 +205,7 @@ Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
 }
 
 Texto extraído do currículo:
-${pdfText.substring(0, 15000)}`
+${extractedText.substring(0, 15000)}`
 
     let extractedData
     try {

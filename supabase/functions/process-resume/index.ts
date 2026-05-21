@@ -3,13 +3,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 import OpenAI from 'npm:openai@4'
 import { Buffer } from 'node:buffer'
 import pdf from 'npm:pdf-parse@1.1.1'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, x-supabase-client-platform, apikey, content-type',
-}
+import { corsHeaders } from '../_shared/cors.ts'
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -57,24 +51,30 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    // 2. Parse PDF
+    // 2. Parse Document
     const arrayBuffer = await fileData.arrayBuffer()
-    const pdfBuffer = Buffer.from(arrayBuffer)
-    let pdfText = ''
+    const fileBuffer = Buffer.from(arrayBuffer)
+    let extractedText = ''
     try {
-      const data = await pdf(pdfBuffer)
-      pdfText = data.text
+      if (filePath.toLowerCase().endsWith('.docx')) {
+        const mammoth = await import('npm:mammoth')
+        const data = await mammoth.extractRawText({ buffer: fileBuffer })
+        extractedText = data.value
+      } else {
+        const data = await pdf(fileBuffer)
+        extractedText = data.text
+      }
     } catch (err) {
-      console.error('Erro ao ler PDF:', err)
-      return new Response(JSON.stringify({ error: 'Erro ao extrair texto do PDF.' }), {
+      console.error('Erro ao ler arquivo:', err)
+      return new Response(JSON.stringify({ error: 'Erro ao extrair texto do arquivo.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    if (!pdfText.trim()) {
+    if (!extractedText.trim()) {
       return new Response(
-        JSON.stringify({ error: 'O arquivo PDF está vazio ou não contém texto legível.' }),
+        JSON.stringify({ error: 'O arquivo está vazio ou não contém texto legível.' }),
         {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -132,7 +132,7 @@ Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
 }
 
 Texto extraído do currículo:
-${pdfText.substring(0, 15000)}`
+${extractedText.substring(0, 15000)}`
 
     let extractedData
     try {
