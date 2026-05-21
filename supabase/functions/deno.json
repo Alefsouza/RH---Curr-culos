@@ -1,14 +1,14 @@
 {
   "_versions": {
     "outlook-webhook": 21,
-    "process-resume": 23,
-    "analyze-resume": 37,
+    "process-resume": 24,
+    "analyze-resume": 38,
     "enviar-whatsapp": 23,
     "test-whatsapp": 15,
     "manage-users": 12,
     "analisar-cv-criterios": 23,
     "whatsapp-webhook": 8,
     "identify-vaga-from-cv": 2,
-    "gmail-poll-curriculos": 3
+    "gmail-poll-curriculos": 4
   }
 }
