@@ -14,39 +14,50 @@ export function useKanban() {
   const [draggedCandidateId, setDraggedCandidateId] = useState<string | null>(null)
   const { toast } = useToast()
 
-  const loadData = useCallback(async () => {
-    if (!user) return
-    try {
-      setLoading(true)
-      const [fetchedStages, fetchedCandidates] = await Promise.all([
-        fetchStages(),
-        fetchCandidates(),
-      ])
-      setStages(fetchedStages)
-      setCandidates(fetchedCandidates)
-      setError(null)
-    } catch (err: any) {
-      setError(err.message || 'Erro ao carregar dados.')
-    } finally {
-      setLoading(false)
-    }
-  }, [user])
+  const loadData = useCallback(
+    async (showLoading: boolean = true) => {
+      if (!user) return
+      try {
+        if (showLoading) setLoading(true)
+        const [fetchedStages, fetchedCandidates] = await Promise.all([
+          fetchStages(),
+          fetchCandidates(),
+        ])
+        setStages(fetchedStages)
+        setCandidates(fetchedCandidates)
+        setError(null)
+      } catch (err: any) {
+        setError(err.message || 'Erro ao carregar dados.')
+      } finally {
+        if (showLoading) setLoading(false)
+      }
+    },
+    [user],
+  )
 
   useEffect(() => {
     loadData()
 
+    if (!user) return
+
     const channel = supabase
       .channel('kanban-updates')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'candidatos' }, () =>
-        loadData(),
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'candidatos', filter: `user_id=eq.${user.id}` },
+        () => loadData(false),
       )
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'analises' }, () => loadData())
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'analises', filter: `user_id=eq.${user.id}` },
+        () => loadData(false),
+      )
       .subscribe()
 
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [loadData])
+  }, [loadData, user])
 
   useEffect(() => {
     const handleCandidateDelete = (event: any) => {
@@ -58,7 +69,7 @@ export function useKanban() {
       setStages((prev) => prev.filter((s) => s.id !== id))
     }
     const handleReload = () => {
-      loadData()
+      loadData(false)
     }
     window.addEventListener('kanban:delete-candidate', handleCandidateDelete)
     window.addEventListener('kanban:delete-stage', handleStageDelete)

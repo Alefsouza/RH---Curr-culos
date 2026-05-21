@@ -36,7 +36,7 @@ export default function Index() {
       toast({ title: 'Etapa criada com sucesso' })
       setNewStageName('')
       setIsModalOpen(false)
-      loadData()
+      loadData(false)
     } catch (e) {
       toast({ variant: 'destructive', title: 'Erro ao criar etapa' })
     }
