@@ -47,6 +47,15 @@ export function KanbanCard({ candidate, isDragging, onDragStart, onDragEnd }: Ka
     }
   }
 
+  const formattedSource = candidate.source
+    ? candidate.source.charAt(0).toUpperCase() + candidate.source.slice(1).toLowerCase()
+    : 'Outro'
+
+  const formattedAderencia = candidate.analysisDetails?.aderencia
+    ? String(candidate.analysisDetails.aderencia).charAt(0).toUpperCase() +
+      String(candidate.analysisDetails.aderencia).slice(1)
+    : null
+
   return (
     <Card
       draggable
@@ -108,17 +117,17 @@ export function KanbanCard({ candidate, isDragging, onDragStart, onDragEnd }: Ka
               variant="secondary"
               className={cn(
                 'text-[10px] font-semibold px-2 py-0',
-                sourceColors[candidate.source] || 'bg-slate-100 text-slate-700 hover:bg-slate-200',
+                sourceColors[formattedSource] || 'bg-slate-100 text-slate-700 hover:bg-slate-200',
               )}
             >
-              {candidate.source || 'Outro'}
+              {formattedSource}
             </Badge>
-            {candidate.analysisDetails?.aderencia && (
+            {formattedAderencia && (
               <Badge
                 variant="outline"
                 className="text-[10px] font-medium px-1.5 py-0 bg-blue-50 text-blue-700 border-blue-200 shadow-none"
               >
-                {candidate.analysisDetails.aderencia}
+                {formattedAderencia}
               </Badge>
             )}
           </div>
