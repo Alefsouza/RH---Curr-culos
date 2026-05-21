@@ -1,4 +1,3 @@
-/* Avatar Component primitives - A component that displays an avatar - from shadcn/ui (exposes Avatar, AvatarImage, AvatarFallback) */
 import * as React from 'react'
 import * as AvatarPrimitive from '@radix-ui/react-avatar'
 

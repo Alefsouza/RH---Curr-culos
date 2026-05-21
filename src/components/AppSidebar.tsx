@@ -12,6 +12,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   LayoutDashboard,
   Users,
@@ -85,22 +86,26 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-border p-4">
-        <div className="flex items-center gap-3">
-          <img
-            src="https://img.usecurling.com/ppl/thumbnail?gender=female&seed=1"
-            alt="User Avatar"
-            className="h-10 w-10 rounded-full ring-2 ring-border"
-          />
-          <div className="flex flex-col">
-            <span className="text-sm font-medium text-foreground leading-none">
+      <SidebarFooter className="border-t border-border p-3">
+        <Link
+          to="/perfil"
+          className="flex items-center gap-3 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground p-2 rounded-md transition-colors w-full"
+        >
+          <Avatar className="h-10 w-10 border border-border">
+            <AvatarImage src={profile?.avatar_url || ''} className="object-cover" />
+            <AvatarFallback className="bg-primary/10 text-primary font-medium">
+              {profile?.nome?.substring(0, 2).toUpperCase() || 'U'}
+            </AvatarFallback>
+          </Avatar>
+          <div className="flex flex-col overflow-hidden">
+            <span className="text-sm font-medium leading-none truncate">
               {profile?.nome || 'Usuário'}
             </span>
-            <span className="text-xs text-muted-foreground mt-1">
+            <span className="text-xs text-muted-foreground mt-1 truncate">
               {profile?.is_admin ? 'Administrador' : 'Recrutador(a)'}
             </span>
           </div>
-        </div>
+        </Link>
       </SidebarFooter>
     </Sidebar>
   )

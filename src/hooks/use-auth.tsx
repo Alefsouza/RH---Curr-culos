@@ -7,12 +7,14 @@ interface UserProfile {
   email: string
   nome: string | null
   is_admin: boolean
+  avatar_url: string | null
 }
 
 interface AuthContextType {
   user: User | null
   session: Session | null
   profile: UserProfile | null
+  refreshProfile: () => Promise<void>
   signUp: (email: string, password: string, name?: string) => Promise<{ error: any }>
   signIn: (email: string, password: string) => Promise<{ error: any }>
   signOut: () => Promise<{ error: any }>
@@ -49,14 +51,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => subscription.unsubscribe()
   }, [])
 
+  const refreshProfile = async () => {
+    if (user) {
+      const { data } = await supabase.from('usuarios').select('*').eq('id', user.id).single()
+      if (data) setProfile(data as UserProfile)
+    }
+  }
+
   useEffect(() => {
     if (user) {
-      supabase
-        .from('usuarios')
-        .select('*')
-        .eq('id', user.id)
-        .single()
-        .then(({ data }) => setProfile(data as UserProfile))
+      refreshProfile()
     } else {
       setProfile(null)
     }
@@ -85,7 +89,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }
 
   return (
-    <AuthContext.Provider value={{ user, session, profile, signUp, signIn, signOut, loading }}>
+    <AuthContext.Provider
+      value={{ user, session, profile, refreshProfile, signUp, signIn, signOut, loading }}
+    >
       {children}
     </AuthContext.Provider>
   )
