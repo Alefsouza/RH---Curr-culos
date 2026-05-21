@@ -6,6 +6,7 @@ import {
   updateCandidate,
   updateAnaliseStatus,
 } from '@/services/candidates'
+import { fetchVagas } from '@/services/review'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -24,6 +25,7 @@ import {
 
 export default function CandidatesPage() {
   const [candidates, setCandidates] = useState<any[]>([])
+  const [vagas, setVagas] = useState<{ id: string; titulo: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -35,8 +37,9 @@ export default function CandidatesPage() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const data = await getCandidatesList()
+      const [data, vagasData] = await Promise.all([getCandidatesList(), fetchVagas()])
       setCandidates(data)
+      setVagas(vagasData)
       setError(null)
     } catch (err: any) {
       setError(err.message || 'Erro ao carregar candidatos')
@@ -200,6 +203,7 @@ export default function CandidatesPage() {
       ) : (
         <CandidateTable
           candidates={filtered}
+          vagas={vagas}
           onEdit={setEditData}
           onDelete={setDeleteId}
           onToggleStatus={handleToggleStatus}
