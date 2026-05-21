@@ -63,13 +63,10 @@ Deno.serve(async (req: Request) => {
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
       if (!uuidRegex.test(vaga_id)) {
         console.error(`Erro: vaga_id inválido (${vaga_id}). Não é um UUID válido.`)
-        return new Response(
-          JSON.stringify({ error: 'Vaga inválida. Selecione uma vaga válida.' }),
-          {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          },
-        )
+        return new Response(JSON.stringify({ error: 'Vaga inválida. Selecione uma vaga válida.' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
       }
     }
 
