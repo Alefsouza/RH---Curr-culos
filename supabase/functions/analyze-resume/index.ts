@@ -45,11 +45,11 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    if (!nome || !user_id) {
-      console.error('Erro: nome ou user_id ausentes.')
+    if (!user_id) {
+      console.error('Erro: user_id ausente.')
       return new Response(
         JSON.stringify({
-          error: 'Dados incompletos. Nome e identificador do usuário são obrigatórios.',
+          error: 'Dados incompletos. Identificador do usuário é obrigatório.',
         }),
         {
           status: 400,
@@ -63,10 +63,13 @@ Deno.serve(async (req: Request) => {
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
       if (!uuidRegex.test(vaga_id)) {
         console.error(`Erro: vaga_id inválido (${vaga_id}). Não é um UUID válido.`)
-        return new Response(JSON.stringify({ error: 'Vaga inválida. Selecione uma vaga válida.' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
+        return new Response(
+          JSON.stringify({ error: 'Vaga inválida. Selecione uma vaga válida.' }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          },
+        )
       }
     }
 
@@ -220,9 +223,9 @@ ${pdfText.substring(0, 15000)}`
       )
     }
 
-    const finalEmail = email || extractedData.email || null
-    const finalTelefone = telefone || extractedData.telefone || null
-    const finalNome = nome || extractedData.nome || 'Candidato Desconhecido'
+    const finalEmail = extractedData.email || email || null
+    const finalTelefone = extractedData.telefone || telefone || null
+    const finalNome = extractedData.nome || nome || 'Candidato Desconhecido'
 
     // 4. Deduplication and Database operations
     console.log('Iniciando comunicação com o banco de dados (Deduplicação e Inserção)...')

@@ -30,7 +30,7 @@ Deno.serve(async (req: Request) => {
 
     const { filePath, nome, email, telefone, vaga_id, user_id } = body
 
-    if (!filePath || !nome || !email || !user_id) {
+    if (!filePath || !user_id) {
       return new Response(JSON.stringify({ error: 'Dados incompletos fornecidos.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -150,9 +150,9 @@ ${pdfText.substring(0, 15000)}`
       )
     }
 
-    const finalEmail = email || extractedData.email || null
-    const finalTelefone = telefone || extractedData.telefone || null
-    const finalNome = nome || extractedData.nome || 'Candidato Desconhecido'
+    const finalEmail = extractedData.email || email || null
+    const finalTelefone = extractedData.telefone || telefone || null
+    const finalNome = extractedData.nome || nome || 'Candidato Desconhecido'
 
     // 4. Deduplication
     const orConditions = []
