@@ -338,7 +338,10 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
           .maybeSingle()
 
         if (etapaNovos) {
-          await supabaseAdmin.from('candidatos').update({ etapa_id: etapaNovos.id }).eq('id', cv_id)
+          await supabaseAdmin
+            .from('candidatos')
+            .update({ etapa_id: etapaNovos.id })
+            .eq('id', cv_id)
 
           const { data: relExists } = await supabaseAdmin
             .from('candidato_etapa')
