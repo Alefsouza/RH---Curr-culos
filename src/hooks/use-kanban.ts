@@ -6,7 +6,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { supabase } from '@/lib/supabase/client'
 
 export function useKanban() {
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [stages, setStages] = useState<Stage[]>([])
   const [loading, setLoading] = useState(true)
@@ -38,26 +38,26 @@ export function useKanban() {
   useEffect(() => {
     loadData()
 
-    if (!user) return
+    if (!user || profile === null) return
+
+    const configCandidatos = profile.is_admin
+      ? { event: '*', schema: 'public', table: 'candidatos' }
+      : { event: '*', schema: 'public', table: 'candidatos', filter: `user_id=eq.${user.id}` }
+
+    const configAnalises = profile.is_admin
+      ? { event: '*', schema: 'public', table: 'analises' }
+      : { event: '*', schema: 'public', table: 'analises', filter: `user_id=eq.${user.id}` }
 
     const channel = supabase
       .channel('kanban-updates')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'candidatos', filter: `user_id=eq.${user.id}` },
-        () => loadData(false),
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'analises', filter: `user_id=eq.${user.id}` },
-        () => loadData(false),
-      )
+      .on('postgres_changes', configCandidatos as any, () => loadData(false))
+      .on('postgres_changes', configAnalises as any, () => loadData(false))
       .subscribe()
 
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [loadData, user])
+  }, [loadData, user, profile])
 
   useEffect(() => {
     const handleCandidateDelete = (event: any) => {
