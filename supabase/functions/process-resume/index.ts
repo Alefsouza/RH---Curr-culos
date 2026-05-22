@@ -118,13 +118,14 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const extractionPrompt = `Extraia os seguintes dados do currículo: nome, email, telefone, experiencia profissional, skills, formacao academica, endereço (cidade e estado ou completo).
+    const extractionPrompt = `Extraia os seguintes dados do currículo: nome, email, telefones celulares, experiencia profissional, skills, formacao academica, endereço (cidade e estado ou completo).
+Extraia APENAS números de telefone celular brasileiros (DDD + 9 dígitos, começando com 9). Ignore telefones fixos. Formato: 11999999999.
 Se algum dado não for encontrado, retorne null ou um array vazio.
 Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
 {
   "nome": "string",
   "email": "string",
-  "telefone": "string",
+  "telefones_celulares": ["string"],
   "endereco": "string ou null",
   "experiencia_profissional": ["string"],
   "skills": ["string"],
@@ -151,7 +152,15 @@ ${extractedText.substring(0, 15000)}`
     }
 
     const finalEmail = extractedData.email || email || null
-    const finalTelefone = extractedData.telefone || telefone || null
+
+    let telefonesArr: string[] = []
+    if (Array.isArray(extractedData.telefones_celulares)) {
+      telefonesArr = extractedData.telefones_celulares
+    } else if (extractedData.telefone) {
+      telefonesArr = [extractedData.telefone]
+    }
+
+    const finalTelefone = telefonesArr.length > 0 ? telefonesArr.join(',') : telefone || null
     const finalNome = extractedData.nome || nome || 'Candidato Desconhecido'
 
     // 4. Deduplication
@@ -161,8 +170,14 @@ ${extractedText.substring(0, 15000)}`
       orConditions.push(`email.eq."${safeEmail}"`)
     }
     if (finalTelefone) {
-      const safeTel = finalTelefone.replace(/"/g, '')
-      orConditions.push(`telefone.eq."${safeTel}"`)
+      const tels = finalTelefone
+        .split(',')
+        .map((t: string) => t.trim())
+        .filter(Boolean)
+      for (const tel of tels) {
+        const safeTel = tel.replace(/"/g, '')
+        orConditions.push(`telefone.ilike."%${safeTel}%"`)
+      }
     }
 
     const { data: publicUrlData } = supabase.storage.from('curriculos').getPublicUrl(filePath)

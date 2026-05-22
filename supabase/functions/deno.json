@@ -1,12 +1,12 @@
 {
   "_versions": {
-    "outlook-webhook": 21,
+    "outlook-webhook": 22,
     "process-resume": 24,
     "analyze-resume": 38,
-    "enviar-whatsapp": 23,
+    "enviar-whatsapp": 24,
     "test-whatsapp": 15,
     "manage-users": 12,
-    "analisar-cv-criterios": 25,
+    "analisar-cv-criterios": 26,
     "whatsapp-webhook": 8,
     "identify-vaga-from-cv": 2,
     "gmail-poll-curriculos": 4

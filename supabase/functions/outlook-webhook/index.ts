@@ -115,13 +115,14 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const extractionPrompt = `Extraia os seguintes dados do currículo: nome, email, telefone, experiencia profissional, skills, formacao academica, endereço (cidade e estado ou completo).
+    const extractionPrompt = `Extraia os seguintes dados do currículo: nome, email, telefones celulares, experiencia profissional, skills, formacao academica, endereço (cidade e estado ou completo).
+Extraia APENAS números de telefone celular brasileiros (DDD + 9 dígitos, começando com 9). Ignore telefones fixos. Formato: 11999999999.
 Se algum dado não for encontrado, retorne null ou um array vazio.
 Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
 {
   "nome": "string ou null",
   "email": "string ou null",
-  "telefone": "string ou null",
+  "telefones_celulares": ["string"],
   "endereco": "string ou null",
   "experiencia_profissional": ["string"],
   "skills": ["string"],
@@ -170,15 +171,31 @@ ${pdfText.substring(0, 15000)}
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
     const supabase = createClient(supabaseUrl, supabaseKey)
 
+    let telefonesArr: string[] = []
+    if (Array.isArray(extractedData.telefones_celulares)) {
+      telefonesArr = extractedData.telefones_celulares
+    } else if (extractedData.telefone) {
+      telefonesArr = [extractedData.telefone]
+    }
+    const extractedTelefone = telefonesArr.length > 0 ? telefonesArr.join(',') : null
+
     // 5 & 6. Deduplicação
     const cleanEmail = extractedData.email ? extractedData.email.replace(/"/g, '') : null
-    const cleanTelefone = extractedData.telefone ? extractedData.telefone.replace(/"/g, '') : null
     const cleanNome = extractedData.nome ? extractedData.nome.replace(/"/g, '') : null
 
     const orConditions = []
     if (cleanEmail) orConditions.push(`email.eq."${cleanEmail}"`)
-    if (cleanTelefone) orConditions.push(`telefone.eq."${cleanTelefone}"`)
     if (cleanNome) orConditions.push(`nome.eq."${cleanNome}"`)
+    if (extractedTelefone) {
+      const tels = extractedTelefone
+        .split(',')
+        .map((t: string) => t.trim())
+        .filter(Boolean)
+      for (const tel of tels) {
+        const safeTel = tel.replace(/"/g, '')
+        orConditions.push(`telefone.ilike."%${safeTel}%"`)
+      }
+    }
 
     let candidatoId
 
@@ -199,7 +216,7 @@ ${pdfText.substring(0, 15000)}
           .update({
             nome: extractedData.nome,
             email: extractedData.email || null,
-            telefone: extractedData.telefone || null,
+            telefone: extractedTelefone,
             dados_extraidos: extractedData,
           })
           .eq('id', candidatoId)
@@ -213,7 +230,7 @@ ${pdfText.substring(0, 15000)}
         .insert({
           nome: extractedData.nome,
           email: extractedData.email || null,
-          telefone: extractedData.telefone || null,
+          telefone: extractedTelefone,
           dados_extraidos: extractedData,
           fonte: 'outlook',
           user_id: userId,

@@ -324,7 +324,10 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
           .eq('id', candidato.etapa_id)
           .single()
 
-        if (currentEtapa && (currentEtapa.ordem <= 1 || currentEtapa.nome.toLowerCase() === 'novos')) {
+        if (
+          currentEtapa &&
+          (currentEtapa.ordem <= 1 || currentEtapa.nome.toLowerCase() === 'novos')
+        ) {
           isEtapaInicial = true
         }
       }
@@ -338,10 +341,7 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
           .maybeSingle()
 
         if (etapaNovos) {
-          await supabaseAdmin
-            .from('candidatos')
-            .update({ etapa_id: etapaNovos.id })
-            .eq('id', cv_id)
+          await supabaseAdmin.from('candidatos').update({ etapa_id: etapaNovos.id }).eq('id', cv_id)
 
           const { data: relExists } = await supabaseAdmin
             .from('candidato_etapa')
@@ -361,38 +361,46 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
       }
     }
 
-    let numero_whatsapp = null
+    let numeros_whatsapp: string[] = []
     try {
-      const promptWhatsApp = `Extraia o número de telefone/WhatsApp do currículo. Retorne APENAS o número no formato: 11999999999\n\nCurrículo:\n${JSON.stringify(cvData)}`
+      const promptWhatsApp = `Extraia TODOS os números de telefone celular brasileiros (DDD + 9 dígitos, começando com 9) do currículo, ignorando telefones fixos. Retorne APENAS os números no formato: 11999999999, separados por vírgula se houver mais de um.\n\nCurrículo:\n${JSON.stringify(cvData)}`
       const responseWpp = await openai.chat.completions.create({
         model: 'gpt-4-turbo',
         temperature: 0.1,
         messages: [{ role: 'user', content: promptWhatsApp }],
       })
       const extractedText = responseWpp.choices[0]?.message?.content?.trim() || ''
-      const cleanPhone = extractedText.replace(/\D/g, '')
-      if (cleanPhone.length === 11) {
-        numero_whatsapp = cleanPhone
-      }
+      numeros_whatsapp = extractedText
+        .split(',')
+        .map((s) => s.replace(/\D/g, ''))
+        .filter((s) => s.length === 11)
     } catch (e: any) {
-      console.error('Erro ao extrair WhatsApp:', e)
+      console.error('Erro ao extrair WhatsApps:', e)
     }
 
-    if (numero_whatsapp) {
-      const { error: insertMsgError } = await supabaseAdmin.from('mensagens_whatsapp').insert({
-        candidato_id: cv_id,
-        numero_whatsapp: numero_whatsapp,
-        user_id: user_id,
-      })
-      if (insertMsgError) {
-        console.error('Erro ao salvar em mensagens_whatsapp:', insertMsgError)
+    if (numeros_whatsapp.length > 0) {
+      for (const numero of numeros_whatsapp) {
+        const { error: insertMsgError } = await supabaseAdmin.from('mensagens_whatsapp').insert({
+          candidato_id: cv_id,
+          numero_whatsapp: numero,
+          user_id: user_id,
+        })
+        if (insertMsgError) {
+          console.error('Erro ao salvar em mensagens_whatsapp:', insertMsgError)
+        }
       }
     } else {
-      console.log('Número de WhatsApp não encontrado no currículo')
+      console.log('Número de WhatsApp celular não encontrado no currículo')
     }
 
     return new Response(
-      JSON.stringify({ data: { success: true, analise: analiseData, numero_whatsapp } }),
+      JSON.stringify({
+        data: {
+          success: true,
+          analise: analiseData,
+          numero_whatsapp: numeros_whatsapp.length > 0 ? numeros_whatsapp.join(',') : null,
+        },
+      }),
       {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

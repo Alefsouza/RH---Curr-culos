@@ -58,8 +58,13 @@ export function CandidateEditDialog({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="telefone">Telefone</Label>
-            <Input id="telefone" value={telefone} onChange={(e) => setTelefone(e.target.value)} />
+            <Label htmlFor="telefone">Telefone(s) (separados por vírgula)</Label>
+            <Input
+              id="telefone"
+              value={telefone}
+              onChange={(e) => setTelefone(e.target.value)}
+              placeholder="Ex: 11999999999, 11988888888"
+            />
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
