@@ -21,6 +21,7 @@ import {
   SquareKanban,
   MessageSquare,
   ClipboardCheck,
+  MessageCircleCode,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -34,7 +35,8 @@ export function AppSidebar() {
     { title: 'Vagas', url: '/vagas', icon: Briefcase },
     { title: 'Candidatos', url: '/candidatos', icon: Users },
     { title: 'Revisão de IA', url: '/revisao', icon: ClipboardCheck },
-    { title: 'Mensagens', url: '/templates', icon: MessageSquare },
+    { title: 'Templates', url: '/templates', icon: MessageSquare },
+    { title: 'WhatsApp', url: '/whatsapp', icon: MessageCircleCode },
     ...(profile?.is_admin ? [{ title: 'Usuários', url: '/usuarios', icon: Users }] : []),
   ]
 

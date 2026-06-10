@@ -27,11 +27,14 @@ type CandidateWithRelations = {
 }
 
 export async function fetchCandidates() {
-  const { data, error } = await supabase.from('candidatos').select(`
+  const { data, error } = await supabase
+    .from('candidatos')
+    .select(`
       *,
       vagas (titulo),
       analises (resultado, detalhes, criado_em)
     `)
+    .neq('ativo_kanban', false)
   if (error) throw error
 
   return (data as unknown as CandidateWithRelations[])

@@ -16,6 +16,7 @@ import CandidateDetails from './pages/CandidateDetails'
 import CandidatesPage from './pages/CandidatesPage'
 import ReviewPage from './pages/ReviewPage'
 import ProfilePage from './pages/ProfilePage'
+import WhatsappPage from './pages/WhatsappPage'
 import { AuthProvider, useAuth } from '@/hooks/use-auth'
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -50,6 +51,7 @@ const App = () => (
             <Route path="/usuarios" element={<UsersPage />} />
             <Route path="/revisao" element={<ReviewPage />} />
             <Route path="/candidato/:id" element={<CandidateDetails />} />
+            <Route path="/whatsapp" element={<WhatsappPage />} />
             <Route path="/perfil" element={<ProfilePage />} />
           </Route>
           <Route path="*" element={<NotFound />} />

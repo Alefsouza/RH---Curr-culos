@@ -4,6 +4,14 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import { MessageSquare, Smartphone, Save, Play, History, Loader2, AlertCircle } from 'lucide-react'
 import {
@@ -33,38 +41,65 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
-type EtapaTemplate = {
-  id: string
-  nome: string
-  cor: string
-  template: { id: string; texto: string } | null
+type TemplateData = {
+  tipo: string
+  texto: string
+  pergunta_texto: string
+  botao_sim_texto: string
+  botao_sim_acao: string
+  botao_nao_texto: string
+  botao_nao_acao: string
+  etapa_destino_id: string | null
 }
 
 export default function TemplatesPage() {
-  const [etapas, setEtapas] = useState<EtapaTemplate[]>([])
+  const [etapas, setEtapas] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<string>('')
-  const [templateTexts, setTemplateTexts] = useState<Record<string, string>>({})
+  const [templates, setTemplates] = useState<Record<string, TemplateData>>({})
   const [saving, setSaving] = useState(false)
   const [testPhone, setTestPhone] = useState('')
   const [testing, setTesting] = useState(false)
   const [history, setHistory] = useState<any[]>([])
   const { toast } = useToast()
 
+  const defaultTemplate: TemplateData = {
+    tipo: 'texto_simples',
+    texto: '',
+    pergunta_texto: '',
+    botao_sim_texto: 'Sim',
+    botao_sim_acao: 'manter',
+    botao_nao_texto: 'Não',
+    botao_nao_acao: 'manter',
+    etapa_destino_id: null,
+  }
+
   const loadData = async () => {
     try {
       setLoading(true)
-      setError(null)
       const data = await getEtapasComTemplates()
       setEtapas(data)
       if (data.length > 0) {
         setActiveTab(data[0].id)
-        const texts: Record<string, string> = {}
+        const temps: Record<string, TemplateData> = {}
         data.forEach((e) => {
-          if (e.template) texts[e.id] = e.template.texto
+          if (e.template) {
+            temps[e.id] = {
+              tipo: e.template.tipo || 'texto_simples',
+              texto: e.template.texto || '',
+              pergunta_texto: e.template.pergunta_texto || '',
+              botao_sim_texto: e.template.botao_sim_texto || 'Sim',
+              botao_sim_acao: e.template.botao_sim_acao || 'manter',
+              botao_nao_texto: e.template.botao_nao_texto || 'Não',
+              botao_nao_acao: e.template.botao_nao_acao || 'manter',
+              etapa_destino_id: e.template.etapa_destino_id || null,
+            }
+          } else {
+            temps[e.id] = { ...defaultTemplate }
+          }
         })
-        setTemplateTexts(texts)
+        setTemplates(temps)
       }
     } catch (err: any) {
       setError(err.message || 'Erro ao carregar templates')
@@ -73,35 +108,28 @@ export default function TemplatesPage() {
     }
   }
 
-  const loadHistory = async () => {
-    try {
-      const data = await getMessageHistory()
-      setHistory(data)
-    } catch (err) {
-      console.error('Erro ao carregar histórico', err)
-    }
-  }
-
   useEffect(() => {
     loadData()
-    loadHistory()
+    getMessageHistory().then(setHistory).catch(console.error)
   }, [])
+
+  const updateTemplate = (key: keyof TemplateData, value: string) => {
+    setTemplates((prev) => ({
+      ...prev,
+      [activeTab]: { ...prev[activeTab], [key]: value },
+    }))
+  }
 
   const handleSave = async () => {
     if (!activeTab) return
-    if (!window.confirm('Deseja realmente salvar as alterações neste template?')) return
-    const text = templateTexts[activeTab] || ''
+    const data = templates[activeTab]
     try {
       setSaving(true)
-      await saveTemplate(activeTab, text)
+      await saveTemplate(activeTab, data)
       toast({ title: 'Sucesso', description: 'Template salvo com sucesso.' })
       await loadData()
     } catch (err: any) {
-      toast({
-        title: 'Erro',
-        description: err.message || 'Erro ao salvar template.',
-        variant: 'destructive',
-      })
+      toast({ title: 'Erro', description: err.message, variant: 'destructive' })
     } finally {
       setSaving(false)
     }
@@ -109,32 +137,25 @@ export default function TemplatesPage() {
 
   const handleTest = async () => {
     if (!activeTab) return
-    const text = templateTexts[activeTab] || ''
-    if (!text) {
-      toast({ title: 'Aviso', description: 'O template está vazio.', variant: 'destructive' })
+    const data = templates[activeTab]
+    const textToTest = data.tipo === 'chatbot_interativo' ? data.pergunta_texto : data.texto
+
+    if (!textToTest) {
+      toast({ title: 'Aviso', description: 'O texto está vazio.', variant: 'destructive' })
       return
     }
     const cleanPhone = testPhone.replace(/\D/g, '')
     if (cleanPhone.length < 10) {
-      toast({
-        title: 'Erro',
-        description: 'Telefone inválido. Digite um número com DDD.',
-        variant: 'destructive',
-      })
+      toast({ title: 'Erro', description: 'Telefone inválido.', variant: 'destructive' })
       return
     }
 
     try {
       setTesting(true)
-      const previewMsg = getPreviewText(text)
-      await testTemplate(testPhone, previewMsg)
+      await testTemplate(testPhone, textToTest)
       toast({ title: 'Sucesso', description: 'Mensagem de teste enviada.' })
     } catch (err: any) {
-      toast({
-        title: 'Erro',
-        description: err.message || 'Erro ao enviar teste.',
-        variant: 'destructive',
-      })
+      toast({ title: 'Erro', description: err.message, variant: 'destructive' })
     } finally {
       setTesting(false)
     }
@@ -142,8 +163,12 @@ export default function TemplatesPage() {
 
   const insertVar = (variable: string) => {
     if (!activeTab) return
-    const current = templateTexts[activeTab] || ''
-    setTemplateTexts({ ...templateTexts, [activeTab]: current + variable })
+    const currentData = templates[activeTab]
+    if (currentData.tipo === 'chatbot_interativo') {
+      updateTemplate('pergunta_texto', currentData.pergunta_texto + variable)
+    } else {
+      updateTemplate('texto', currentData.texto + variable)
+    }
   }
 
   const getPreviewText = (text: string) => {
@@ -151,51 +176,31 @@ export default function TemplatesPage() {
     return text
       .replace(/{{nome_candidato}}/g, 'João da Silva')
       .replace(/{{nome_vaga}}/g, 'Desenvolvedor Front-end')
-      .replace(/{{data_entrevista}}/g, '15/10/2026 às 14:00')
-      .replace(/{{link_formulario}}/g, 'https://exemplo.com/form')
-      .replace(/{nome_candidato}/g, 'João da Silva')
-      .replace(/{nome_vaga}/g, 'Desenvolvedor Front-end')
   }
 
-  if (loading) {
+  if (loading)
     return (
       <div className="p-6 max-w-6xl mx-auto space-y-6">
         <Skeleton className="h-10 w-64" />
-        <div className="flex gap-4">
-          <Skeleton className="h-10 w-32" />
-          <Skeleton className="h-10 w-32" />
-        </div>
-        <div className="grid md:grid-cols-2 gap-6">
-          <Skeleton className="h-[400px]" />
-          <Skeleton className="h-[400px]" />
-        </div>
+        <Skeleton className="h-[400px]" />
       </div>
     )
-  }
-
-  if (error) {
+  if (error)
     return (
-      <div className="p-6 max-w-4xl mx-auto text-center space-y-4">
+      <div className="p-6 max-w-4xl mx-auto text-center">
         <AlertCircle className="w-12 h-12 text-red-500 mx-auto" />
-        <h2 className="text-xl font-bold text-slate-800">Ops, ocorreu um erro</h2>
-        <p className="text-slate-600">{error}</p>
+        <p>{error}</p>
         <Button onClick={loadData}>Tentar Novamente</Button>
       </div>
     )
-  }
-
-  if (etapas.length === 0) {
+  if (etapas.length === 0)
     return (
-      <div className="p-6 max-w-4xl mx-auto text-center space-y-4 py-20">
-        <MessageSquare className="w-16 h-16 text-slate-300 mx-auto" />
-        <h2 className="text-2xl font-bold text-slate-800">Nenhum template configurado</h2>
-        <p className="text-slate-600 max-w-md mx-auto">
-          Você precisa ter etapas cadastradas no seu Kanban para configurar os templates de
-          mensagem.
-        </p>
+      <div className="p-6 max-w-4xl mx-auto text-center py-20">
+        <h2 className="text-2xl font-bold">Nenhum template configurado</h2>
       </div>
     )
-  }
+
+  const activeData = templates[activeTab] || defaultTemplate
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6 animate-fade-in-up">
@@ -206,10 +211,9 @@ export default function TemplatesPage() {
             Templates de Mensagens
           </h1>
           <p className="text-slate-500 text-sm mt-1">
-            Configure as mensagens automáticas do WhatsApp enviadas ao mover candidatos de etapa.
+            Configure as mensagens automáticas e chatbots interativos.
           </p>
         </div>
-
         <Dialog>
           <DialogTrigger asChild>
             <Button variant="outline" className="gap-2">
@@ -219,49 +223,31 @@ export default function TemplatesPage() {
           </DialogTrigger>
           <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Histórico de Mensagens Enviadas</DialogTitle>
+              <DialogTitle>Histórico de Mensagens</DialogTitle>
             </DialogHeader>
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Data</TableHead>
                   <TableHead>Candidato</TableHead>
-                  <TableHead>Telefone</TableHead>
-                  <TableHead>Etapa</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {history.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center text-slate-500 py-8">
-                      Nenhuma mensagem no histórico.
+                {history.map((h) => (
+                  <TableRow key={h.id}>
+                    <TableCell>{format(new Date(h.criado_em), 'dd/MM/yy HH:mm')}</TableCell>
+                    <TableCell>{h.candidatos?.nome || '-'}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={h.status === 'enviada' ? 'default' : 'destructive'}
+                        className={h.status === 'enviada' ? 'bg-green-500' : ''}
+                      >
+                        {h.status}
+                      </Badge>
                     </TableCell>
                   </TableRow>
-                ) : (
-                  history.map((h) => (
-                    <TableRow key={h.id}>
-                      <TableCell className="whitespace-nowrap">
-                        {format(new Date(h.criado_em), 'dd/MM/yyyy HH:mm', { locale: ptBR })}
-                      </TableCell>
-                      <TableCell className="font-medium">{h.candidatos?.nome || '-'}</TableCell>
-                      <TableCell>{h.candidatos?.telefone || '-'}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="bg-slate-50">
-                          {h.etapas?.nome || '-'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={h.status === 'enviada' ? 'default' : 'destructive'}
-                          className={h.status === 'enviada' ? 'bg-green-500' : ''}
-                        >
-                          {h.status === 'enviada' ? 'Enviada' : 'Falha'}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
+                ))}
               </TableBody>
             </Table>
           </DialogContent>
@@ -274,20 +260,9 @@ export default function TemplatesPage() {
             <TabsTrigger
               key={etapa.id}
               value={etapa.id}
-              className="data-[state=active]:bg-blue-600 data-[state=active]:text-white bg-white border border-slate-200 text-slate-600 rounded-full px-4 py-2 transition-all shadow-sm hover:border-blue-300"
+              className="data-[state=active]:bg-blue-600 data-[state=active]:text-white bg-white border border-slate-200 text-slate-600 rounded-full px-4 py-2 transition-all"
             >
               {etapa.nome}
-              {etapa.template ? (
-                <span
-                  className="ml-2 w-2 h-2 rounded-full bg-green-400 inline-block"
-                  title="Template configurado"
-                ></span>
-              ) : (
-                <span
-                  className="ml-2 w-2 h-2 rounded-full bg-slate-300 inline-block"
-                  title="Sem template"
-                ></span>
-              )}
             </TabsTrigger>
           ))}
         </TabsList>
@@ -297,27 +272,41 @@ export default function TemplatesPage() {
             <div className="grid lg:grid-cols-2 gap-6">
               <Card className="shadow-sm border-slate-200">
                 <CardHeader className="bg-slate-50 border-b border-slate-100 rounded-t-xl pb-4">
-                  <CardTitle className="text-lg">Editor de Template</CardTitle>
-                  <CardDescription>
-                    Escreva a mensagem para a etapa <strong>{etapa.nome}</strong>.
-                  </CardDescription>
+                  <CardTitle className="text-lg">Configuração da Etapa: {etapa.nome}</CardTitle>
                 </CardHeader>
                 <CardContent className="pt-6 space-y-6">
+                  <div className="space-y-3">
+                    <Label className="font-semibold">Modo de Mensagem</Label>
+                    <RadioGroup
+                      value={activeData.tipo}
+                      onValueChange={(val) => updateTemplate('tipo', val)}
+                      className="flex flex-col gap-3"
+                    >
+                      <div className="flex items-center space-x-2 border p-3 rounded-lg hover:bg-slate-50 transition-colors">
+                        <RadioGroupItem value="texto_simples" id={`r1-${etapa.id}`} />
+                        <Label htmlFor={`r1-${etapa.id}`} className="cursor-pointer font-medium">
+                          Texto Simples
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2 border p-3 rounded-lg hover:bg-slate-50 transition-colors">
+                        <RadioGroupItem value="chatbot_interativo" id={`r2-${etapa.id}`} />
+                        <Label htmlFor={`r2-${etapa.id}`} className="cursor-pointer font-medium">
+                          Chatbot Interativo (Botões Sim/Não)
+                        </Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
+
                   <div className="space-y-3">
                     <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                       Variáveis Disponíveis
                     </Label>
                     <div className="flex flex-wrap gap-2">
-                      {[
-                        '{{nome_candidato}}',
-                        '{{nome_vaga}}',
-                        '{{data_entrevista}}',
-                        '{{link_formulario}}',
-                      ].map((v) => (
+                      {['{{nome_candidato}}', '{{nome_vaga}}'].map((v) => (
                         <Badge
                           key={v}
                           variant="secondary"
-                          className="cursor-pointer hover:bg-blue-100 hover:text-blue-700 transition-colors bg-slate-100"
+                          className="cursor-pointer hover:bg-blue-100 transition-colors bg-slate-100"
                           onClick={() => insertVar(v)}
                         >
                           {v}
@@ -326,17 +315,106 @@ export default function TemplatesPage() {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label>Texto da Mensagem</Label>
-                    <Textarea
-                      className="min-h-[250px] resize-y font-mono text-sm leading-relaxed"
-                      placeholder="Olá {{nome_candidato}}, temos uma novidade sobre a vaga de {{nome_vaga}}..."
-                      value={templateTexts[etapa.id] || ''}
-                      onChange={(e) =>
-                        setTemplateTexts({ ...templateTexts, [etapa.id]: e.target.value })
-                      }
-                    />
-                  </div>
+                  {activeData.tipo === 'texto_simples' ? (
+                    <div className="space-y-2">
+                      <Label>Texto da Mensagem</Label>
+                      <Textarea
+                        className="min-h-[250px] resize-y"
+                        placeholder="Olá {{nome_candidato}}..."
+                        value={activeData.texto}
+                        onChange={(e) => updateTemplate('texto', e.target.value)}
+                      />
+                    </div>
+                  ) : (
+                    <div className="space-y-6 animate-fade-in">
+                      <div className="space-y-2">
+                        <Label>Pergunta Principal</Label>
+                        <Textarea
+                          className="min-h-[100px] resize-y"
+                          placeholder="Você confirma o agendamento da entrevista?"
+                          value={activeData.pergunta_texto}
+                          onChange={(e) => updateTemplate('pergunta_texto', e.target.value)}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4 bg-green-50/50 p-4 rounded-lg border border-green-100">
+                        <div className="space-y-2">
+                          <Label className="text-green-700">Botão Positivo (Sim)</Label>
+                          <Input
+                            value={activeData.botao_sim_texto}
+                            maxLength={20}
+                            onChange={(e) => updateTemplate('botao_sim_texto', e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-green-700">Ação ao clicar</Label>
+                          <Select
+                            value={activeData.botao_sim_acao}
+                            onValueChange={(val) => updateTemplate('botao_sim_acao', val)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="manter">Manter na Etapa</SelectItem>
+                              <SelectItem value="mover">Mover para Etapa</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4 bg-red-50/50 p-4 rounded-lg border border-red-100">
+                        <div className="space-y-2">
+                          <Label className="text-red-700">Botão Negativo (Não)</Label>
+                          <Input
+                            value={activeData.botao_nao_texto}
+                            maxLength={20}
+                            onChange={(e) => updateTemplate('botao_nao_texto', e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-red-700">Ação ao clicar</Label>
+                          <Select
+                            value={activeData.botao_nao_acao}
+                            onValueChange={(val) => updateTemplate('botao_nao_acao', val)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="manter">Manter na Etapa</SelectItem>
+                              <SelectItem value="mover">Mover para Etapa</SelectItem>
+                              <SelectItem value="remover">Remover do Kanban</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      {(activeData.botao_sim_acao === 'mover' ||
+                        activeData.botao_nao_acao === 'mover') && (
+                        <div className="space-y-2 bg-blue-50/50 p-4 rounded-lg border border-blue-100">
+                          <Label>Etapa de Destino (Para a ação "Mover")</Label>
+                          <Select
+                            value={activeData.etapa_destino_id || ''}
+                            onValueChange={(val) => updateTemplate('etapa_destino_id', val)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecione a etapa" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {etapas
+                                .filter((e) => e.id !== etapa.id)
+                                .map((e) => (
+                                  <SelectItem key={e.id} value={e.id}>
+                                    {e.nome}
+                                  </SelectItem>
+                                ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div className="flex justify-end pt-2 border-t border-slate-100">
                     <Button
@@ -363,17 +441,27 @@ export default function TemplatesPage() {
                       Pré-visualização
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="p-6 h-[300px] overflow-y-auto">
+                  <CardContent className="p-6 h-[400px] overflow-y-auto flex flex-col items-start gap-2">
                     <div className="bg-white rounded-lg rounded-tl-none p-4 max-w-[90%] shadow-sm relative text-sm text-slate-800 whitespace-pre-wrap">
-                      {getPreviewText(templateTexts[etapa.id]) || (
-                        <span className="text-slate-400 italic">
-                          Digite algo para visualizar...
-                        </span>
-                      )}
-                      <span className="text-[10px] text-slate-400 absolute bottom-1 right-2">
-                        {format(new Date(), 'HH:mm', { locale: ptBR })}
+                      {getPreviewText(
+                        activeData.tipo === 'texto_simples'
+                          ? activeData.texto
+                          : activeData.pergunta_texto,
+                      ) || <span className="text-slate-400 italic">Digite algo...</span>}
+                      <span className="text-[10px] text-slate-400 block text-right mt-1">
+                        {format(new Date(), 'HH:mm')}
                       </span>
                     </div>
+                    {activeData.tipo === 'chatbot_interativo' && (
+                      <div className="flex flex-col gap-2 w-[90%] mt-1">
+                        <div className="bg-white rounded-lg p-3 text-center shadow-sm text-blue-500 font-medium cursor-pointer hover:bg-slate-50 transition-colors">
+                          {activeData.botao_sim_texto || 'Sim'}
+                        </div>
+                        <div className="bg-white rounded-lg p-3 text-center shadow-sm text-blue-500 font-medium cursor-pointer hover:bg-slate-50 transition-colors">
+                          {activeData.botao_nao_texto || 'Não'}
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 
@@ -402,9 +490,6 @@ export default function TemplatesPage() {
                           {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Enviar'}
                         </Button>
                       </div>
-                      <p className="text-xs text-slate-500">
-                        O envio de teste usará a UAZAPI e os dados de exemplo da pré-visualização.
-                      </p>
                     </div>
                   </CardContent>
                 </Card>

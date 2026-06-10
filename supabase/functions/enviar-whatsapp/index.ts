@@ -112,19 +112,27 @@ Deno.serve(async (req: Request) => {
     }
 
     // 3. Substituindo variáveis na mensagem
-    let mensagemTexto = template.texto
     const nomeCandidato = candidato.nome || ''
     const tituloVaga = Array.isArray(candidato.vagas)
       ? candidato.vagas[0]?.titulo
       : (candidato.vagas as any)?.titulo
 
+    let mensagemTexto = template.texto || ''
     mensagemTexto = mensagemTexto.replace(/{{nome}}/gi, nomeCandidato)
     mensagemTexto = mensagemTexto.replace(/{{nome_candidato}}/gi, nomeCandidato)
     mensagemTexto = mensagemTexto.replace(/{{vaga}}/gi, tituloVaga || 'a vaga')
     mensagemTexto = mensagemTexto.replace(/{{nome_vaga}}/gi, tituloVaga || 'a vaga')
-    // Fallback para templates antigos que usavam chave simples
     mensagemTexto = mensagemTexto.replace(/{nome_candidato}/gi, nomeCandidato)
     mensagemTexto = mensagemTexto.replace(/{nome_vaga}/gi, tituloVaga || 'a vaga')
+
+    let isChatbot = template.tipo === 'chatbot_interativo'
+    let perguntaTexto = template.pergunta_texto || mensagemTexto
+    if (isChatbot) {
+      perguntaTexto = perguntaTexto
+        .replace(/{{nome_candidato}}/gi, nomeCandidato)
+        .replace(/{{nome_vaga}}/gi, tituloVaga || 'a vaga')
+      mensagemTexto = perguntaTexto // para fallback/logs
+    }
 
     // 4. Preparar números
     const telefonesStrList = telefoneRaw.split(',')
@@ -188,11 +196,44 @@ Deno.serve(async (req: Request) => {
     ): Promise<any> => {
       try {
         const baseUrl = uazapiUrl.endsWith('/') ? uazapiUrl.slice(0, -1) : uazapiUrl
-        const apiUrl = `${baseUrl}/send/text`
+        const endpoint = isChatbot ? '/send/buttons' : '/send/text'
+        const apiUrl = `${baseUrl}${endpoint}`
 
         let numWpp = phone
         if (numWpp.startsWith('55') && numWpp.length >= 12) {
           numWpp = numWpp.substring(2)
+        }
+
+        let payload_body: any = {
+          number: numWpp,
+          text: message,
+        }
+
+        if (isChatbot) {
+          payload_body = {
+            number: numWpp,
+            options: { delay: 1200 },
+            buttonMessage: {
+              text: message,
+              footerText: 'Via Sudeste',
+              buttons: [
+                {
+                  type: 'reply',
+                  reply: {
+                    id: `sim_${candidato_id}`,
+                    title: (template.botao_sim_texto || 'Sim').substring(0, 20),
+                  },
+                },
+                {
+                  type: 'reply',
+                  reply: {
+                    id: `nao_${candidato_id}`,
+                    title: (template.botao_nao_texto || 'Não').substring(0, 20),
+                  },
+                },
+              ],
+            },
+          }
         }
 
         const response = await fetch(apiUrl, {
@@ -202,10 +243,7 @@ Deno.serve(async (req: Request) => {
             apikey: uazapiToken,
             token: uazapiToken,
           },
-          body: JSON.stringify({
-            number: numWpp,
-            text: message,
-          }),
+          body: JSON.stringify(payload_body),
         })
 
         if (!response.ok) {
@@ -282,6 +320,14 @@ Deno.serve(async (req: Request) => {
 
       if (insertError) {
         console.error('Erro ao registrar a mensagem no banco de dados:', insertError.message)
+      }
+
+      if (isSuccess) {
+        await supabase.from('conversas_whatsapp').insert({
+          candidato_id: candidato.id,
+          texto: mensagemTexto,
+          direcao: 'enviada',
+        })
       }
     }
 

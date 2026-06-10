@@ -3,11 +3,11 @@
     "outlook-webhook": 23,
     "process-resume": 26,
     "analyze-resume": 40,
-    "enviar-whatsapp": 25,
+    "enviar-whatsapp": 26,
     "test-whatsapp": 16,
     "manage-users": 12,
     "analisar-cv-criterios": 27,
-    "whatsapp-webhook": 9,
+    "whatsapp-webhook": 10,
     "identify-vaga-from-cv": 2,
     "gmail-poll-curriculos": 4
   }

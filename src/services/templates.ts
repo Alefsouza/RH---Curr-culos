@@ -25,7 +25,7 @@ export async function getEtapasComTemplates() {
   }))
 }
 
-export async function saveTemplate(etapaId: string, texto: string) {
+export async function saveTemplate(etapaId: string, templateData: any) {
   const { data: userData } = await supabase.auth.getUser()
   if (!userData.user) throw new Error('Não autenticado')
 
@@ -39,7 +39,7 @@ export async function saveTemplate(etapaId: string, texto: string) {
   if (existing) {
     const { data, error } = await supabase
       .from('templates_mensagens')
-      .update({ texto })
+      .update(templateData)
       .eq('id', existing.id)
       .select()
       .single()
@@ -50,7 +50,7 @@ export async function saveTemplate(etapaId: string, texto: string) {
       .from('templates_mensagens')
       .insert({
         etapa_id: etapaId,
-        texto,
+        ...templateData,
         user_id: userData.user.id,
       })
       .select()
@@ -94,19 +94,14 @@ export async function testTemplate(phone: string, message: string) {
     if (error.context && typeof error.context.json === 'function') {
       try {
         const errData = await error.context.json()
-        if (errData.error) {
-          errorMessage = errData.error
-        }
-      } catch (e) {
-        // ignore
+        if (errData.error) errorMessage = errData.error
+      } catch {
+        /* intentionally ignored */
       }
     }
     throw new Error(errorMessage || 'Erro ao comunicar com a Edge Function.')
   }
 
-  if (data && data.error) {
-    throw new Error(data.error)
-  }
-
+  if (data && data.error) throw new Error(data.error)
   return data
 }
