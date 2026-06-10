@@ -128,9 +128,7 @@ Deno.serve(async (req: Request) => {
     let isChatbot = template.tipo === 'chatbot_interativo'
     let perguntaTexto = template.pergunta_texto || mensagemTexto
     if (isChatbot) {
-      perguntaTexto = perguntaTexto
-        .replace(/{{nome_candidato}}/gi, nomeCandidato)
-        .replace(/{{nome_vaga}}/gi, tituloVaga || 'a vaga')
+      perguntaTexto = perguntaTexto.replace(/{{nome_candidato}}/gi, nomeCandidato).replace(/{{nome_vaga}}/gi, tituloVaga || 'a vaga')
       mensagemTexto = perguntaTexto // para fallback/logs
     }
 
@@ -198,11 +196,7 @@ Deno.serve(async (req: Request) => {
         if (baseUrl.startsWith('http://') && !baseUrl.includes('localhost')) {
           baseUrl = baseUrl.replace('http://', 'https://')
         }
-        const instanceId =
-          Deno.env.get('UAZAPI_INSTANCE_ID') ||
-          Deno.env.get('UAZAPI_INSTANCE') ||
-          Deno.env.get('INSTANCE_ID') ||
-          ''
+        const instanceId = Deno.env.get('UAZAPI_INSTANCE_ID') || Deno.env.get('UAZAPI_INSTANCE') || Deno.env.get('INSTANCE_ID') || ''
         const endpointStr = isChatbot ? '/message/sendInteractive' : '/message/sendText'
         const endpoint = instanceId ? `${endpointStr}/${instanceId}` : endpointStr
         const apiUrl = `${baseUrl}${endpoint}`
@@ -222,38 +216,26 @@ Deno.serve(async (req: Request) => {
             number: numWpp,
             options: { delay: 1200 },
             interactiveMessage: {
-              type: 'button',
+              type: "button",
               body: { text: message },
-              footer: { text: 'Via Sudeste' },
+              footer: { text: "Via Sudeste" },
               action: {
                 buttons: [
-                  {
-                    type: 'reply',
-                    reply: {
-                      id: `sim_${candidato_id}`,
-                      title: (template.botao_sim_texto || 'Sim').substring(0, 20),
-                    },
-                  },
-                  {
-                    type: 'reply',
-                    reply: {
-                      id: `nao_${candidato_id}`,
-                      title: (template.botao_nao_texto || 'Não').substring(0, 20),
-                    },
-                  },
-                ],
-              },
-            },
+                  { type: "reply", reply: { id: `sim_${candidato_id}`, title: (template.botao_sim_texto || 'Sim').substring(0, 20) } },
+                  { type: "reply", reply: { id: `nao_${candidato_id}`, title: (template.botao_nao_texto || 'Não').substring(0, 20) } }
+                ]
+              }
+            }
           }
         }
-
+        
         const response = await fetch(apiUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             apikey: uazapiToken,
             token: uazapiToken,
-            ...(instanceId ? { instance_id: instanceId } : {}),
+            ...(instanceId ? { instance_id: instanceId } : {})
           },
           body: JSON.stringify(payload_body),
         })
@@ -338,7 +320,7 @@ Deno.serve(async (req: Request) => {
         await supabase.from('conversas_whatsapp').insert({
           candidato_id: candidato.id,
           texto: mensagemTexto,
-          direcao: 'enviada',
+          direcao: 'enviada'
         })
       }
     }
