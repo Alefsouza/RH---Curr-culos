@@ -3,6 +3,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 import OpenAI from 'npm:openai@4'
 import { Buffer } from 'node:buffer'
 import pdf from 'npm:pdf-parse@1.1.1'
+import { normalizePhone } from '../_shared/phone.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -166,7 +167,16 @@ ${extractedText.substring(0, 15000)}`
       telefonesArr = [extractedData.telefone]
     }
 
-    const finalTelefone = telefonesArr.length > 0 ? telefonesArr.join(',') : telefone || null
+    const rawTelefone = telefonesArr.length > 0 ? telefonesArr.join(',') : telefone || null
+    let finalTelefone = null
+    if (rawTelefone) {
+      const parts = rawTelefone
+        .split(',')
+        .map((t: string) => t.trim())
+        .filter(Boolean)
+      const normalizedParts = parts.map(normalizePhone).filter(Boolean)
+      finalTelefone = normalizedParts.length > 0 ? normalizedParts.join(',') : rawTelefone
+    }
     const finalNome = extractedData.nome || nome || 'Candidato Desconhecido'
 
     // 4. Deduplication
