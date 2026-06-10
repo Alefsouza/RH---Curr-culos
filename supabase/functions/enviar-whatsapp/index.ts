@@ -200,11 +200,7 @@ Deno.serve(async (req: Request) => {
         if (baseUrl.startsWith('http://') && !baseUrl.includes('localhost')) {
           baseUrl = baseUrl.replace('http://', 'https://')
         }
-        const instanceId =
-          Deno.env.get('UAZAPI_INSTANCE_ID') ||
-          Deno.env.get('UAZAPI_INSTANCE') ||
-          Deno.env.get('INSTANCE_ID') ||
-          ''
+        const instanceId = Deno.env.get('UAZAPI_INSTANCE_ID') || Deno.env.get('UAZAPI_INSTANCE') || Deno.env.get('INSTANCE_ID') || ''
         const endpointStr = isChatbot ? '/message/sendButtons' : '/message/sendText'
         const endpoint = instanceId ? `${endpointStr}/${instanceId}` : endpointStr
         const apiUrlObj = new URL(`${baseUrl}${endpoint}`)
@@ -220,73 +216,66 @@ Deno.serve(async (req: Request) => {
         }
 
         let payload_body: any = {
-          number: numWpp || '',
-          text: message || '',
+          number: numWpp || "",
+          text: message || "",
         }
 
         if (isChatbot) {
           payload_body = {
-            number: numWpp || '',
-            title: mensagemTexto || '',
+            number: numWpp || "",
+            title: mensagemTexto || "",
             text: `${mensagemTexto ? mensagemTexto + '\n\n' : ''}${perguntaTexto}`,
-            footer: 'Responda clicando em um dos botões abaixo',
-            type: 'button',
+            footer: "Responda clicando em um dos botões abaixo",
+            type: "button",
             buttons: [
-              {
-                buttonId: `sim_${candidato_id}`,
+              { 
+                buttonId: `sim_${candidato_id}`, 
                 buttonText: { displayText: (template.botao_sim_texto || 'Sim').substring(0, 20) },
-                type: 1,
+                type: 1
               },
-              {
-                buttonId: `nao_${candidato_id}`,
+              { 
+                buttonId: `nao_${candidato_id}`, 
                 buttonText: { displayText: (template.botao_nao_texto || 'Não').substring(0, 20) },
-                type: 1,
-              },
-            ],
+                type: 1
+              }
+            ]
           }
         }
-
+        
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 30000) // 30s timeout
 
-        let response: Response
+        let response: Response;
         try {
           response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              Connection: 'keep-alive',
+              'Connection': 'keep-alive',
               apikey: uazapiToken,
               token: uazapiToken,
-              ...(instanceId ? { instance_id: instanceId, instance: instanceId } : {}),
+              ...(instanceId ? { instance_id: instanceId, instance: instanceId } : {})
             },
             body: JSON.stringify(payload_body),
-            signal: controller.signal,
+            signal: controller.signal
           })
           clearTimeout(timeoutId)
         } catch (err: any) {
           clearTimeout(timeoutId)
-          if (
-            err.name === 'AbortError' ||
-            err.message?.includes('timeout') ||
-            err.message?.includes('broken pipe') ||
-            err.message?.includes('fetch')
-          ) {
+          if (err.name === 'AbortError' || err.message?.includes('timeout') || err.message?.includes('broken pipe') || err.message?.includes('fetch')) {
             if (retries > 0) {
               await new Promise((resolve) => setTimeout(resolve, backoff))
               return sendWhatsAppWithRetry(phone, message, retries - 1, backoff * 2)
             }
           }
-          throw err
+          throw err;
         }
 
         if (!response.ok) {
           if (response.status === 405) {
-            console.error(
-              `[enviar-whatsapp] 405 Method Not Allowed. URL: ${apiUrl}, Method: POST, Endpoint: ${endpoint}`,
-            )
+            console.error(`[enviar-whatsapp] 405 Method Not Allowed. URL: ${apiUrl}, Method: POST, Endpoint: ${endpoint}`)
           }
-          if (response.status >= 500 && response.status < 600 && retries > 0) {
+          if ((response.status >= 500 && response.status < 600) && retries > 0) {
             await new Promise((resolve) => setTimeout(resolve, backoff))
             return sendWhatsAppWithRetry(phone, message, retries - 1, backoff * 2)
           }
@@ -303,27 +292,15 @@ Deno.serve(async (req: Request) => {
             `Erro na UAZAPI: ${response.status} - ${response.statusText} | Detalhes: ${errorDetails}`,
           )
         }
-
+        
         const responseData = await response.json()
-        if (
-          responseData.error ||
-          responseData.status === 'error' ||
-          responseData.success === false
-        ) {
-          throw new Error(
-            `Erro na API do WhatsApp: ${responseData.message || responseData.error || JSON.stringify(responseData)}`,
-          )
+        if (responseData.error || responseData.status === 'error' || responseData.success === false) {
+          throw new Error(`Erro na API do WhatsApp: ${responseData.message || responseData.error || JSON.stringify(responseData)}`)
         }
         return responseData
       } catch (error: any) {
         const errorMsg = error.message || String(error)
-        const isTransient =
-          errorMsg.includes('503') ||
-          errorMsg.includes('502') ||
-          errorMsg.includes('504') ||
-          errorMsg.includes('fetch') ||
-          errorMsg.includes('timeout') ||
-          errorMsg.includes('broken pipe')
+        const isTransient = errorMsg.includes('503') || errorMsg.includes('502') || errorMsg.includes('504') || errorMsg.includes('fetch') || errorMsg.includes('timeout') || errorMsg.includes('broken pipe')
         if (retries > 0 && isTransient) {
           await new Promise((resolve) => setTimeout(resolve, backoff))
           return sendWhatsAppWithRetry(phone, message, retries - 1, backoff * 2)
@@ -389,7 +366,7 @@ Deno.serve(async (req: Request) => {
         await supabase.from('conversas_whatsapp').insert({
           candidato_id: candidato.id,
           texto: isChatbot ? `${mensagemTexto}\n\n${perguntaTexto}` : mensagemTexto,
-          direcao: 'enviada',
+          direcao: 'enviada'
         })
       }
     }
