@@ -128,7 +128,9 @@ Deno.serve(async (req: Request) => {
     let isChatbot = template.tipo === 'chatbot_interativo'
     let perguntaTexto = template.pergunta_texto || mensagemTexto
     if (isChatbot) {
-      perguntaTexto = perguntaTexto.replace(/{{nome_candidato}}/gi, nomeCandidato).replace(/{{nome_vaga}}/gi, tituloVaga || 'a vaga')
+      perguntaTexto = perguntaTexto
+        .replace(/{{nome_candidato}}/gi, nomeCandidato)
+        .replace(/{{nome_vaga}}/gi, tituloVaga || 'a vaga')
       mensagemTexto = perguntaTexto // para fallback/logs
     }
 
@@ -137,13 +139,12 @@ Deno.serve(async (req: Request) => {
     const validPhones: string[] = []
 
     for (const t of telefonesStrList) {
-      const cleanPhone = t.replace(/\D/g, '')
-      if (cleanPhone.length >= 10 && cleanPhone.length <= 15) {
-        let formattedPhone = cleanPhone
-        if (formattedPhone.length <= 11) {
-          formattedPhone = '55' + formattedPhone
-        }
-        validPhones.push(formattedPhone)
+      let cleanPhone = t.replace(/\D/g, '')
+      if (cleanPhone && !cleanPhone.startsWith('55')) {
+        cleanPhone = '55' + cleanPhone
+      }
+      if (cleanPhone.length >= 12 && cleanPhone.length <= 15) {
+        validPhones.push(cleanPhone)
       }
     }
 
@@ -193,13 +194,16 @@ Deno.serve(async (req: Request) => {
       backoff = 2000,
     ): Promise<any> => {
       try {
-        const baseUrl = uazapiUrl.endsWith('/') ? uazapiUrl.slice(0, -1) : uazapiUrl
+        let baseUrl = uazapiUrl.endsWith('/') ? uazapiUrl.slice(0, -1) : uazapiUrl
+        if (baseUrl.startsWith('http://') && !baseUrl.includes('localhost')) {
+          baseUrl = baseUrl.replace('http://', 'https://')
+        }
         const endpoint = isChatbot ? '/send/buttons' : '/send/text'
         const apiUrl = `${baseUrl}${endpoint}`
 
         let numWpp = phone
-        if (numWpp.startsWith('55') && numWpp.length >= 12) {
-          numWpp = numWpp.substring(2)
+        if (!numWpp.startsWith('55')) {
+          numWpp = '55' + numWpp
         }
 
         let payload_body: any = {
@@ -210,18 +214,53 @@ Deno.serve(async (req: Request) => {
         if (isChatbot) {
           payload_body = {
             number: numWpp,
+            text: message,
             options: { delay: 1200 },
             buttonMessage: {
               text: message,
-              footerText: "Via Sudeste",
+              footerText: 'Via Sudeste',
               buttons: [
-                { type: "reply", reply: { id: `sim_${candidato_id}`, title: (template.botao_sim_texto || 'Sim').substring(0, 20) } },
-                { type: "reply", reply: { id: `nao_${candidato_id}`, title: (template.botao_nao_texto || 'Não').substring(0, 20) } }
-              ]
-            }
+                {
+                  type: 'reply',
+                  reply: {
+                    id: `sim_${candidato_id}`,
+                    title: (template.botao_sim_texto || 'Sim').substring(0, 20),
+                  },
+                },
+                {
+                  type: 'reply',
+                  reply: {
+                    id: `nao_${candidato_id}`,
+                    title: (template.botao_nao_texto || 'Não').substring(0, 20),
+                  },
+                },
+              ],
+            },
+            interactiveMessage: {
+              body: { text: message },
+              footer: { text: 'Via Sudeste' },
+              type: 'button',
+              action: {
+                buttons: [
+                  {
+                    type: 'reply',
+                    reply: {
+                      id: `sim_${candidato_id}`,
+                      title: (template.botao_sim_texto || 'Sim').substring(0, 20),
+                    },
+                  },
+                  {
+                    type: 'reply',
+                    reply: {
+                      id: `nao_${candidato_id}`,
+                      title: (template.botao_nao_texto || 'Não').substring(0, 20),
+                    },
+                  },
+                ],
+              },
+            },
           }
         }
-
         const response = await fetch(apiUrl, {
           method: 'POST',
           headers: {
@@ -312,7 +351,7 @@ Deno.serve(async (req: Request) => {
         await supabase.from('conversas_whatsapp').insert({
           candidato_id: candidato.id,
           texto: mensagemTexto,
-          direcao: 'enviada'
+          direcao: 'enviada',
         })
       }
     }

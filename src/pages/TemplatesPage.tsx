@@ -171,7 +171,7 @@ export default function TemplatesPage() {
         if (parsed.detalhe) errorMsg = `${parsed.message}: ${parsed.detalhe}`
         else if (parsed.message) errorMsg = parsed.message
       } catch {
-        /* intentionally ignored */
+        if (err.detalhe) errorMsg = `${err.message}: ${err.detalhe}`
       }
 
       toast({
