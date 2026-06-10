@@ -13,6 +13,16 @@ Deno.serve(async (req: Request) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  // Basic verification check if configured via UAZAPI_KEY
+  const expectedApiKey = Deno.env.get('UAZAPI_KEY')
+  if (
+    expectedApiKey &&
+    req.headers.get('apikey') !== expectedApiKey &&
+    req.headers.get('Authorization') !== `Bearer ${expectedApiKey}`
+  ) {
+    return new Response('Unauthorized', { status: 401, headers: corsHeaders })
+  }
+
   try {
     const bodyText = await req.text()
     let body: any = {}
@@ -34,7 +44,6 @@ Deno.serve(async (req: Request) => {
       let messageId = null
       let status = null
 
-      // Mapping variations of UAZAPI/Evolution API webhooks
       if (event?.data?.id) {
         messageId = event.data.id
         status = event.data.status
@@ -48,14 +57,11 @@ Deno.serve(async (req: Request) => {
 
       if (!messageId) continue
 
-      let mappedStatus = null
-
       let selectedButtonId = null
       let incomingText = null
       let isIncomingMessage = false
       let remoteJid = event?.data?.key?.remoteJid || event?.sender || event?.data?.sender || ''
 
-      // UAZAPI / Evolution Button response mapping
       if (event?.data?.message?.buttonsResponseMessage?.selectedButtonId) {
         selectedButtonId = event.data.message.buttonsResponseMessage.selectedButtonId
         incomingText = event.data.message.buttonsResponseMessage.selectedDisplayText
@@ -76,53 +82,131 @@ Deno.serve(async (req: Request) => {
         const phoneMatch = remoteJid.match(/\d+/)
         if (phoneMatch) {
           const phoneNum = phoneMatch[0]
-          
+
+          let respostaClassificada = null
           let candId = null
-          
+
           if (selectedButtonId) {
             const btnMatch = selectedButtonId.match(/^(sim|nao)_(.+)$/)
             if (btnMatch) {
-              const resposta = btnMatch[1]
+              respostaClassificada = btnMatch[1]
               candId = btnMatch[2]
-              
+            }
+          } else if (incomingText) {
+            const txt = incomingText.toLowerCase().trim()
+            if (['sim', 's', 'sim!', 'sin'].includes(txt)) respostaClassificada = 'sim'
+            else if (['nao', 'não', 'n', 'não!'].includes(txt)) respostaClassificada = 'nao'
+          }
+
+          let candInfo: any = null
+
+          if (!candId) {
+            const { data: cands } = await supabase
+              .from('candidatos')
+              .select('id, user_id, etapa_id')
+              .ilike('telefone', `%${phoneNum.substring(2)}%`)
+              .limit(1)
+            if (cands && cands.length > 0) {
+              candId = cands[0].id
+              candInfo = cands[0]
+            }
+          } else {
+            const { data: c } = await supabase
+              .from('candidatos')
+              .select('id, user_id, etapa_id')
+              .eq('id', candId)
+              .single()
+            candInfo = c
+          }
+
+          if (candId) {
+            // Save to conversas_whatsapp
+            const { error: convErr } = await supabase.from('conversas_whatsapp').insert({
+              candidato_id: candId,
+              texto: incomingText || selectedButtonId || '',
+              direcao: 'recebida',
+              uazapi_message_id: messageId,
+            })
+
+            if (convErr && convErr.code === '23505') {
+              console.log('Mensagem duplicada (idempotência), ignorando:', messageId)
+              continue
+            }
+
+            // Save to mensagens_whatsapp to fulfill AC
+            await supabase.from('mensagens_whatsapp').insert({
+              candidato_id: candId,
+              numero_whatsapp: phoneNum,
+              user_id: candInfo?.user_id || '00000000-0000-0000-0000-000000000000',
+              status: 'recebida',
+              direcao: 'recebida',
+              conteudo: incomingText || selectedButtonId || '',
+              uazapi_message_id: messageId,
+              tipo: selectedButtonId ? 'botao' : 'texto',
+            })
+
+            if (respostaClassificada) {
               await supabase.from('respostas_whatsapp').insert({
                 candidato_id: candId,
-                resposta: resposta,
-                mensagem_id: messageId
+                resposta: respostaClassificada,
+                mensagem_id: messageId,
               })
-              
-              const { data: cand } = await supabase.from('candidatos').select('etapa_id').eq('id', candId).single()
-              if (cand && cand.etapa_id) {
-                const { data: tpl } = await supabase.from('templates_mensagens').select('*').eq('etapa_id', cand.etapa_id).eq('tipo', 'chatbot_interativo').maybeSingle()
-                
-                if (tpl) {
-                  const acao = resposta === 'sim' ? tpl.botao_sim_acao : tpl.botao_nao_acao
-                  
-                  if (acao === 'remover') {
-                    await supabase.from('candidatos').update({ ativo_kanban: false, motivo_inativo: 'Recusou via WhatsApp' }).eq('id', candId)
-                  } else if (acao === 'mover' && tpl.etapa_destino_id) {
-                    await supabase.from('candidatos').update({ etapa_id: tpl.etapa_destino_id }).eq('id', candId)
+            }
+
+            const updatePayload: any = {}
+            if (respostaClassificada) {
+              updatePayload.ultima_resposta_whatsapp = respostaClassificada
+              updatePayload.ultima_resposta_em = new Date().toISOString()
+            }
+
+            if (candInfo && candInfo.etapa_id && respostaClassificada) {
+              let moved = false
+
+              const { data: tpl } = await supabase
+                .from('templates_mensagens')
+                .select('*')
+                .eq('etapa_id', candInfo.etapa_id)
+                .eq('tipo', 'chatbot_interativo')
+                .maybeSingle()
+
+              if (tpl) {
+                const acao =
+                  respostaClassificada === 'sim' ? tpl.botao_sim_acao : tpl.botao_nao_acao
+                if (acao === 'remover') {
+                  updatePayload.ativo_kanban = false
+                  updatePayload.motivo_inativo = 'Recusou via WhatsApp'
+                  moved = true
+                } else if (acao === 'mover' && tpl.etapa_destino_id) {
+                  updatePayload.etapa_id = tpl.etapa_destino_id
+                  moved = true
+                }
+              }
+
+              // Ação Automática fallback: if "sim", move candidate to next stage based on sequence
+              if (respostaClassificada === 'sim' && !moved) {
+                const { data: etapas } = await supabase
+                  .from('etapas')
+                  .select('id')
+                  .eq('user_id', candInfo.user_id)
+                  .order('ordem', { ascending: true })
+                if (etapas) {
+                  const currentIndex = etapas.findIndex((e) => e.id === candInfo.etapa_id)
+                  if (currentIndex >= 0 && currentIndex + 1 < etapas.length) {
+                    updatePayload.etapa_id = etapas[currentIndex + 1].id
                   }
                 }
               }
             }
-          }
 
-          if (!candId) {
-            const { data: cands } = await supabase.from('candidatos').select('id').ilike('telefone', `%${phoneNum.substring(2)}%`).limit(1)
-            if (cands && cands.length > 0) candId = cands[0].id
-          }
-
-          if (candId) {
-            await supabase.from('conversas_whatsapp').insert({
-              candidato_id: candId,
-              texto: incomingText || selectedButtonId || '',
-              direcao: 'recebida'
-            })
+            if (Object.keys(updatePayload).length > 0) {
+              await supabase.from('candidatos').update(updatePayload).eq('id', candId)
+            }
           }
         }
       }
 
+      // Existing status update logic for outgoing messages
+      let mappedStatus = null
       if (typeof status === 'string') {
         const s = status.toUpperCase()
         if (s === 'SENT' || s === 'SERVER_ACK') mappedStatus = 'enviada'
@@ -130,10 +214,10 @@ Deno.serve(async (req: Request) => {
         if (s === 'READ' || s === 'READ_ACK' || s === 'PLAYED') mappedStatus = 'lida'
         if (s === 'ERROR' || s === 'FAILED' || s === 'REJECTED') mappedStatus = 'falha'
       } else if (typeof status === 'number') {
-        if (status === 1) mappedStatus = 'enviada' 
-        if (status === 2) mappedStatus = 'entregue' 
-        if (status === 3 || status === 4) mappedStatus = 'lida' 
-        if (status === 5) mappedStatus = 'falha' 
+        if (status === 1) mappedStatus = 'enviada'
+        if (status === 2) mappedStatus = 'entregue'
+        if (status === 3 || status === 4) mappedStatus = 'lida'
+        if (status === 5) mappedStatus = 'falha'
       }
 
       if (mappedStatus && !isIncomingMessage) {
@@ -163,7 +247,6 @@ Deno.serve(async (req: Request) => {
     })
   } catch (error: any) {
     console.error('Webhook erro:', error)
-    // Always return 200 for webhooks to prevent provider from retrying indefinitely on logical errors
     return new Response(JSON.stringify({ error: error.message }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

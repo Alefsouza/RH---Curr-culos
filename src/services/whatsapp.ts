@@ -24,7 +24,7 @@ export async function getWhatsappDashboardData() {
   const { data: convData, error } = await supabase
     .from('conversas_whatsapp')
     .select(
-      'id, candidato_id, texto, direcao, criado_em, candidatos!inner(nome, telefone, user_id)',
+      'id, candidato_id, texto, direcao, criado_em, candidatos!inner(nome, telefone, user_id, ultima_resposta_whatsapp)',
     )
     .eq('candidatos.user_id', userId)
     .order('criado_em', { ascending: true })
@@ -70,7 +70,10 @@ export async function getWhatsappDashboardData() {
         telefone: (c.candidatos as any)?.telefone || '',
         lastMessage: '',
         lastMessageTime: '',
-        lastResponse: responsesByCandidato[c.candidato_id] || null,
+        lastResponse:
+          (c.candidatos as any)?.ultima_resposta_whatsapp ||
+          responsesByCandidato[c.candidato_id] ||
+          null,
         conversations: [],
       })
     }

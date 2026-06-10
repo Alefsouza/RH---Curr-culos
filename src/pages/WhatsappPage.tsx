@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { getWhatsappDashboardData, WhatsappCandidate } from '@/services/whatsapp'
 import { Skeleton } from '@/components/ui/skeleton'
-import { MessageCircle, CheckCircle, XCircle, Search, User } from 'lucide-react'
+import { MessageCircle, CheckCircle, XCircle, Search, User, Clock } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
@@ -44,9 +44,10 @@ export default function WhatsappPage() {
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'respostas_whatsapp' },
+        { event: '*', schema: 'public', table: 'mensagens_whatsapp' },
         loadData,
       )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'candidatos' }, loadData)
       .subscribe()
     return () => {
       supabase.removeChannel(channel)
@@ -208,16 +209,16 @@ export default function WhatsappPage() {
                     <div className="flex items-center gap-2">
                       <h2 className="font-semibold text-sm">{selectedCandidate.nome}</h2>
                       {selectedCandidate.lastResponse === 'sim' ? (
-                        <Badge className="bg-green-100 hover:bg-green-100 text-green-800 border-none text-[10px] px-2 py-0 h-4 rounded-sm font-medium">
-                          Sim
+                        <Badge className="bg-green-100 hover:bg-green-100 text-green-800 border-none text-xs px-2 py-0.5 h-5 rounded-md font-medium flex items-center gap-1">
+                          <CheckCircle className="w-3 h-3" /> Sim
                         </Badge>
                       ) : selectedCandidate.lastResponse === 'nao' ? (
-                        <Badge className="bg-red-100 hover:bg-red-100 text-red-800 border-none text-[10px] px-2 py-0 h-4 rounded-sm font-medium">
-                          Não
+                        <Badge className="bg-red-100 hover:bg-red-100 text-red-800 border-none text-xs px-2 py-0.5 h-5 rounded-md font-medium flex items-center gap-1">
+                          <XCircle className="w-3 h-3" /> Não
                         </Badge>
                       ) : (
-                        <Badge className="bg-slate-100 hover:bg-slate-100 text-slate-800 border-none text-[10px] px-2 py-0 h-4 rounded-sm font-medium">
-                          Aguardando Resposta
+                        <Badge className="bg-slate-100 hover:bg-slate-100 text-slate-800 border-none text-xs px-2 py-0.5 h-5 rounded-md font-medium flex items-center gap-1">
+                          <Clock className="w-3 h-3" /> Pendente
                         </Badge>
                       )}
                     </div>

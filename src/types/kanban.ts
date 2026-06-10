@@ -9,6 +9,7 @@ export interface Candidate {
   appliedAt: string
   analysisResult?: string | null
   analysisDetails?: any
+  ultima_resposta_whatsapp?: string | null
 }
 
 export interface Stage {

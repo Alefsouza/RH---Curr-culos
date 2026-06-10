@@ -2,7 +2,7 @@ import React from 'react'
 import { Candidate } from '@/types/kanban'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Mail, Phone, GripVertical, ExternalLink, Trash2 } from 'lucide-react'
+import { Mail, Phone, GripVertical, ExternalLink, Trash2, CheckCircle, XCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { deleteCandidate } from '@/services/kanban'
@@ -131,12 +131,32 @@ export function KanbanCard({ candidate, isDragging, onDragStart, onDragEnd }: Ka
               </Badge>
             )}
           </div>
-          <span className="text-[10px] text-slate-400">
-            {new Date(candidate.appliedAt).toLocaleDateString('pt-BR', {
-              day: '2-digit',
-              month: 'short',
-            })}
-          </span>
+          <div className="flex items-center gap-2">
+            {(candidate as any).ultima_resposta_whatsapp && (
+              <Badge
+                variant="outline"
+                className={cn(
+                  'text-[10px] font-medium px-1 py-0 shadow-none border gap-0.5 flex items-center h-4',
+                  (candidate as any).ultima_resposta_whatsapp === 'sim'
+                    ? 'bg-green-50 text-green-700 border-green-200'
+                    : 'bg-red-50 text-red-700 border-red-200',
+                )}
+              >
+                {(candidate as any).ultima_resposta_whatsapp === 'sim' ? (
+                  <CheckCircle className="w-2.5 h-2.5" />
+                ) : (
+                  <XCircle className="w-2.5 h-2.5" />
+                )}
+                {(candidate as any).ultima_resposta_whatsapp === 'sim' ? 'Sim' : 'Não'}
+              </Badge>
+            )}
+            <span className="text-[10px] text-slate-400">
+              {new Date(candidate.appliedAt).toLocaleDateString('pt-BR', {
+                day: '2-digit',
+                month: 'short',
+              })}
+            </span>
+          </div>
         </div>
       </CardContent>
     </Card>
