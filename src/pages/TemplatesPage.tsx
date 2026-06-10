@@ -137,13 +137,8 @@ export default function TemplatesPage() {
 
   const handleTest = async () => {
     if (!activeTab) return
-    const data = templates[activeTab]
-    const textToTest = data.tipo === 'chatbot_interativo' ? data.pergunta_texto : data.texto
+    const data = templates[activeTab] || defaultTemplate
 
-    if (!textToTest) {
-      toast({ title: 'Aviso', description: 'O texto está vazio.', variant: 'destructive' })
-      return
-    }
     const cleanPhone = testPhone.replace(/\D/g, '')
     if (cleanPhone.length < 10) {
       toast({ title: 'Erro', description: 'Telefone inválido.', variant: 'destructive' })
@@ -152,10 +147,23 @@ export default function TemplatesPage() {
 
     try {
       setTesting(true)
-      await testTemplate(testPhone, data)
-      toast({ title: 'Sucesso', description: 'Mensagem de teste enviada.' })
+      const res = await testTemplate(testPhone, data)
+
+      if (res && res.error) {
+        toast({
+          title: 'Erro ao Enviar',
+          description: res.message || res.detalhe || 'Falha no teste',
+          variant: 'destructive',
+        })
+      } else {
+        toast({ title: 'Sucesso', description: 'Mensagem de teste enviada.' })
+      }
     } catch (err: any) {
-      toast({ title: 'Erro', description: err.message, variant: 'destructive' })
+      toast({
+        title: 'Erro',
+        description: err.message || 'Falha na comunicação com o servidor',
+        variant: 'destructive',
+      })
     } finally {
       setTesting(false)
     }

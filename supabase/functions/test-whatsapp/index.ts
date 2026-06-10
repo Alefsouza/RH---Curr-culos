@@ -18,7 +18,7 @@ Deno.serve(async (req: Request) => {
     try {
       body = JSON.parse(bodyText)
     } catch (e) {
-      return new Response(JSON.stringify({ error: 'Payload inválido.' }), {
+      return new Response(JSON.stringify({ error: true, message: 'Payload JSON inválido.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -26,11 +26,27 @@ Deno.serve(async (req: Request) => {
 
     const { phone, template } = body
 
-    if (!phone || !template) {
-      return new Response(JSON.stringify({ error: 'phone e template são obrigatórios.' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+    if (!phone) {
+      return new Response(
+        JSON.stringify({
+          error: true,
+          message: 'O número de telefone é obrigatório para o teste.',
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
+    }
+
+    if (!template) {
+      return new Response(
+        JSON.stringify({ error: true, message: 'Os dados do template são obrigatórios.' }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
     }
 
     const uazapiUrl = Deno.env.get('UAZAPI_URL') || 'https://api.uazapi.com'
@@ -50,13 +66,14 @@ Deno.serve(async (req: Request) => {
       numWpp = numWpp.substring(2)
     }
 
-    const isChatbot = template.tipo === 'chatbot_interativo'
-    let message = isChatbot ? template.pergunta_texto : template.texto
+    const isChatbot = template.tipo === 'chatbot_interativo' || template.tipo === 'chatbot'
 
-    if (message) {
-      message = message.replace(/{{nome_candidato}}/gi, 'Candidato Teste')
-      message = message.replace(/{{nome_vaga}}/gi, 'Vaga Teste')
-    }
+    let message = isChatbot
+      ? template.pergunta_texto || template.texto || 'Teste de Chatbot: Você confirma?'
+      : template.texto || 'Teste de Mensagem Simples'
+
+    message = message.replace(/{{nome_candidato}}/gi, 'Candidato Teste')
+    message = message.replace(/{{nome_vaga}}/gi, 'Vaga Teste')
 
     const baseUrl = uazapiUrl.endsWith('/') ? uazapiUrl.slice(0, -1) : uazapiUrl
     const endpoint = isChatbot ? '/send/buttons' : '/send/text'
@@ -73,12 +90,24 @@ Deno.serve(async (req: Request) => {
         options: { delay: 1200 },
         buttonMessage: {
           text: message,
-          footerText: "Via Sudeste",
+          footerText: 'Via Sudeste',
           buttons: [
-            { type: "reply", reply: { id: `sim_teste`, title: (template.botao_sim_texto || 'Sim').substring(0, 20) } },
-            { type: "reply", reply: { id: `nao_teste`, title: (template.botao_nao_texto || 'Não').substring(0, 20) } }
-          ]
-        }
+            {
+              type: 'reply',
+              reply: {
+                id: 'sim_teste',
+                title: (template.botao_sim_texto || 'Sim').substring(0, 20),
+              },
+            },
+            {
+              type: 'reply',
+              reply: {
+                id: 'nao_teste',
+                title: (template.botao_nao_texto || 'Não').substring(0, 20),
+              },
+            },
+          ],
+        },
       }
     }
 
@@ -97,7 +126,18 @@ Deno.serve(async (req: Request) => {
       try {
         errorDetails = await response.text()
       } catch (e) {}
-      throw new Error(`Erro na API do WhatsApp: ${response.status} - ${errorDetails}`)
+
+      return new Response(
+        JSON.stringify({
+          error: true,
+          message: `Erro na API do WhatsApp (${response.status})`,
+          detalhe: errorDetails,
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
     }
 
     const data = await response.json()
@@ -107,8 +147,8 @@ Deno.serve(async (req: Request) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (error: any) {
-    return new Response(JSON.stringify({ error: true, detalhe: error.message }), {
-      status: 200,
+    return new Response(JSON.stringify({ error: true, message: error.message }), {
+      status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
