@@ -44,6 +44,7 @@ import { ptBR } from 'date-fns/locale'
 type TemplateData = {
   tipo: string
   texto: string
+  titulo_texto: string | null
   pergunta_texto: string
   botao_sim_texto: string
   botao_sim_acao: string
@@ -68,6 +69,7 @@ export default function TemplatesPage() {
   const defaultTemplate: TemplateData = {
     tipo: 'texto_simples',
     texto: '',
+    titulo_texto: '',
     pergunta_texto: '',
     botao_sim_texto: 'Sim',
     botao_sim_acao: 'manter',
@@ -90,6 +92,7 @@ export default function TemplatesPage() {
             temps[e.id] = {
               tipo: e.template.tipo || 'texto_simples',
               texto: e.template.texto || '',
+              titulo_texto: e.template.titulo_texto || '',
               pergunta_texto: e.template.pergunta_texto || '',
               botao_sim_texto: e.template.botao_sim_texto || 'Sim',
               botao_sim_acao: e.template.botao_sim_acao || 'manter',
@@ -359,7 +362,7 @@ export default function TemplatesPage() {
 
                   {activeData.tipo === 'texto_simples' ? (
                     <div className="space-y-2">
-                      <Label>Texto da Mensagem</Label>
+                      <Label>Corpo da Mensagem</Label>
                       <Textarea
                         className="min-h-[250px] resize-y"
                         placeholder="Olá {{nome_candidato}}..."
@@ -370,10 +373,19 @@ export default function TemplatesPage() {
                   ) : (
                     <div className="space-y-6 animate-fade-in">
                       <div className="space-y-2">
-                        <Label>Pergunta Principal</Label>
+                        <Label>Título da Mensagem</Label>
+                        <Input
+                          placeholder="Ex: Confirmação de Entrevista"
+                          value={activeData.titulo_texto || ''}
+                          onChange={(e) => updateTemplate('titulo_texto', e.target.value)}
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Corpo da Mensagem</Label>
                         <Textarea
                           className="min-h-[100px] resize-y"
-                          placeholder="Você confirma o agendamento da entrevista?"
+                          placeholder="Olá {{nome_candidato}}, você confirma o agendamento?"
                           value={activeData.pergunta_texto}
                           onChange={(e) => updateTemplate('pergunta_texto', e.target.value)}
                         />
@@ -494,11 +506,21 @@ export default function TemplatesPage() {
                   </CardHeader>
                   <CardContent className="p-6 h-[400px] overflow-y-auto flex flex-col items-start gap-2">
                     <div className="bg-white rounded-lg rounded-tl-none p-4 max-w-[90%] shadow-sm relative text-sm text-slate-800 whitespace-pre-wrap">
+                      {activeData.tipo === 'chatbot_interativo' && activeData.titulo_texto && (
+                        <div className="font-bold mb-2 text-black">
+                          {getPreviewText(activeData.titulo_texto || '')}
+                        </div>
+                      )}
                       {getPreviewText(
                         activeData.tipo === 'texto_simples'
                           ? activeData.texto
                           : activeData.pergunta_texto,
                       ) || <span className="text-slate-400 italic">Digite algo...</span>}
+                      {activeData.tipo === 'chatbot_interativo' && activeData.footer_text && (
+                        <div className="text-slate-500 text-xs mt-2">
+                          {getPreviewText(activeData.footer_text || '')}
+                        </div>
+                      )}
                       <span className="text-[10px] text-slate-400 block text-right mt-1">
                         {format(new Date(), 'HH:mm')}
                       </span>
