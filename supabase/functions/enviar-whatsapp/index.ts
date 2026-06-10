@@ -195,114 +195,176 @@ Deno.serve(async (req: Request) => {
       retries = 3,
       backoff = 2000,
     ): Promise<any> => {
-      try {
-        let baseUrl = uazapiUrl.endsWith('/') ? uazapiUrl.slice(0, -1) : uazapiUrl
-        if (baseUrl.startsWith('http://') && !baseUrl.includes('localhost')) {
-          baseUrl = baseUrl.replace('http://', 'https://')
-        }
-        const instanceId = Deno.env.get('UAZAPI_INSTANCE_ID') || Deno.env.get('UAZAPI_INSTANCE') || Deno.env.get('INSTANCE_ID') || ''
-        const endpointStr = isChatbot ? '/message/sendButtons' : '/message/sendText'
-        const apiUrlObj = new URL(`${baseUrl}${endpointStr}`)
-        if (instanceId) {
-          apiUrlObj.searchParams.append('instance_id', instanceId)
-          apiUrlObj.searchParams.append('instance', instanceId)
-        }
-        const apiUrl = apiUrlObj.toString()
+      let baseUrl = uazapiUrl.endsWith('/') ? uazapiUrl.slice(0, -1) : uazapiUrl
+      if (baseUrl.startsWith('http://') && !baseUrl.includes('localhost')) {
+        baseUrl = baseUrl.replace('http://', 'https://')
+      }
+      const instanceId =
+        Deno.env.get('UAZAPI_INSTANCE_ID') ||
+        Deno.env.get('UAZAPI_INSTANCE') ||
+        Deno.env.get('INSTANCE_ID') ||
+        'cvviasudeste'
 
-        let numWpp = phone
-        if (numWpp && !numWpp.startsWith('55')) {
-          numWpp = '55' + numWpp
-        }
+      let numWpp = phone
+      if (numWpp && !numWpp.startsWith('55')) {
+        numWpp = '55' + numWpp
+      }
 
-        let payload_body: any = {
-          number: numWpp || "",
-          text: message || "",
-        }
+      const btnSimId = `sim_${candidato_id}`
+      const btnNaoId = `nao_${candidato_id}`
+      const btnSimText = (template.botao_sim_texto || 'Sim').substring(0, 20)
+      const btnNaoText = (template.botao_nao_texto || 'Não').substring(0, 20)
 
-        if (isChatbot) {
-          payload_body = {
-            number: numWpp || "",
-            title: mensagemTexto || "",
-            description: perguntaTexto || "",
-            footer: "Responda clicando em um dos botões abaixo",
-            buttons: [
-              { 
-                buttonId: `sim_${candidato_id}`, 
-                buttonText: { displayText: (template.botao_sim_texto || 'Sim').substring(0, 20) }
-              },
-              { 
-                buttonId: `nao_${candidato_id}`, 
-                buttonText: { displayText: (template.botao_nao_texto || 'Não').substring(0, 20) }
-              }
-            ]
-          }
-        }
-        
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 30000) // 30s timeout
+      let payloadsToTry: any[] = []
 
-        let response: Response;
-        try {
-          response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Connection': 'keep-alive',
-              apikey: uazapiToken,
-              token: uazapiToken,
-              ...(instanceId ? { instance_id: instanceId, instance: instanceId } : {})
+      if (isChatbot) {
+        payloadsToTry = [
+          {
+            url: `${baseUrl}/${instanceId}/message/sendButtons`,
+            body: {
+              number: numWpp,
+              text: `${mensagemTexto}\n\n${perguntaTexto}`,
+              title: mensagemTexto,
+              description: perguntaTexto,
+              footer: 'Responda clicando em um dos botões abaixo',
+              buttons: [
+                { buttonId: btnSimId, buttonText: { displayText: btnSimText } },
+                { buttonId: btnNaoId, buttonText: { displayText: btnNaoText } },
+              ],
             },
-            body: JSON.stringify(payload_body),
-            signal: controller.signal
-          })
-          clearTimeout(timeoutId)
-        } catch (err: any) {
-          clearTimeout(timeoutId)
-          if (err.name === 'AbortError' || err.message?.includes('timeout') || err.message?.includes('broken pipe') || err.message?.includes('fetch')) {
-            if (retries > 0) {
-              await new Promise((resolve) => setTimeout(resolve, backoff))
-              return sendWhatsAppWithRetry(phone, message, retries - 1, backoff * 2)
+          },
+          {
+            url: `${baseUrl}/message/sendButtons/${instanceId}`,
+            body: {
+              number: numWpp,
+              text: `${mensagemTexto}\n\n${perguntaTexto}`,
+              title: mensagemTexto,
+              description: perguntaTexto,
+              footer: 'Responda clicando em um dos botões abaixo',
+              buttons: [
+                { buttonId: btnSimId, buttonText: { displayText: btnSimText } },
+                { buttonId: btnNaoId, buttonText: { displayText: btnNaoText } },
+              ],
+            },
+          },
+          {
+            url: `${baseUrl}/message/sendInteractive/${instanceId}`,
+            body: {
+              number: numWpp,
+              type: 'button',
+              body: { text: `${mensagemTexto}\n\n${perguntaTexto}` },
+              footer: { text: 'Responda clicando em um dos botões abaixo' },
+              action: {
+                buttons: [
+                  { type: 'reply', reply: { id: btnSimId, title: btnSimText } },
+                  { type: 'reply', reply: { id: btnNaoId, title: btnNaoText } },
+                ],
+              },
+            },
+          },
+          {
+            url: `${baseUrl}/${instanceId}/message/sendInteractive`,
+            body: {
+              number: numWpp,
+              type: 'button',
+              body: { text: `${mensagemTexto}\n\n${perguntaTexto}` },
+              footer: { text: 'Responda clicando em um dos botões abaixo' },
+              action: {
+                buttons: [
+                  { type: 'reply', reply: { id: btnSimId, title: btnSimText } },
+                  { type: 'reply', reply: { id: btnNaoId, title: btnNaoText } },
+                ],
+              },
+            },
+          },
+        ]
+      } else {
+        payloadsToTry = [
+          {
+            url: `${baseUrl}/${instanceId}/message/sendText`,
+            body: { number: numWpp, text: message },
+          },
+          {
+            url: `${baseUrl}/message/sendText/${instanceId}`,
+            body: { number: numWpp, text: message },
+          },
+        ]
+      }
+
+      let lastErrorDetails = ''
+      let lastStatus = 0
+
+      for (let retry = 0; retry <= retries; retry++) {
+        for (const attempt of payloadsToTry) {
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), 30000)
+
+          try {
+            const response = await fetch(attempt.url, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Connection: 'keep-alive',
+                apikey: uazapiToken,
+                token: uazapiToken,
+              },
+              body: JSON.stringify(attempt.body),
+              signal: controller.signal,
+            })
+            clearTimeout(timeoutId)
+
+            lastStatus = response.status
+
+            if (response.ok) {
+              const responseData = await response.json()
+              if (
+                responseData.error ||
+                responseData.status === 'error' ||
+                responseData.success === false
+              ) {
+                lastErrorDetails = JSON.stringify(responseData)
+                continue
+              }
+              return responseData
+            }
+
+            const text = await response.text()
+            lastErrorDetails = text
+
+            if (response.status === 405) {
+              console.error(`[enviar-whatsapp] 405 Method Not Allowed. URL: ${attempt.url}`)
+            }
+            if (response.status === 405 || response.status === 404 || response.status === 400) {
+              continue
+            }
+            if (response.status >= 500) {
+              break
+            }
+          } catch (err: any) {
+            clearTimeout(timeoutId)
+            const isTransient =
+              err.name === 'AbortError' ||
+              err.message?.includes('timeout') ||
+              err.message?.includes('broken pipe') ||
+              err.message?.includes('fetch')
+            if (!isTransient) {
+              lastErrorDetails = err.message
+            } else {
+              lastErrorDetails = 'Timeout / Network Error'
+              break
             }
           }
-          throw err;
         }
 
-        if (!response.ok) {
-          if (response.status === 405) {
-            console.error(`[enviar-whatsapp] 405 Method Not Allowed. URL: ${apiUrl}, Method: POST, Endpoint: ${endpointStr}`)
-          }
-          if ((response.status >= 500 && response.status < 600) && retries > 0) {
-            await new Promise((resolve) => setTimeout(resolve, backoff))
-            return sendWhatsAppWithRetry(phone, message, retries - 1, backoff * 2)
-          }
-          let errorDetails = ''
-          try {
-            const errJson = await response.json()
-            errorDetails = errJson.message || errJson.error || JSON.stringify(errJson)
-          } catch (e) {
-            try {
-              errorDetails = await response.text()
-            } catch (e2) {}
-          }
-          throw new Error(
-            `Erro na UAZAPI: ${response.status} - ${response.statusText} | Detalhes: ${errorDetails}`,
-          )
-        }
-        
-        const responseData = await response.json()
-        if (responseData.error || responseData.status === 'error' || responseData.success === false) {
-          throw new Error(`Erro na API do WhatsApp: ${responseData.message || responseData.error || JSON.stringify(responseData)}`)
-        }
-        return responseData
-      } catch (error: any) {
-        const errorMsg = error.message || String(error)
-        const isTransient = errorMsg.includes('503') || errorMsg.includes('502') || errorMsg.includes('504') || errorMsg.includes('fetch') || errorMsg.includes('timeout') || errorMsg.includes('broken pipe')
-        if (retries > 0 && isTransient) {
+        if (retry < retries) {
           await new Promise((resolve) => setTimeout(resolve, backoff))
-          return sendWhatsAppWithRetry(phone, message, retries - 1, backoff * 2)
+          backoff *= 2
         }
-        throw error
       }
+
+      throw new Error(
+        `Falha após tentativas. Último status: ${lastStatus}. Detalhes: ${lastErrorDetails}`,
+      )
     }
 
     let allSuccess = true
@@ -362,7 +424,7 @@ Deno.serve(async (req: Request) => {
         await supabase.from('conversas_whatsapp').insert({
           candidato_id: candidato.id,
           texto: isChatbot ? `${mensagemTexto}\n\n${perguntaTexto}` : mensagemTexto,
-          direcao: 'enviada'
+          direcao: 'enviada',
         })
       }
     }
