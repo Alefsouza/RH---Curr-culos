@@ -129,12 +129,8 @@ Deno.serve(async (req: Request) => {
     let perguntaTexto = template.pergunta_texto || template.texto || ''
     if (isChatbot) {
       perguntaTexto = perguntaTexto.replace(/{{nome}}/gi, nomeCandidato)
-      perguntaTexto = perguntaTexto
-        .replace(/{{nome_candidato}}/gi, nomeCandidato)
-        .replace(/{{nome_vaga}}/gi, tituloVaga || 'a vaga')
-      perguntaTexto = perguntaTexto
-        .replace(/{nome_candidato}/gi, nomeCandidato)
-        .replace(/{nome_vaga}/gi, tituloVaga || 'a vaga')
+      perguntaTexto = perguntaTexto.replace(/{{nome_candidato}}/gi, nomeCandidato).replace(/{{nome_vaga}}/gi, tituloVaga || 'a vaga')
+      perguntaTexto = perguntaTexto.replace(/{nome_candidato}/gi, nomeCandidato).replace(/{nome_vaga}/gi, tituloVaga || 'a vaga')
     }
 
     // 4. Preparar números
@@ -201,13 +197,9 @@ Deno.serve(async (req: Request) => {
         if (baseUrl.startsWith('http://') && !baseUrl.includes('localhost')) {
           baseUrl = baseUrl.replace('http://', 'https://')
         }
-        const instanceId =
-          Deno.env.get('UAZAPI_INSTANCE_ID') ||
-          Deno.env.get('UAZAPI_INSTANCE') ||
-          Deno.env.get('INSTANCE_ID') ||
-          ''
+        const instanceId = Deno.env.get('UAZAPI_INSTANCE_ID') || Deno.env.get('UAZAPI_INSTANCE') || Deno.env.get('INSTANCE_ID') || ''
         const endpointStr = isChatbot ? '/send/menu' : '/message/sendText'
-        const endpoint = !isChatbot && instanceId ? `${endpointStr}/${instanceId}` : endpointStr
+        const endpoint = (!isChatbot && instanceId) ? `${endpointStr}/${instanceId}` : endpointStr
         const apiUrlObj = new URL(`${baseUrl}${endpoint}`)
         if (instanceId && isChatbot) {
           apiUrlObj.searchParams.append('instance_id', instanceId)
@@ -230,27 +222,27 @@ Deno.serve(async (req: Request) => {
             number: numWpp,
             title: mensagemTexto,
             description: perguntaTexto,
-            type: 'button',
+            type: "button",
             buttons: [
-              {
-                id: `sim_${candidato_id}`,
-                text: (template.botao_sim_texto || 'Sim').substring(0, 20),
+              { 
+                id: `sim_${candidato_id}`, 
+                text: (template.botao_sim_texto || 'Sim').substring(0, 20)
               },
-              {
-                id: `nao_${candidato_id}`,
-                text: (template.botao_nao_texto || 'Não').substring(0, 20),
-              },
-            ],
+              { 
+                id: `nao_${candidato_id}`, 
+                text: (template.botao_nao_texto || 'Não').substring(0, 20)
+              }
+            ]
           }
         }
-
+        
         const response = await fetch(apiUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             apikey: uazapiToken,
             token: uazapiToken,
-            ...(instanceId ? { instance_id: instanceId, instance: instanceId } : {}),
+            ...(instanceId ? { instance_id: instanceId, instance: instanceId } : {})
           },
           body: JSON.stringify(payload_body),
         })
@@ -335,7 +327,7 @@ Deno.serve(async (req: Request) => {
         await supabase.from('conversas_whatsapp').insert({
           candidato_id: candidato.id,
           texto: isChatbot ? `${mensagemTexto}\n\n${perguntaTexto}` : mensagemTexto,
-          direcao: 'enviada',
+          direcao: 'enviada'
         })
       }
     }
