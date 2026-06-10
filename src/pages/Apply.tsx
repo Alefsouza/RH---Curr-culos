@@ -17,7 +17,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { UploadCloud, CheckCircle2, AlertCircle, FileText, Loader2, Briefcase } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, normalizePhoneNumber } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
 
 const formSchema = z.object({
@@ -160,7 +160,7 @@ export default function ApplyPage() {
             filePath,
             nome: data.nome,
             email: data.email,
-            telefone: data.telefone,
+            telefone: normalizePhoneNumber(data.telefone),
             vaga_id: finalVagaId || null,
             user_id: userId,
           },

@@ -9,6 +9,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { normalizePhoneNumber } from '@/lib/utils'
 
 export function CandidateEditDialog({
   candidate,
@@ -33,7 +34,12 @@ export function CandidateEditDialog({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    onSave({ nome, email, telefone })
+    const normalizedPhones = telefone
+      .split(',')
+      .map((t) => normalizePhoneNumber(t.trim()))
+      .filter(Boolean)
+      .join(', ')
+    onSave({ nome, email, telefone: normalizedPhones })
   }
 
   return (
