@@ -50,6 +50,7 @@ type TemplateData = {
   botao_nao_texto: string
   botao_nao_acao: string
   etapa_destino_id: string | null
+  footer_text: string | null
 }
 
 export default function TemplatesPage() {
@@ -73,6 +74,7 @@ export default function TemplatesPage() {
     botao_nao_texto: 'Não',
     botao_nao_acao: 'manter',
     etapa_destino_id: null,
+    footer_text: 'Escolha uma das opções abaixo',
   }
 
   const loadData = async () => {
@@ -94,6 +96,7 @@ export default function TemplatesPage() {
               botao_nao_texto: e.template.botao_nao_texto || 'Não',
               botao_nao_acao: e.template.botao_nao_acao || 'manter',
               etapa_destino_id: e.template.etapa_destino_id || null,
+              footer_text: e.template.footer_text || 'Escolha uma das opções abaixo',
             }
           } else {
             temps[e.id] = { ...defaultTemplate }
@@ -400,6 +403,15 @@ export default function TemplatesPage() {
                             </SelectContent>
                           </Select>
                         </div>
+                      </div>
+
+                      <div className="space-y-2 bg-slate-50/50 p-4 rounded-lg border border-slate-100">
+                        <Label>Texto do Rodapé (Footer)</Label>
+                        <Input
+                          placeholder="Ex: Escolha uma das opções abaixo"
+                          value={activeData.footer_text || ''}
+                          onChange={(e) => updateTemplate('footer_text', e.target.value)}
+                        />
                       </div>
 
                       <div className="grid grid-cols-2 gap-4 bg-red-50/50 p-4 rounded-lg border border-red-100">
