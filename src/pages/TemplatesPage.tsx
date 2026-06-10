@@ -141,7 +141,11 @@ export default function TemplatesPage() {
 
     const cleanPhone = testPhone.replace(/\D/g, '')
     if (cleanPhone.length < 10) {
-      toast({ title: 'Erro', description: 'Telefone inválido.', variant: 'destructive' })
+      toast({
+        title: 'Erro',
+        description: 'Telefone inválido. Digite pelo menos DDD + Número.',
+        variant: 'destructive',
+      })
       return
     }
 
@@ -152,16 +156,27 @@ export default function TemplatesPage() {
       if (res && res.error) {
         toast({
           title: 'Erro ao Enviar',
-          description: res.message || res.detalhe || 'Falha no teste',
+          description: res.detalhe
+            ? `${res.message}: ${res.detalhe}`
+            : res.message || 'Falha no teste',
           variant: 'destructive',
         })
       } else {
-        toast({ title: 'Sucesso', description: 'Mensagem de teste enviada.' })
+        toast({ title: 'Sucesso', description: 'Mensagem de teste enviada com sucesso.' })
       }
     } catch (err: any) {
+      let errorMsg = err.message || 'Falha na comunicação com o servidor'
+      try {
+        const parsed = JSON.parse(err.message)
+        if (parsed.detalhe) errorMsg = `${parsed.message}: ${parsed.detalhe}`
+        else if (parsed.message) errorMsg = parsed.message
+      } catch {
+        /* intentionally ignored */
+      }
+
       toast({
-        title: 'Erro',
-        description: err.message || 'Falha na comunicação com o servidor',
+        title: 'Erro ao Enviar',
+        description: errorMsg,
         variant: 'destructive',
       })
     } finally {

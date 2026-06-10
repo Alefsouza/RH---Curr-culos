@@ -27,17 +27,26 @@ Deno.serve(async (req: Request) => {
     const { phone, template } = body
 
     if (!phone) {
-      return new Response(JSON.stringify({ error: true, message: 'O número de telefone é obrigatório para o teste.' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(
+        JSON.stringify({
+          error: true,
+          message: 'O número de telefone é obrigatório para o teste.',
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
     }
 
     if (!template) {
-      return new Response(JSON.stringify({ error: true, message: 'Os dados do template são obrigatórios.' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(
+        JSON.stringify({ error: true, message: 'Os dados do template são obrigatórios.' }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
     }
 
     const uazapiUrl = Deno.env.get('UAZAPI_URL') || 'https://api.uazapi.com'
@@ -53,15 +62,15 @@ Deno.serve(async (req: Request) => {
 
     const cleanPhone = phone.replace(/\D/g, '')
     let numWpp = cleanPhone
-    if (numWpp.startsWith('55') && numWpp.length >= 12) {
-      numWpp = numWpp.substring(2)
+    if (numWpp.length === 10 || numWpp.length === 11) {
+      numWpp = '55' + numWpp
     }
 
     const isChatbot = template.tipo === 'chatbot_interativo' || template.tipo === 'chatbot'
-    
-    let message = isChatbot 
-      ? (template.pergunta_texto || template.texto || 'Teste de Chatbot: Você confirma?') 
-      : (template.texto || 'Teste de Mensagem Simples')
+
+    let message = isChatbot
+      ? template.pergunta_texto || template.texto || 'Teste de Chatbot: Você confirma?'
+      : template.texto || 'Teste de Mensagem Simples'
 
     message = message.replace(/{{nome_candidato}}/gi, 'Candidato Teste')
     message = message.replace(/{{nome_vaga}}/gi, 'Vaga Teste')
@@ -81,12 +90,24 @@ Deno.serve(async (req: Request) => {
         options: { delay: 1200 },
         buttonMessage: {
           text: message,
-          footerText: "Via Sudeste",
+          footerText: 'Via Sudeste',
           buttons: [
-            { type: "reply", reply: { id: "sim_teste", title: (template.botao_sim_texto || 'Sim').substring(0, 20) } },
-            { type: "reply", reply: { id: "nao_teste", title: (template.botao_nao_texto || 'Não').substring(0, 20) } }
-          ]
-        }
+            {
+              type: 'reply',
+              reply: {
+                id: 'sim_teste',
+                title: (template.botao_sim_texto || 'Sim').substring(0, 20),
+              },
+            },
+            {
+              type: 'reply',
+              reply: {
+                id: 'nao_teste',
+                title: (template.botao_nao_texto || 'Não').substring(0, 20),
+              },
+            },
+          ],
+        },
       }
     }
 
@@ -103,17 +124,25 @@ Deno.serve(async (req: Request) => {
     if (!response.ok) {
       let errorDetails = ''
       try {
-        errorDetails = await response.text()
-      } catch (e) {}
-      
-      return new Response(JSON.stringify({ 
-        error: true, 
-        message: `Erro na API do WhatsApp (${response.status})`,
-        detalhe: errorDetails 
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+        const errJson = await response.json()
+        errorDetails = errJson.message || errJson.error || JSON.stringify(errJson)
+      } catch (e) {
+        try {
+          errorDetails = await response.text()
+        } catch (e2) {}
+      }
+
+      return new Response(
+        JSON.stringify({
+          error: true,
+          message: `Erro na API do WhatsApp (${response.status})`,
+          detalhe: errorDetails || 'Falha na comunicação com a API.',
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
     }
 
     const data = await response.json()
