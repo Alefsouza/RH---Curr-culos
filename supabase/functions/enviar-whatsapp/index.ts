@@ -125,7 +125,7 @@ Deno.serve(async (req: Request) => {
     mensagemTexto = mensagemTexto.replace(/{nome_candidato}/gi, nomeCandidato)
     mensagemTexto = mensagemTexto.replace(/{nome_vaga}/gi, tituloVaga || 'a vaga')
 
-    let isChatbot = template.tipo === 'chatbot_interativo'
+    let isChatbot = template.tipo === 'chatbot_interativo' || template.tipo === 'chatbot'
     let perguntaTexto = template.pergunta_texto || template.texto || ''
     if (isChatbot) {
       perguntaTexto = perguntaTexto.replace(/{{nome}}/gi, nomeCandidato)
@@ -200,9 +200,13 @@ Deno.serve(async (req: Request) => {
         if (baseUrl.startsWith('http://') && !baseUrl.includes('localhost')) {
           baseUrl = baseUrl.replace('http://', 'https://')
         }
-        const instanceId = Deno.env.get('UAZAPI_INSTANCE_ID') || Deno.env.get('UAZAPI_INSTANCE') || Deno.env.get('INSTANCE_ID') || ''
-        const endpointStr = isChatbot ? '/send/menu' : '/message/sendText'
-        const endpoint = (!isChatbot && instanceId) ? `${endpointStr}/${instanceId}` : endpointStr
+        const instanceId =
+          Deno.env.get('UAZAPI_INSTANCE_ID') ||
+          Deno.env.get('UAZAPI_INSTANCE') ||
+          Deno.env.get('INSTANCE_ID') ||
+          ''
+        const endpointStr = isChatbot ? '/message/sendButtons' : '/message/sendText'
+        const endpoint = !isChatbot && instanceId ? `${endpointStr}/${instanceId}` : endpointStr
         const apiUrlObj = new URL(`${baseUrl}${endpoint}`)
         if (instanceId && isChatbot) {
           apiUrlObj.searchParams.append('instance_id', instanceId)
@@ -216,39 +220,40 @@ Deno.serve(async (req: Request) => {
         }
 
         let payload_body: any = {
-          number: numWpp,
-          text: message,
+          number: numWpp || '',
+          text: message || '',
         }
 
         if (isChatbot) {
           payload_body = {
-            number: numWpp,
-            title: mensagemTexto || "Mensagem",
-            description: perguntaTexto || "Selecione uma opção",
-            footer: "Selecione uma opção abaixo",
-            type: "button",
+            number: numWpp || '',
+            title: mensagemTexto || '',
+            text: perguntaTexto || '',
+            description: perguntaTexto || '',
+            footer: '',
+            type: 'button',
             buttons: [
-              { 
-                id: `sim_${candidato_id}`, 
-                type: "reply",
-                title: (template.botao_sim_texto || 'Sim').substring(0, 20)
+              {
+                buttonId: `sim_${candidato_id}`,
+                buttonText: { displayText: (template.botao_sim_texto || 'Sim').substring(0, 20) },
+                type: 1,
               },
-              { 
-                id: `nao_${candidato_id}`, 
-                type: "reply",
-                title: (template.botao_nao_texto || 'Não').substring(0, 20)
-              }
-            ]
+              {
+                buttonId: `nao_${candidato_id}`,
+                buttonText: { displayText: (template.botao_nao_texto || 'Não').substring(0, 20) },
+                type: 1,
+              },
+            ],
           }
         }
-        
+
         const response = await fetch(apiUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             apikey: uazapiToken,
             token: uazapiToken,
-            ...(instanceId ? { instance_id: instanceId, instance: instanceId } : {})
+            ...(instanceId ? { instance_id: instanceId, instance: instanceId } : {}),
           },
           body: JSON.stringify(payload_body),
         })
@@ -271,10 +276,16 @@ Deno.serve(async (req: Request) => {
             `Erro na UAZAPI: ${response.status} - ${response.statusText} | Detalhes: ${errorDetails}`,
           )
         }
-        
+
         const responseData = await response.json()
-        if (responseData.error || responseData.status === 'error' || responseData.success === false) {
-          throw new Error(`Erro na API do WhatsApp: ${responseData.message || responseData.error || JSON.stringify(responseData)}`)
+        if (
+          responseData.error ||
+          responseData.status === 'error' ||
+          responseData.success === false
+        ) {
+          throw new Error(
+            `Erro na API do WhatsApp: ${responseData.message || responseData.error || JSON.stringify(responseData)}`,
+          )
         }
         return responseData
       } catch (error: any) {
@@ -343,7 +354,7 @@ Deno.serve(async (req: Request) => {
         await supabase.from('conversas_whatsapp').insert({
           candidato_id: candidato.id,
           texto: isChatbot ? `${mensagemTexto}\n\n${perguntaTexto}` : mensagemTexto,
-          direcao: 'enviada'
+          direcao: 'enviada',
         })
       }
     }
