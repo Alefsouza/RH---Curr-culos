@@ -393,7 +393,7 @@ export default function TemplatesPage() {
 
                       <div className="grid grid-cols-2 gap-4 bg-green-50/50 p-4 rounded-lg border border-green-100">
                         <div className="space-y-2">
-                          <Label className="text-green-700">Botão Positivo (Sim)</Label>
+                          <Label className="text-green-700">Botão Positivo (Texto)</Label>
                           <Input
                             value={activeData.botao_sim_texto}
                             maxLength={20}
@@ -418,7 +418,7 @@ export default function TemplatesPage() {
                       </div>
 
                       <div className="space-y-2 bg-slate-50/50 p-4 rounded-lg border border-slate-100">
-                        <Label>Texto do Rodapé (Footer)</Label>
+                        <Label>Rodapé (Footer)</Label>
                         <Input
                           placeholder="Ex: Escolha uma das opções abaixo"
                           value={activeData.footer_text || ''}
@@ -428,7 +428,7 @@ export default function TemplatesPage() {
 
                       <div className="grid grid-cols-2 gap-4 bg-red-50/50 p-4 rounded-lg border border-red-100">
                         <div className="space-y-2">
-                          <Label className="text-red-700">Botão Negativo (Não)</Label>
+                          <Label className="text-red-700">Botão Negativo (Texto)</Label>
                           <Input
                             value={activeData.botao_nao_texto}
                             maxLength={20}

@@ -101,59 +101,70 @@ export function useKanban() {
         return
       }
 
+      const candidateIndex = candidates.findIndex((c) => c.id === candidateId)
+      if (candidateIndex === -1) return
+
+      const candidate = candidates[candidateIndex]
+      const originStageId = candidate.stageId
+
+      if (originStageId === newStageId) return
+
+      const originStage = stages.find((s) => s.id === originStageId)
+      const targetStage = stages.find((s) => s.id === newStageId)
+
+      const originOrder = (originStage as any)?.ordem ?? (originStage as any)?.order ?? 0
+      const targetOrder = (targetStage as any)?.ordem ?? (targetStage as any)?.order ?? 0
+
       const previousCandidates = [...candidates]
 
       setCandidates((prev) => {
-        const candidateIndex = prev.findIndex((c) => c.id === candidateId)
-        if (candidateIndex === -1) return prev
-
-        const candidate = prev[candidateIndex]
-        if (candidate.stageId === newStageId) return prev
-
-        const updatedCandidates = [...prev]
-        updatedCandidates[candidateIndex] = { ...candidate, stageId: newStageId }
-        return updatedCandidates
+        const idx = prev.findIndex((c) => c.id === candidateId)
+        if (idx === -1) return prev
+        const updated = [...prev]
+        updated[idx] = { ...prev[idx], stageId: newStageId }
+        return updated
       })
 
       try {
         await updateCandidateStage(candidateId, newStageId)
-        const candidate = candidates.find((c) => c.id === candidateId)
 
-        supabase.functions
-          .invoke('enviar-whatsapp', {
-            body: { candidato_id: candidateId, etapa_id: newStageId },
-          })
-          .then(({ data, error }) => {
-            if (error || data?.error) {
+        if (originStage && targetStage && targetOrder > originOrder) {
+          supabase.functions
+            .invoke('enviar-whatsapp', {
+              body: { candidato_id: candidateId, etapa_id: originStageId },
+            })
+            .then(({ data, error }) => {
+              if (error || data?.error) {
+                toast({
+                  variant: 'destructive',
+                  title: 'Erro no WhatsApp',
+                  description:
+                    data?.detalhe ||
+                    data?.error ||
+                    error?.message ||
+                    'Ocorreu um erro ao processar o envio de WhatsApp.',
+                })
+              } else if (data?.warning) {
+                toast({
+                  title: 'Aviso de envio',
+                  description: data.message || 'Movido, mas mensagem não enviada.',
+                  className: 'bg-yellow-500 text-white border-yellow-600',
+                })
+              } else if (data?.success) {
+                toast({
+                  title: `Mensagem enviada para ${candidate?.name || 'o candidato'}`,
+                  className: 'bg-green-500 text-white border-green-600',
+                })
+              }
+            })
+            .catch((err) => {
               toast({
                 variant: 'destructive',
                 title: 'Erro no WhatsApp',
-                description:
-                  data?.detalhe ||
-                  data?.error ||
-                  error?.message ||
-                  'Ocorreu um erro ao processar o envio de WhatsApp.',
+                description: 'Ocorreu um erro no servidor ao tentar enviar a mensagem.',
               })
-            } else if (data?.warning) {
-              toast({
-                title: 'Aviso de envio',
-                description: data.message || 'Movido, mas mensagem não enviada.',
-                className: 'bg-yellow-500 text-white border-yellow-600',
-              })
-            } else if (data?.success) {
-              toast({
-                title: `Mensagem enviada para ${candidate?.name || 'o candidato'}`,
-                className: 'bg-green-500 text-white border-green-600',
-              })
-            }
-          })
-          .catch((err) => {
-            toast({
-              variant: 'destructive',
-              title: 'Erro no WhatsApp',
-              description: 'Ocorreu um erro no servidor ao tentar enviar a mensagem.',
             })
-          })
+        }
       } catch (err: any) {
         setCandidates(previousCandidates)
         toast({ variant: 'destructive', title: 'Erro ao mover currículo. Tente novamente.' })
