@@ -24,10 +24,10 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    const { phone, message } = body
+    const { phone, template } = body
 
-    if (!phone || !message) {
-      return new Response(JSON.stringify({ error: 'phone e message são obrigatórios.' }), {
+    if (!phone || !template) {
+      return new Response(JSON.stringify({ error: 'phone e template são obrigatórios.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -50,8 +50,50 @@ Deno.serve(async (req: Request) => {
       numWpp = numWpp.substring(2)
     }
 
+    const isChatbot = template.tipo === 'chatbot_interativo'
+    let message = isChatbot ? template.pergunta_texto : template.texto
+
+    if (message) {
+      message = message.replace(/{{nome_candidato}}/gi, 'Candidato Teste')
+      message = message.replace(/{{nome_vaga}}/gi, 'Vaga Teste')
+    }
+
     const baseUrl = uazapiUrl.endsWith('/') ? uazapiUrl.slice(0, -1) : uazapiUrl
-    const apiUrl = `${baseUrl}/send/text`
+    const endpoint = isChatbot ? '/send/buttons' : '/send/text'
+    const apiUrl = `${baseUrl}${endpoint}`
+
+    let payload_body: any = {
+      number: numWpp,
+      text: message,
+    }
+
+    if (isChatbot) {
+      payload_body = {
+        number: numWpp,
+        options: { delay: 1200 },
+        buttonMessage: {
+          text: message,
+          footerText: 'Via Sudeste',
+          buttons: [
+            {
+              type: 'reply',
+              reply: {
+                id: `sim_teste`,
+                title: (template.botao_sim_texto || 'Sim').substring(0, 20),
+              },
+            },
+            {
+              type: 'reply',
+              reply: {
+                id: `nao_teste`,
+                title: (template.botao_nao_texto || 'Não').substring(0, 20),
+              },
+            },
+          ],
+        },
+      }
+    }
+
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
@@ -59,10 +101,7 @@ Deno.serve(async (req: Request) => {
         apikey: uazapiToken,
         token: uazapiToken,
       },
-      body: JSON.stringify({
-        number: numWpp,
-        text: message,
-      }),
+      body: JSON.stringify(payload_body),
     })
 
     if (!response.ok) {

@@ -152,7 +152,7 @@ export default function TemplatesPage() {
 
     try {
       setTesting(true)
-      await testTemplate(testPhone, textToTest)
+      await testTemplate(testPhone, data)
       toast({ title: 'Sucesso', description: 'Mensagem de teste enviada.' })
     } catch (err: any) {
       toast({ title: 'Erro', description: err.message, variant: 'destructive' })

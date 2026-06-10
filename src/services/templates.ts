@@ -89,12 +89,12 @@ export async function getMessageHistory() {
   }
 }
 
-export async function testTemplate(phone: string, message: string) {
+export async function testTemplate(phone: string, templateData: any) {
   const { data: userData } = await supabase.auth.getUser()
   if (!userData.user) throw new Error('Não autenticado')
 
   const { data, error } = await supabase.functions.invoke('test-whatsapp', {
-    body: { phone, message },
+    body: { phone, template: templateData },
   })
 
   if (error) {
