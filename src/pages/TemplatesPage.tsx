@@ -169,7 +169,11 @@ export default function TemplatesPage() {
           variant: 'destructive',
         })
       } else {
-        toast({ title: 'Sucesso', description: 'Mensagem de teste enviada com sucesso.' })
+        const isFallback = res._usedPayloadType === 'fallback'
+        toast({
+          title: 'Sucesso',
+          description: `Mensagem de teste enviada com sucesso.${isFallback ? ' (Enviada como texto simples devido a instabilidade da API)' : ''}`,
+        })
       }
     } catch (err: any) {
       let errorMsg = err.message || 'Falha na comunicação com o servidor'
@@ -275,8 +279,8 @@ export default function TemplatesPage() {
                     <TableCell>{h.candidatos?.nome || '-'}</TableCell>
                     <TableCell>
                       <Badge
-                        variant={h.status === 'enviada' ? 'default' : 'destructive'}
-                        className={h.status === 'enviada' ? 'bg-green-500' : ''}
+                        variant={h.status?.startsWith('enviada') ? 'default' : 'destructive'}
+                        className={h.status?.startsWith('enviada') ? 'bg-green-500' : ''}
                       >
                         {h.status}
                       </Badge>
@@ -520,9 +524,16 @@ export default function TemplatesPage() {
                           variant="secondary"
                           onClick={handleTest}
                           disabled={testing || !testPhone}
-                          className="min-w-[100px]"
+                          className="min-w-[120px] flex items-center justify-center gap-2"
                         >
-                          {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Enviar'}
+                          {testing ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              Enviando...
+                            </>
+                          ) : (
+                            'Enviar Teste'
+                          )}
                         </Button>
                       </div>
                     </div>

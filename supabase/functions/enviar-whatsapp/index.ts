@@ -121,6 +121,9 @@ Deno.serve(async (req: Request) => {
 
     let isChatbot = template.tipo === 'chatbot_interativo' || template.tipo === 'chatbot'
     let perguntaTexto = template.pergunta_texto || template.texto || ''
+    const btnSimText = (template.botao_sim_texto || 'Sim').substring(0, 20)
+    const btnNaoText = (template.botao_nao_texto || 'Não').substring(0, 20)
+
     if (isChatbot) {
       perguntaTexto = perguntaTexto.replace(/{{nome}}/gi, nomeCandidato)
       perguntaTexto = perguntaTexto.replace(/{{nome_candidato}}/gi, nomeCandidato)
@@ -180,7 +183,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // 6. Enviando via UAZAPI
-    const uazapiUrl = Deno.env.get('UAZAPI_URL') || 'https://api.uazapi.com'
+    const uazapiUrl = Deno.env.get('UAZAPI_URL') || 'https://cvviasudeste.uazapi.com'
     const uazapiToken = Deno.env.get('UAZAPI_TOKEN') || Deno.env.get('UAZAPI_KEY') || ''
 
     const sendWhatsAppWithRetry = async (
@@ -193,8 +196,12 @@ Deno.serve(async (req: Request) => {
       if (baseUrl.startsWith('http://') && !baseUrl.includes('localhost')) {
         baseUrl = baseUrl.replace('http://', 'https://')
       }
-      const instanceId = Deno.env.get('UAZAPI_INSTANCE_ID') || Deno.env.get('UAZAPI_INSTANCE') || Deno.env.get('INSTANCE_ID') || 'cvviasudeste'
-      
+      const instanceId =
+        Deno.env.get('UAZAPI_INSTANCE_ID') ||
+        Deno.env.get('UAZAPI_INSTANCE') ||
+        Deno.env.get('INSTANCE_ID') ||
+        'cvviasudeste'
+
       let numWpp = phone
       if (numWpp && !numWpp.startsWith('55')) {
         numWpp = '55' + numWpp
@@ -202,30 +209,36 @@ Deno.serve(async (req: Request) => {
 
       const btnSimId = `sim_${candidato_id}`
       const btnNaoId = `nao_${candidato_id}`
-      const btnSimText = (template.botao_sim_texto || 'Sim').substring(0, 20)
-      const btnNaoText = (template.botao_nao_texto || 'Não').substring(0, 20)
 
       let payloadsToTry: any[] = []
 
       if (isChatbot) {
+        const fallbackText = `${mensagemTexto}\n\n${perguntaTexto}\n\nResponda com:\n- ${btnSimText}\n- ${btnNaoText}`
         payloadsToTry = [
           {
             url: `${baseUrl}/message/sendInteractive?instance=${instanceId}`,
             body: {
               number: numWpp,
-              type: "button",
+              type: 'button',
               text: `${mensagemTexto}\n\n${perguntaTexto}`,
               choices: [`${btnSimText}|${btnSimId}`, `${btnNaoText}|${btnNaoId}`],
-              footerText: "Responda clicando em um dos botões abaixo"
-            }
-          }
+              footerText: 'Responda clicando em um dos botões abaixo',
+            },
+            type: 'interativa',
+          },
+          {
+            url: `${baseUrl}/message/sendText?instance=${instanceId}`,
+            body: { number: numWpp, text: fallbackText },
+            type: 'fallback',
+          },
         ]
       } else {
         payloadsToTry = [
           {
             url: `${baseUrl}/message/sendText?instance=${instanceId}`,
-            body: { number: numWpp, text: message }
-          }
+            body: { number: numWpp, text: message },
+            type: 'texto',
+          },
         ]
       }
 
@@ -242,12 +255,12 @@ Deno.serve(async (req: Request) => {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                'Connection': 'keep-alive',
+                Connection: 'keep-alive',
                 apikey: uazapiToken,
-                token: uazapiToken
+                token: uazapiToken,
               },
               body: JSON.stringify(attempt.body),
-              signal: controller.signal
+              signal: controller.signal,
             })
             clearTimeout(timeoutId)
 
@@ -255,26 +268,36 @@ Deno.serve(async (req: Request) => {
 
             if (response.ok) {
               const responseData = await response.json()
-              if (responseData.error || responseData.status === 'error' || responseData.success === false) {
-                 lastErrorDetails = JSON.stringify(responseData)
-                 continue
+              if (
+                responseData.error ||
+                responseData.status === 'error' ||
+                responseData.success === false
+              ) {
+                lastErrorDetails = JSON.stringify(responseData)
+                continue
               }
-              return responseData
+              return { ...responseData, _usedPayloadType: attempt.type }
             }
 
             const text = await response.text()
             lastErrorDetails = text
-            console.error(`[enviar-whatsapp] API Error ${response.status} on ${attempt.url}: ${text}`)
+            console.error(
+              `[enviar-whatsapp] API Error ${response.status} on ${attempt.url}: ${text}`,
+            )
 
             if (response.status === 405 || response.status === 404 || response.status === 400) {
-               continue
+              continue
             }
             if (response.status >= 500) {
-               break
+              break
             }
           } catch (err: any) {
             clearTimeout(timeoutId)
-            const isTransient = err.name === 'AbortError' || err.message?.includes('timeout') || err.message?.includes('broken pipe') || err.message?.includes('fetch')
+            const isTransient =
+              err.name === 'AbortError' ||
+              err.message?.includes('timeout') ||
+              err.message?.includes('broken pipe') ||
+              err.message?.includes('fetch')
             if (!isTransient) {
               lastErrorDetails = err.message
             } else {
@@ -283,14 +306,16 @@ Deno.serve(async (req: Request) => {
             }
           }
         }
-        
+
         if (retry < retries) {
           await new Promise((resolve) => setTimeout(resolve, backoff))
           backoff *= 2
         }
       }
 
-      throw new Error(`Falha após tentativas. Último status: ${lastStatus}. Detalhes: ${lastErrorDetails}`)
+      throw new Error(
+        `Falha após tentativas. Último status: ${lastStatus}. Detalhes: ${lastErrorDetails}`,
+      )
     }
 
     let allSuccess = true
@@ -300,10 +325,11 @@ Deno.serve(async (req: Request) => {
       let isSuccess = false
       let errorMessage = null
       let externalId = null
+      let responseData: any = null
 
       try {
         if (uazapiToken) {
-          const responseData = await sendWhatsAppWithRetry(phone, mensagemTexto)
+          responseData = await sendWhatsAppWithRetry(phone, mensagemTexto)
           isSuccess =
             responseData?.success === true || responseData?.status === 'success' || !!responseData
           if (!isSuccess) {
@@ -326,7 +352,19 @@ Deno.serve(async (req: Request) => {
         errorMessage = error.message
       }
 
-      if (!isSuccess) {
+      let finalStatus = 'falha'
+      let fallbackUsed = false
+      if (isSuccess) {
+        const usedType = responseData?._usedPayloadType
+        if (usedType === 'fallback') {
+          finalStatus = 'enviada (fallback)'
+          fallbackUsed = true
+        } else if (usedType === 'interativa') {
+          finalStatus = 'enviada (interativa)'
+        } else {
+          finalStatus = 'enviada'
+        }
+      } else {
         allSuccess = false
         if (errorMessage) errors.push(`Falha no envio para ${phone}: ${errorMessage}`)
       }
@@ -335,7 +373,7 @@ Deno.serve(async (req: Request) => {
         candidato_id: candidato.id,
         etapa_id: etapa_id,
         template_id: template.id,
-        status: isSuccess ? 'enviada' : 'falha',
+        status: finalStatus,
         user_id: userId,
         numero_whatsapp: phone,
         enviado_em: isSuccess ? new Date().toISOString() : null,
@@ -347,10 +385,17 @@ Deno.serve(async (req: Request) => {
       }
 
       if (isSuccess) {
+        const convText =
+          isChatbot && fallbackUsed
+            ? `${mensagemTexto}\n\n${perguntaTexto}\n\nResponda com:\n- ${btnSimText}\n- ${btnNaoText}`
+            : isChatbot
+              ? `${mensagemTexto}\n\n${perguntaTexto}`
+              : mensagemTexto
+
         await supabase.from('conversas_whatsapp').insert({
           candidato_id: candidato.id,
-          texto: isChatbot ? `${mensagemTexto}\n\n${perguntaTexto}` : mensagemTexto,
-          direcao: 'enviada'
+          texto: convText,
+          direcao: 'enviada',
         })
       }
     }
