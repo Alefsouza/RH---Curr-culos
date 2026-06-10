@@ -186,6 +186,19 @@ Deno.serve(async (req: Request) => {
     const uazapiUrl = Deno.env.get('UAZAPI_URL') || 'https://cvviasudeste.uazapi.com'
     const uazapiToken = Deno.env.get('UAZAPI_TOKEN') || Deno.env.get('UAZAPI_KEY') || ''
 
+    if (!uazapiToken) {
+      return new Response(
+        JSON.stringify({
+          error: true,
+          message: 'Configuração ausente: UAZAPI_TOKEN não encontrado.',
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
+    }
+
     const sendWhatsAppWithRetry = async (
       phone: string,
       message: string,
@@ -196,8 +209,12 @@ Deno.serve(async (req: Request) => {
       if (baseUrl.startsWith('http://') && !baseUrl.includes('localhost')) {
         baseUrl = baseUrl.replace('http://', 'https://')
       }
-      const instanceId = Deno.env.get('UAZAPI_INSTANCE_ID') || Deno.env.get('UAZAPI_INSTANCE') || Deno.env.get('INSTANCE_ID') || 'cvviasudeste'
-      
+      const instanceId =
+        Deno.env.get('UAZAPI_INSTANCE_ID') ||
+        Deno.env.get('UAZAPI_INSTANCE') ||
+        Deno.env.get('INSTANCE_ID') ||
+        'cvviasudeste'
+
       let numWpp = phone
       if (numWpp && !numWpp.startsWith('55')) {
         numWpp = '55' + numWpp
@@ -212,26 +229,26 @@ Deno.serve(async (req: Request) => {
             url: `${baseUrl}/send/menu?instance=${instanceId}`,
             body: {
               number: numWpp,
-              type: "button",
+              type: 'button',
               text: `${mensagemTexto}\n\n${perguntaTexto}`,
               choices: [`${btnSimText}|sim`, `${btnNaoText}|nao`],
-              footerText: template.footer_text || "Escolha uma das opções abaixo"
+              footerText: template.footer_text || 'Escolha uma das opções abaixo',
             },
-            type: "interativa"
+            type: 'interativa',
           },
           {
             url: `${baseUrl}/send/text?instance=${instanceId}`,
             body: { number: numWpp, text: fallbackText },
-            type: "fallback"
-          }
+            type: 'fallback',
+          },
         ]
       } else {
         payloadsToTry = [
           {
             url: `${baseUrl}/send/text?instance=${instanceId}`,
             body: { number: numWpp, text: message },
-            type: "texto"
-          }
+            type: 'texto',
+          },
         ]
       }
 
@@ -248,12 +265,13 @@ Deno.serve(async (req: Request) => {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                'Connection': 'keep-alive',
-                'apikey': uazapiToken,
-                'Authorization': `Bearer ${uazapiToken}`
+                Connection: 'keep-alive',
+                apikey: uazapiToken,
+                Authorization: `Bearer ${uazapiToken}`,
+                token: uazapiToken,
               },
               body: JSON.stringify(attempt.body),
-              signal: controller.signal
+              signal: controller.signal,
             })
             clearTimeout(timeoutId)
 
@@ -261,27 +279,37 @@ Deno.serve(async (req: Request) => {
 
             if (response.ok) {
               const responseData = await response.json()
-              if (responseData.error || responseData.status === 'error' || responseData.success === false) {
-                 lastErrorDetails = JSON.stringify(responseData)
-                 continue
+              if (
+                responseData.error ||
+                responseData.status === 'error' ||
+                responseData.success === false
+              ) {
+                lastErrorDetails = JSON.stringify(responseData)
+                continue
               }
               return { ...responseData, _usedPayloadType: attempt.type }
             }
 
             const text = await response.text()
             lastErrorDetails = text
-            console.error(`[enviar-whatsapp] API Error ${response.status} on ${attempt.url}: ${text}`)
+            console.error(
+              `[enviar-whatsapp] API Error ${response.status} on ${attempt.url}: ${text}`,
+            )
 
             if (response.status === 405 || response.status === 404 || response.status === 400) {
-               console.log(`[enviar-whatsapp] Fallback triggered due to status ${response.status}`);
-               continue
+              console.log(`[enviar-whatsapp] Fallback triggered due to status ${response.status}`)
+              continue
             }
             if (response.status >= 500) {
-               break
+              break
             }
           } catch (err: any) {
             clearTimeout(timeoutId)
-            const isTransient = err.name === 'AbortError' || err.message?.includes('timeout') || err.message?.includes('broken pipe') || err.message?.includes('fetch')
+            const isTransient =
+              err.name === 'AbortError' ||
+              err.message?.includes('timeout') ||
+              err.message?.includes('broken pipe') ||
+              err.message?.includes('fetch')
             if (!isTransient) {
               lastErrorDetails = err.message
             } else {
@@ -290,14 +318,16 @@ Deno.serve(async (req: Request) => {
             }
           }
         }
-        
+
         if (retry < retries) {
           await new Promise((resolve) => setTimeout(resolve, backoff))
           backoff *= 2
         }
       }
 
-      throw new Error(`Falha após tentativas. Último status: ${lastStatus}. Detalhes: ${lastErrorDetails}`)
+      throw new Error(
+        `Falha após tentativas. Último status: ${lastStatus}. Detalhes: ${lastErrorDetails}`,
+      )
     }
 
     let allSuccess = true
@@ -310,25 +340,18 @@ Deno.serve(async (req: Request) => {
       let responseData: any = null
 
       try {
-        if (uazapiToken) {
-          responseData = await sendWhatsAppWithRetry(phone, mensagemTexto)
-          isSuccess =
-            responseData?.success === true || responseData?.status === 'success' || !!responseData
-          if (!isSuccess) {
-            errorMessage = 'A API retornou sucesso falso: ' + JSON.stringify(responseData)
-          } else {
-            externalId =
-              responseData?.messageId ||
-              responseData?.id ||
-              responseData?.data?.id ||
-              responseData?.message?.messageId ||
-              null
-          }
+        responseData = await sendWhatsAppWithRetry(phone, mensagemTexto)
+        isSuccess =
+          responseData?.success === true || responseData?.status === 'success' || !!responseData
+        if (!isSuccess) {
+          errorMessage = 'A API retornou sucesso falso: ' + JSON.stringify(responseData)
         } else {
-          console.log(
-            'Aviso: UAZAPI_TOKEN não configurada. Simulando envio para ambiente de teste.',
-          )
-          isSuccess = true
+          externalId =
+            responseData?.messageId ||
+            responseData?.id ||
+            responseData?.data?.id ||
+            responseData?.message?.messageId ||
+            null
         }
       } catch (error: any) {
         errorMessage = error.message
@@ -367,16 +390,17 @@ Deno.serve(async (req: Request) => {
       }
 
       if (isSuccess) {
-        const convText = isChatbot && fallbackUsed 
-          ? `${mensagemTexto}\n\n${perguntaTexto}\n\nResponda com:\n- ${btnSimText}\n- ${btnNaoText}`
-          : isChatbot 
-            ? `${mensagemTexto}\n\n${perguntaTexto}` 
-            : mensagemTexto;
+        const convText =
+          isChatbot && fallbackUsed
+            ? `${mensagemTexto}\n\n${perguntaTexto}\n\nResponda com:\n- ${btnSimText}\n- ${btnNaoText}`
+            : isChatbot
+              ? `${mensagemTexto}\n\n${perguntaTexto}`
+              : mensagemTexto
 
         await supabase.from('conversas_whatsapp').insert({
           candidato_id: candidato.id,
           texto: convText,
-          direcao: 'enviada'
+          direcao: 'enviada',
         })
       }
     }

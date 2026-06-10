@@ -96,7 +96,8 @@ Deno.serve(async (req: Request) => {
       messages: [
         {
           role: 'system',
-          content: 'Você é um especialista em Recrutamento e Seleção focado em análise técnica de currículos e Job Matching.',
+          content:
+            'Você é um especialista em Recrutamento e Seleção focado em análise técnica de currículos e Job Matching.',
         },
         { role: 'user', content: prompt },
       ],
