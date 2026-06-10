@@ -36,10 +36,21 @@ export async function getWhatsappDashboardData() {
     .select('candidato_id, resposta')
     .order('criado_em', { ascending: true })
 
-  const { count: sentCount } = await supabase
-    .from('mensagens_whatsapp')
-    .select('*', { count: 'exact', head: true })
-    .eq('user_id', userId)
+  let sentCount = 0
+  try {
+    const { count, error } = await supabase
+      .from('mensagens_whatsapp')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+
+    if (error) {
+      console.warn('Aviso: Falha ao contar mensagens no dashboard (ignorado)', error)
+    } else {
+      sentCount = count || 0
+    }
+  } catch (err) {
+    console.warn('Erro de parse no HEAD request (ignorado)', err)
+  }
 
   const totalSim = resData?.filter((r) => r.resposta === 'sim').length || 0
   const totalNao = resData?.filter((r) => r.resposta === 'nao').length || 0

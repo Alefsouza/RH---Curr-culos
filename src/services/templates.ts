@@ -64,21 +64,29 @@ export async function getMessageHistory() {
   const { data: userData } = await supabase.auth.getUser()
   if (!userData.user) throw new Error('Não autenticado')
 
-  const { data, error } = await supabase
-    .from('mensagens_whatsapp')
-    .select(`
-      id,
-      status,
-      criado_em,
-      candidatos (nome, telefone),
-      etapas (nome)
-    `)
-    .eq('user_id', userData.user.id)
-    .order('criado_em', { ascending: false })
-    .limit(50)
+  try {
+    const { data, error } = await supabase
+      .from('mensagens_whatsapp')
+      .select(`
+        id,
+        status,
+        criado_em,
+        candidatos (nome, telefone),
+        etapas (nome)
+      `)
+      .eq('user_id', userData.user.id)
+      .order('criado_em', { ascending: false })
+      .limit(50)
 
-  if (error) throw error
-  return data
+    if (error) {
+      console.warn('Erro ao buscar histórico de mensagens:', error)
+      return []
+    }
+    return data || []
+  } catch (err) {
+    console.warn('Falha silenciosa ao processar histórico (JSON/Network):', err)
+    return []
+  }
 }
 
 export async function testTemplate(phone: string, message: string) {
