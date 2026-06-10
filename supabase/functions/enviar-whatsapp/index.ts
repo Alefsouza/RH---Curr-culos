@@ -193,12 +193,8 @@ Deno.serve(async (req: Request) => {
       if (baseUrl.startsWith('http://') && !baseUrl.includes('localhost')) {
         baseUrl = baseUrl.replace('http://', 'https://')
       }
-      const instanceId =
-        Deno.env.get('UAZAPI_INSTANCE_ID') ||
-        Deno.env.get('UAZAPI_INSTANCE') ||
-        Deno.env.get('INSTANCE_ID') ||
-        'cvviasudeste'
-
+      const instanceId = Deno.env.get('UAZAPI_INSTANCE_ID') || Deno.env.get('UAZAPI_INSTANCE') || Deno.env.get('INSTANCE_ID') || 'cvviasudeste'
+      
       let numWpp = phone
       if (numWpp && !numWpp.startsWith('55')) {
         numWpp = '55' + numWpp
@@ -220,35 +216,35 @@ Deno.serve(async (req: Request) => {
               text: `${mensagemTexto}\n\n${perguntaTexto}`,
               title: mensagemTexto,
               description: perguntaTexto,
-              footer: 'Responda clicando em um dos botões abaixo',
+              footer: "Responda clicando em um dos botões abaixo",
               buttons: [
                 { buttonId: btnSimId, buttonText: { displayText: btnSimText } },
-                { buttonId: btnNaoId, buttonText: { displayText: btnNaoText } },
-              ],
-            },
+                { buttonId: btnNaoId, buttonText: { displayText: btnNaoText } }
+              ]
+            }
           },
           {
             url: `${baseUrl}/message/sendInteractive?instance=${instanceId}`,
             body: {
               number: numWpp,
-              type: 'button',
+              type: "button",
               body: { text: `${mensagemTexto}\n\n${perguntaTexto}` },
-              footer: { text: 'Responda clicando em um dos botões abaixo' },
+              footer: { text: "Responda clicando em um dos botões abaixo" },
               action: {
                 buttons: [
-                  { type: 'reply', reply: { id: btnSimId, title: btnSimText } },
-                  { type: 'reply', reply: { id: btnNaoId, title: btnNaoText } },
-                ],
-              },
-            },
-          },
+                  { type: "reply", reply: { id: btnSimId, title: btnSimText } },
+                  { type: "reply", reply: { id: btnNaoId, title: btnNaoText } }
+                ]
+              }
+            }
+          }
         ]
       } else {
         payloadsToTry = [
           {
             url: `${baseUrl}/message/sendText?instance=${instanceId}`,
-            body: { number: numWpp, text: message },
-          },
+            body: { number: numWpp, text: message }
+          }
         ]
       }
 
@@ -265,12 +261,12 @@ Deno.serve(async (req: Request) => {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                Connection: 'keep-alive',
+                'Connection': 'keep-alive',
                 apikey: uazapiToken,
-                token: uazapiToken,
+                token: uazapiToken
               },
               body: JSON.stringify(attempt.body),
-              signal: controller.signal,
+              signal: controller.signal
             })
             clearTimeout(timeoutId)
 
@@ -278,13 +274,9 @@ Deno.serve(async (req: Request) => {
 
             if (response.ok) {
               const responseData = await response.json()
-              if (
-                responseData.error ||
-                responseData.status === 'error' ||
-                responseData.success === false
-              ) {
-                lastErrorDetails = JSON.stringify(responseData)
-                continue
+              if (responseData.error || responseData.status === 'error' || responseData.success === false) {
+                 lastErrorDetails = JSON.stringify(responseData)
+                 continue
               }
               return responseData
             }
@@ -296,18 +288,14 @@ Deno.serve(async (req: Request) => {
               console.error(`[enviar-whatsapp] 405 Method Not Allowed. URL: ${attempt.url}`)
             }
             if (response.status === 405 || response.status === 404 || response.status === 400) {
-              continue
+               continue
             }
             if (response.status >= 500) {
-              break
+               break
             }
           } catch (err: any) {
             clearTimeout(timeoutId)
-            const isTransient =
-              err.name === 'AbortError' ||
-              err.message?.includes('timeout') ||
-              err.message?.includes('broken pipe') ||
-              err.message?.includes('fetch')
+            const isTransient = err.name === 'AbortError' || err.message?.includes('timeout') || err.message?.includes('broken pipe') || err.message?.includes('fetch')
             if (!isTransient) {
               lastErrorDetails = err.message
             } else {
@@ -316,16 +304,14 @@ Deno.serve(async (req: Request) => {
             }
           }
         }
-
+        
         if (retry < retries) {
           await new Promise((resolve) => setTimeout(resolve, backoff))
           backoff *= 2
         }
       }
 
-      throw new Error(
-        `Falha após tentativas. Último status: ${lastStatus}. Detalhes: ${lastErrorDetails}`,
-      )
+      throw new Error(`Falha após tentativas. Último status: ${lastStatus}. Detalhes: ${lastErrorDetails}`)
     }
 
     let allSuccess = true
@@ -385,7 +371,7 @@ Deno.serve(async (req: Request) => {
         await supabase.from('conversas_whatsapp').insert({
           candidato_id: candidato.id,
           texto: isChatbot ? `${mensagemTexto}\n\n${perguntaTexto}` : mensagemTexto,
-          direcao: 'enviada',
+          direcao: 'enviada'
         })
       }
     }
