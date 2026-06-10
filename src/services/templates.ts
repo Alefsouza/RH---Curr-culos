@@ -99,17 +99,29 @@ export async function testTemplate(phone: string, templateData: any) {
 
   if (error) {
     let errorMessage = error.message
+    let erroDetalhe = ''
     if (error.context && typeof error.context.json === 'function') {
       try {
         const errData = await error.context.json()
-        if (errData.error) errorMessage = errData.error
+        if (errData.message) errorMessage = errData.message
+        if (errData.error && typeof errData.error === 'string') errorMessage = errData.error
+        if (errData.detalhe) erroDetalhe = errData.detalhe
       } catch {
         /* intentionally ignored */
       }
     }
-    throw new Error(errorMessage || 'Erro ao comunicar com a Edge Function.')
+    throw new Error(
+      JSON.stringify({
+        message: errorMessage || 'Erro ao comunicar com a Edge Function.',
+        detalhe: erroDetalhe,
+      }),
+    )
   }
 
-  if (data && data.error) throw new Error(data.error)
+  if (data && data.error) {
+    throw new Error(
+      JSON.stringify({ message: data.message || data.error, detalhe: data.detalhe || '' }),
+    )
+  }
   return data
 }

@@ -13,6 +13,13 @@ Deno.serve(async (req: Request) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: true, message: 'Method Not Allowed' }), {
+      status: 405,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
+
   try {
     const authHeader = req.headers.get('authorization') || req.headers.get('Authorization')
     const token = authHeader?.replace('Bearer ', '')
@@ -28,10 +35,17 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!userId) {
-      return new Response(JSON.stringify({ error: true, message: 'Usuário não autenticado', detalhe: 'Token JWT ausente ou inválido.' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(
+        JSON.stringify({
+          error: true,
+          message: 'Usuário não autenticado',
+          detalhe: 'Token JWT ausente ou inválido.',
+        }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
     }
 
     const bodyText = await req.text()
@@ -39,26 +53,47 @@ Deno.serve(async (req: Request) => {
     try {
       body = JSON.parse(bodyText)
     } catch (e) {
-      return new Response(JSON.stringify({ error: true, message: 'Payload JSON inválido.', detalhe: 'Certifique-se de enviar um JSON válido.' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(
+        JSON.stringify({
+          error: true,
+          message: 'Payload JSON inválido.',
+          detalhe: 'Certifique-se de enviar um JSON válido.',
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
     }
 
     const { phone, template } = body
 
     if (!phone) {
-      return new Response(JSON.stringify({ error: true, message: 'O número de telefone é obrigatório para o teste.', detalhe: 'Parâmetro "phone" ausente.' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(
+        JSON.stringify({
+          error: true,
+          message: 'O número de telefone é obrigatório para o teste.',
+          detalhe: 'Parâmetro "phone" ausente.',
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
     }
 
     if (!template) {
-      return new Response(JSON.stringify({ error: true, message: 'Os dados do template são obrigatórios.', detalhe: 'Parâmetro "template" ausente.' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(
+        JSON.stringify({
+          error: true,
+          message: 'Os dados do template são obrigatórios.',
+          detalhe: 'Parâmetro "template" ausente.',
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
     }
 
     const uazapiUrl = Deno.env.get('UAZAPI_URL') || 'https://api.uazapi.com'
@@ -66,23 +101,30 @@ Deno.serve(async (req: Request) => {
 
     if (!uazapiToken) {
       console.log('Aviso: UAZAPI_TOKEN não configurada. Simulando sucesso.')
-      return new Response(JSON.stringify({ success: true, simulated: true, detalhe: 'Token ausente. Teste simulado.' }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(
+        JSON.stringify({
+          success: true,
+          simulated: true,
+          detalhe: 'Token ausente. Teste simulado.',
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
     }
 
     const cleanPhone = phone.replace(/\D/g, '')
     let numWpp = cleanPhone
-    if (!numWpp.startsWith('55')) {
+    if (numWpp && !numWpp.startsWith('55')) {
       numWpp = '55' + numWpp
     }
 
     const isChatbot = template.tipo === 'chatbot_interativo' || template.tipo === 'chatbot'
-    
-    let message = isChatbot 
-      ? (template.pergunta_texto || template.texto || 'Teste de Chatbot: Você confirma?') 
-      : (template.texto || 'Teste de Mensagem Simples')
+
+    let message = isChatbot
+      ? template.pergunta_texto || template.texto || 'Teste de Chatbot: Você confirma?'
+      : template.texto || 'Teste de Mensagem Simples'
 
     message = message.replace(/{{nome_candidato}}/gi, 'Candidato Teste')
     message = message.replace(/{{nome_vaga}}/gi, 'Vaga Teste')
@@ -92,7 +134,7 @@ Deno.serve(async (req: Request) => {
       baseUrl = baseUrl.replace('http://', 'https://')
     }
 
-    const endpoint = isChatbot ? '/send/buttons' : '/send/text'
+    const endpoint = isChatbot ? '/message/sendButtons' : '/message/sendText'
     const apiUrl = `${baseUrl}${endpoint}`
 
     let payload_body: any = {
@@ -107,23 +149,47 @@ Deno.serve(async (req: Request) => {
         options: { delay: 1200 },
         buttonMessage: {
           text: message,
-          footerText: "Via Sudeste",
+          footerText: 'Via Sudeste',
           buttons: [
-            { type: "reply", reply: { id: "sim_teste", title: (template.botao_sim_texto || 'Sim').substring(0, 20) } },
-            { type: "reply", reply: { id: "nao_teste", title: (template.botao_nao_texto || 'Não').substring(0, 20) } }
-          ]
+            {
+              type: 'reply',
+              reply: {
+                id: 'sim_teste',
+                title: (template.botao_sim_texto || 'Sim').substring(0, 20),
+              },
+            },
+            {
+              type: 'reply',
+              reply: {
+                id: 'nao_teste',
+                title: (template.botao_nao_texto || 'Não').substring(0, 20),
+              },
+            },
+          ],
         },
         interactiveMessage: {
           body: { text: message },
-          footer: { text: "Via Sudeste" },
-          type: "button",
+          footer: { text: 'Via Sudeste' },
+          type: 'button',
           action: {
             buttons: [
-              { type: "reply", reply: { id: "sim_teste", title: (template.botao_sim_texto || 'Sim').substring(0, 20) } },
-              { type: "reply", reply: { id: "nao_teste", title: (template.botao_nao_texto || 'Não').substring(0, 20) } }
-            ]
-          }
-        }
+              {
+                type: 'reply',
+                reply: {
+                  id: 'sim_teste',
+                  title: (template.botao_sim_texto || 'Sim').substring(0, 20),
+                },
+              },
+              {
+                type: 'reply',
+                reply: {
+                  id: 'nao_teste',
+                  title: (template.botao_nao_texto || 'Não').substring(0, 20),
+                },
+              },
+            ],
+          },
+        },
       }
     }
 
@@ -147,15 +213,18 @@ Deno.serve(async (req: Request) => {
           errorDetails = await response.text()
         } catch (e2) {}
       }
-      
-      return new Response(JSON.stringify({ 
-        error: true, 
-        message: `Erro na API do WhatsApp (${response.status})`,
-        detalhe: errorDetails || response.statusText || 'Falha na comunicação com a API.'
-      }), {
-        status: response.status >= 400 && response.status < 600 ? response.status : 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+
+      return new Response(
+        JSON.stringify({
+          error: true,
+          message: `Erro na API do WhatsApp (${response.status})`,
+          detalhe: errorDetails || response.statusText || 'Falha na comunicação com a API.',
+        }),
+        {
+          status: response.status >= 400 && response.status < 600 ? response.status : 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
     }
 
     const data = await response.json()
@@ -165,9 +234,16 @@ Deno.serve(async (req: Request) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (error: any) {
-    return new Response(JSON.stringify({ error: true, message: 'Erro na execução da função Edge', detalhe: error.message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    return new Response(
+      JSON.stringify({
+        error: true,
+        message: 'Erro na execução da função Edge',
+        detalhe: error.message,
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      },
+    )
   }
 })

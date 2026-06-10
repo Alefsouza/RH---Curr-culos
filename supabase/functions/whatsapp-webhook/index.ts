@@ -76,32 +76,47 @@ Deno.serve(async (req: Request) => {
         const phoneMatch = remoteJid.match(/\d+/)
         if (phoneMatch) {
           const phoneNum = phoneMatch[0]
-          
+
           let candId = null
-          
+
           if (selectedButtonId) {
             const btnMatch = selectedButtonId.match(/^(sim|nao)_(.+)$/)
             if (btnMatch) {
               const resposta = btnMatch[1]
               candId = btnMatch[2]
-              
+
               await supabase.from('respostas_whatsapp').insert({
                 candidato_id: candId,
                 resposta: resposta,
-                mensagem_id: messageId
+                mensagem_id: messageId,
               })
-              
-              const { data: cand } = await supabase.from('candidatos').select('etapa_id').eq('id', candId).single()
+
+              const { data: cand } = await supabase
+                .from('candidatos')
+                .select('etapa_id')
+                .eq('id', candId)
+                .single()
               if (cand && cand.etapa_id) {
-                const { data: tpl } = await supabase.from('templates_mensagens').select('*').eq('etapa_id', cand.etapa_id).eq('tipo', 'chatbot_interativo').maybeSingle()
-                
+                const { data: tpl } = await supabase
+                  .from('templates_mensagens')
+                  .select('*')
+                  .eq('etapa_id', cand.etapa_id)
+                  .eq('tipo', 'chatbot_interativo')
+                  .maybeSingle()
+
                 if (tpl) {
                   const acao = resposta === 'sim' ? tpl.botao_sim_acao : tpl.botao_nao_acao
-                  
+
                   if (acao === 'remover') {
-                    await supabase.from('candidatos').update({ ativo_kanban: false, motivo_inativo: 'Recusou via WhatsApp' }).eq('id', candId)
+                    await supabase
+                      .from('candidatos')
+                      .update({ ativo_kanban: false, motivo_inativo: 'Recusou via WhatsApp' })
+                      .eq('id', candId)
                   } else if (acao === 'mover' && tpl.etapa_destino_id) {
-                    await supabase.from('candidatos').update({ etapa_id: tpl.etapa_destino_id }).eq('id', candId)
+                    await supabase
+                      .from('candidatos')
+                      .update({ etapa_id: tpl.etapa_destino_id })
+                      .eq('id', candId)
                   }
                 }
               }
@@ -109,7 +124,11 @@ Deno.serve(async (req: Request) => {
           }
 
           if (!candId) {
-            const { data: cands } = await supabase.from('candidatos').select('id').ilike('telefone', `%${phoneNum.substring(2)}%`).limit(1)
+            const { data: cands } = await supabase
+              .from('candidatos')
+              .select('id')
+              .ilike('telefone', `%${phoneNum.substring(2)}%`)
+              .limit(1)
             if (cands && cands.length > 0) candId = cands[0].id
           }
 
@@ -117,7 +136,7 @@ Deno.serve(async (req: Request) => {
             await supabase.from('conversas_whatsapp').insert({
               candidato_id: candId,
               texto: incomingText || selectedButtonId || '',
-              direcao: 'recebida'
+              direcao: 'recebida',
             })
           }
         }
@@ -130,10 +149,10 @@ Deno.serve(async (req: Request) => {
         if (s === 'READ' || s === 'READ_ACK' || s === 'PLAYED') mappedStatus = 'lida'
         if (s === 'ERROR' || s === 'FAILED' || s === 'REJECTED') mappedStatus = 'falha'
       } else if (typeof status === 'number') {
-        if (status === 1) mappedStatus = 'enviada' 
-        if (status === 2) mappedStatus = 'entregue' 
-        if (status === 3 || status === 4) mappedStatus = 'lida' 
-        if (status === 5) mappedStatus = 'falha' 
+        if (status === 1) mappedStatus = 'enviada'
+        if (status === 2) mappedStatus = 'entregue'
+        if (status === 3 || status === 4) mappedStatus = 'lida'
+        if (status === 5) mappedStatus = 'falha'
       }
 
       if (mappedStatus && !isIncomingMessage) {
