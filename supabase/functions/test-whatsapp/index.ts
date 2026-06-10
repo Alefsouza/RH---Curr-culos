@@ -73,24 +73,12 @@ Deno.serve(async (req: Request) => {
         options: { delay: 1200 },
         buttonMessage: {
           text: message,
-          footerText: 'Via Sudeste',
+          footerText: "Via Sudeste",
           buttons: [
-            {
-              type: 'reply',
-              reply: {
-                id: `sim_teste`,
-                title: (template.botao_sim_texto || 'Sim').substring(0, 20),
-              },
-            },
-            {
-              type: 'reply',
-              reply: {
-                id: `nao_teste`,
-                title: (template.botao_nao_texto || 'Não').substring(0, 20),
-              },
-            },
-          ],
-        },
+            { type: "reply", reply: { id: `sim_teste`, title: (template.botao_sim_texto || 'Sim').substring(0, 20) } },
+            { type: "reply", reply: { id: `nao_teste`, title: (template.botao_nao_texto || 'Não').substring(0, 20) } }
+          ]
+        }
       }
     }
 
