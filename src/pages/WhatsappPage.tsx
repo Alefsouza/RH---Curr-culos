@@ -22,10 +22,10 @@ export default function WhatsappPage() {
     try {
       const dashboardData = await getWhatsappDashboardData()
       setData(dashboardData)
-      if (selectedCandidate) {
-        const updated = dashboardData.candidates.find((c) => c.id === selectedCandidate.id)
-        if (updated) setSelectedCandidate(updated)
-      }
+      setSelectedCandidate((prev) => {
+        if (!prev) return null
+        return dashboardData.candidates.find((c) => c.id === prev.id) || prev
+      })
     } catch (err) {
       console.error(err)
     } finally {
@@ -204,8 +204,23 @@ export default function WhatsappPage() {
                   <div className="bg-white/20 p-2 rounded-full mr-3">
                     <User className="h-5 w-5" />
                   </div>
-                  <div>
-                    <h2 className="font-semibold text-sm">{selectedCandidate.nome}</h2>
+                  <div className="flex flex-col justify-center">
+                    <div className="flex items-center gap-2">
+                      <h2 className="font-semibold text-sm">{selectedCandidate.nome}</h2>
+                      {selectedCandidate.lastResponse === 'sim' ? (
+                        <Badge className="bg-green-100 hover:bg-green-100 text-green-800 border-none text-[10px] px-2 py-0 h-4 rounded-sm font-medium">
+                          Sim
+                        </Badge>
+                      ) : selectedCandidate.lastResponse === 'nao' ? (
+                        <Badge className="bg-red-100 hover:bg-red-100 text-red-800 border-none text-[10px] px-2 py-0 h-4 rounded-sm font-medium">
+                          Não
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-slate-100 hover:bg-slate-100 text-slate-800 border-none text-[10px] px-2 py-0 h-4 rounded-sm font-medium">
+                          Aguardando Resposta
+                        </Badge>
+                      )}
+                    </div>
                     <p className="text-xs text-white/80">{selectedCandidate.telefone}</p>
                   </div>
                 </div>
