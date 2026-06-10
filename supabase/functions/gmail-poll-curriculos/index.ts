@@ -33,7 +33,9 @@ Deno.serve(async (req: Request) => {
 
     const userId = adminUser?.id
     if (!userId) {
-      throw new Error('Nenhum usuário administrador encontrado para atribuir as importações do Gmail.')
+      throw new Error(
+        'Nenhum usuário administrador encontrado para atribuir as importações do Gmail.',
+      )
     }
 
     const clientId = Deno.env.get('GMAIL_CLIENT_ID')
@@ -41,7 +43,9 @@ Deno.serve(async (req: Request) => {
     const refreshToken = Deno.env.get('GMAIL_REFRESH')
 
     if (!clientId || !clientSecret || !refreshToken) {
-      throw new Error('As credenciais da API do Gmail não estão devidamente configuradas nos Secrets (GMAIL_CLIENT_ID, GMAIL_SECRET, GMAIL_REFRESH).')
+      throw new Error(
+        'As credenciais da API do Gmail não estão devidamente configuradas nos Secrets (GMAIL_CLIENT_ID, GMAIL_SECRET, GMAIL_REFRESH).',
+      )
     }
 
     // Authenticate and get Access Token via Refresh Token
@@ -72,12 +76,14 @@ Deno.serve(async (req: Request) => {
     // Fetch or create the specific RH processing label
     let labelId = ''
     try {
-      const labelsRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/labels', { headers })
+      const labelsRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/labels', {
+        headers,
+      })
       if (labelsRes.ok) {
         const labelsData = await labelsRes.json()
         const targetLabel = 'Processado-RH-Sistema'
         const existingLabel = labelsData.labels?.find((l: any) => l.name === targetLabel)
-        
+
         if (existingLabel) {
           labelId = existingLabel.id
         } else {
@@ -101,10 +107,11 @@ Deno.serve(async (req: Request) => {
     }
 
     // Query for new incoming CV emails (Keywords in Subject or Body, With Attachment)
-    const searchQuery = '(Curriculo OR Currículo OR Curriculos OR Currículos OR CV OR Candidatura OR Recrutamento OR Vaga OR Candidato) has:attachment newer_than:2d'
+    const searchQuery =
+      '(Curriculo OR Currículo OR Curriculos OR Currículos OR CV OR Candidatura OR Recrutamento OR Vaga OR Candidato) has:attachment newer_than:2d'
     const searchRes = await fetch(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(searchQuery)}`,
-      { headers }
+      { headers },
     )
 
     if (!searchRes.ok) {
@@ -136,7 +143,7 @@ Deno.serve(async (req: Request) => {
       // Fetch the full message detail
       const msgDetailRes = await fetch(
         `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}`,
-        { headers }
+        { headers },
       )
       const msgDetail = await msgDetailRes.json()
 
@@ -148,7 +155,7 @@ Deno.serve(async (req: Request) => {
 
       const msgHeaders = msgDetail.payload?.headers || []
       const fromHeader = msgHeaders.find((h: any) => h.name === 'From')?.value || ''
-      
+
       let senderName = ''
       let senderEmail = fromHeader
       const match = fromHeader.match(/^(.*?)\s*<(.+)>$/)
@@ -161,7 +168,9 @@ Deno.serve(async (req: Request) => {
 
       const subjectHeader = msgHeaders.find((h: any) => h.name === 'Subject')?.value || ''
       const internalDateTimestamp = parseInt(msgDetail.internalDate)
-      const internalDate = isNaN(internalDateTimestamp) ? new Date().toISOString() : new Date(internalDateTimestamp).toISOString()
+      const internalDate = isNaN(internalDateTimestamp)
+        ? new Date().toISOString()
+        : new Date(internalDateTimestamp).toISOString()
 
       // Ensure record exists before heavy processing
       let importId = existingImport?.id
@@ -193,11 +202,15 @@ Deno.serve(async (req: Request) => {
 
         // Search in parts for the PDF or DOCX attachment
         const parts = msgDetail.payload?.parts || []
-        
+
         // Prioritize PDF, then DOCX
-        let selectedPart = parts.find((p: any) => p.filename && p.filename.toLowerCase().endsWith('.pdf'))
+        let selectedPart = parts.find(
+          (p: any) => p.filename && p.filename.toLowerCase().endsWith('.pdf'),
+        )
         if (!selectedPart) {
-          selectedPart = parts.find((p: any) => p.filename && p.filename.toLowerCase().endsWith('.docx'))
+          selectedPart = parts.find(
+            (p: any) => p.filename && p.filename.toLowerCase().endsWith('.docx'),
+          )
         }
 
         if (selectedPart) {
@@ -206,10 +219,16 @@ Deno.serve(async (req: Request) => {
         }
 
         if (!attachmentId) {
-          console.log(`Mensagem ${msgId} - Motivo do pulo: Nenhum anexo PDF ou DOCX válido encontrado`)
+          console.log(
+            `Mensagem ${msgId} - Motivo do pulo: Nenhum anexo PDF ou DOCX válido encontrado`,
+          )
           await supabase
             .from('email_importacoes')
-            .update({ status: 'sem_anexo_valido', erro_detalhes: 'Nenhum anexo PDF ou DOCX encontrado na mensagem', processado_em: new Date().toISOString() })
+            .update({
+              status: 'sem_anexo_valido',
+              erro_detalhes: 'Nenhum anexo PDF ou DOCX encontrado na mensagem',
+              processado_em: new Date().toISOString(),
+            })
             .eq('id', importId)
           results.push({ msgId, status: 'sem_anexo_valido' })
           continue
@@ -220,7 +239,7 @@ Deno.serve(async (req: Request) => {
         // Fetch attachment content
         const attRes = await fetch(
           `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}/attachments/${attachmentId}`,
-          { headers }
+          { headers },
         )
         const attData = await attRes.json()
 
@@ -236,14 +255,20 @@ Deno.serve(async (req: Request) => {
         if (fileBuffer.length > 5 * 1024 * 1024) {
           await supabase
             .from('email_importacoes')
-            .update({ status: 'erro', erro_detalhes: 'Tamanho do arquivo excede o limite de 5MB', processado_em: new Date().toISOString() })
+            .update({
+              status: 'erro',
+              erro_detalhes: 'Tamanho do arquivo excede o limite de 5MB',
+              processado_em: new Date().toISOString(),
+            })
             .eq('id', importId)
           results.push({ msgId, status: 'erro_tamanho' })
           continue
         }
 
         const isDocx = filename.toLowerCase().endsWith('.docx')
-        const contentType = isDocx ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf'
+        const contentType = isDocx
+          ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+          : 'application/pdf'
         const extension = isDocx ? '.docx' : '.pdf'
 
         // Upload to Supabase Storage
@@ -269,7 +294,10 @@ Deno.serve(async (req: Request) => {
         })
 
         if (analyzeRes.error || !analyzeRes.data?.candidato_id) {
-          throw new Error('Falha ao acionar a função de análise de IA: ' + JSON.stringify(analyzeRes.error || analyzeRes.data))
+          throw new Error(
+            'Falha ao acionar a função de análise de IA: ' +
+              JSON.stringify(analyzeRes.error || analyzeRes.data),
+          )
         }
 
         const candidatoId = analyzeRes.data.candidato_id
@@ -284,7 +312,9 @@ Deno.serve(async (req: Request) => {
 
         // Decision Workflow
         if (vaga_id) {
-          console.log(`Mensagem ${msgId} - Vaga compatível encontrada: ${vaga_id} (Confiança: ${confianca})`)
+          console.log(
+            `Mensagem ${msgId} - Vaga compatível encontrada: ${vaga_id} (Confiança: ${confianca})`,
+          )
           // Update candidate with identified job
           await supabase.from('candidatos').update({ vaga_id }).eq('id', candidatoId)
 
@@ -296,7 +326,9 @@ Deno.serve(async (req: Request) => {
           const analise = critRes.data?.data?.analise
 
           if (analise?.resultado === 'qualificado') {
-            console.log(`Mensagem ${msgId} - Candidato qualificado, inserindo no primeiro estágio do Kanban.`)
+            console.log(
+              `Mensagem ${msgId} - Candidato qualificado, inserindo no primeiro estágio do Kanban.`,
+            )
             // Re-assign explicitly to the first stage of Kanban
             const { data: etapa } = await supabase
               .from('etapas')
@@ -308,7 +340,7 @@ Deno.serve(async (req: Request) => {
 
             if (etapa) {
               await supabase.from('candidatos').update({ etapa_id: etapa.id }).eq('id', candidatoId)
-              
+
               // Verify relationship idempotency before inserting
               const { data: relExists } = await supabase
                 .from('candidato_etapa')
@@ -316,7 +348,7 @@ Deno.serve(async (req: Request) => {
                 .eq('candidato_id', candidatoId)
                 .eq('etapa_id', etapa.id)
                 .maybeSingle()
-                
+
               if (!relExists) {
                 await supabase.from('candidato_etapa').insert({
                   candidato_id: candidatoId,
@@ -332,9 +364,14 @@ Deno.serve(async (req: Request) => {
             finalStatus = 'nao_qualificado'
           }
         } else {
-          console.log(`Mensagem ${msgId} - Nenhuma vaga compatível. Status atualizado para sem_vaga_compativel.`)
+          console.log(
+            `Mensagem ${msgId} - Nenhuma vaga compatível. Status atualizado para sem_vaga_compativel.`,
+          )
           // No match: Keep without vacancy and remove from any default Kanban stage assigned by analyze-resume
-          await supabase.from('candidatos').update({ vaga_id: null, etapa_id: null }).eq('id', candidatoId)
+          await supabase
+            .from('candidatos')
+            .update({ vaga_id: null, etapa_id: null })
+            .eq('id', candidatoId)
           finalStatus = 'sem_vaga_compativel'
         }
 
@@ -349,7 +386,7 @@ Deno.serve(async (req: Request) => {
             justificativa_ia: justificativa || '',
             anexo_filename: filename,
             anexo_storage_path: storagePath,
-            processado_em: new Date().toISOString()
+            processado_em: new Date().toISOString(),
           })
           .eq('id', importId)
 
@@ -366,14 +403,17 @@ Deno.serve(async (req: Request) => {
         }
 
         results.push({ msgId, status: finalStatus, candidatoId })
-
       } catch (procError: any) {
         console.error(`Erro ao processar mensagem ${msgId}:`, procError)
         await supabase
           .from('email_importacoes')
-          .update({ status: 'erro', erro_detalhes: procError.message, processado_em: new Date().toISOString() })
+          .update({
+            status: 'erro',
+            erro_detalhes: procError.message,
+            processado_em: new Date().toISOString(),
+          })
           .eq('id', importId)
-          
+
         results.push({ msgId, status: 'erro', error: procError.message })
       }
     }
@@ -383,16 +423,13 @@ Deno.serve(async (req: Request) => {
       {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
+      },
     )
   } catch (error: any) {
     console.error('Fatal Cron Error:', error)
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    )
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
   }
 })

@@ -154,11 +154,18 @@ export default function TemplatesPage() {
       const res = await testTemplate(testPhone, data)
 
       if (res && res.error) {
+        let errorDesc = res.detalhe
+          ? `${res.message}: ${res.detalhe}`
+          : res.message || 'Falha no teste'
+
+        if (errorDesc.includes('Timeout') || errorDesc.includes('tempo limite')) {
+          errorDesc =
+            'O provedor de WhatsApp está demorando para responder. Por favor, tente novamente em alguns instantes.'
+        }
+
         toast({
           title: 'Erro ao Enviar',
-          description: res.detalhe
-            ? `${res.message}: ${res.detalhe}`
-            : res.message || 'Falha no teste',
+          description: errorDesc,
           variant: 'destructive',
         })
       } else {
@@ -172,6 +179,11 @@ export default function TemplatesPage() {
         else if (parsed.message) errorMsg = parsed.message
       } catch {
         if (err.detalhe) errorMsg = `${err.message}: ${err.detalhe}`
+      }
+
+      if (errorMsg.includes('Timeout') || errorMsg.includes('tempo limite')) {
+        errorMsg =
+          'O provedor de WhatsApp está demorando para responder. Por favor, tente novamente em alguns instantes.'
       }
 
       toast({
