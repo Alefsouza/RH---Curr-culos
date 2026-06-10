@@ -67,6 +67,16 @@ export default function WhatsappPage() {
     )
   }
 
+  if (!loading && !data) {
+    return (
+      <div className="flex flex-col h-full bg-slate-50/50 p-6 items-center justify-center text-slate-500">
+        <XCircle className="h-12 w-12 mb-4 text-red-400" />
+        <h2 className="text-xl font-semibold text-slate-700 mb-2">Erro de Conexão</h2>
+        <p>Não foi possível carregar as informações do dashboard. Tente recarregar a página.</p>
+      </div>
+    )
+  }
+
   const filteredCandidates =
     data?.candidates.filter((c) => {
       if (filter === 'sim' && c.lastResponse !== 'sim') return false
