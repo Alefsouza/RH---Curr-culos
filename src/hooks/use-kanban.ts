@@ -128,7 +128,11 @@ export function useKanban() {
       try {
         await updateCandidateStage(candidateId, newStageId)
 
+        // Validate progression: Only send WhatsApp if moving to a stage with higher order
         if (originStage && targetStage && targetOrder > originOrder) {
+          console.log(
+            `[Kanban] Avanço detectado (Ordem: ${originOrder} -> ${targetOrder}). Disparando WhatsApp da etapa origem...`,
+          )
           supabase.functions
             .invoke('enviar-whatsapp', {
               body: { candidato_id: candidateId, etapa_id: originStageId },
@@ -164,6 +168,10 @@ export function useKanban() {
                 description: 'Ocorreu um erro no servidor ao tentar enviar a mensagem.',
               })
             })
+        } else {
+          console.log(
+            `[Kanban] Movimentação lateral ou retrocesso detectado (Ordem: ${originOrder} -> ${targetOrder}). Mensagem ignorada.`,
+          )
         }
       } catch (err: any) {
         setCandidates(previousCandidates)
