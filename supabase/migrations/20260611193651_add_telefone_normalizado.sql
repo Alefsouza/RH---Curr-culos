@@ -39,7 +39,7 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
-$;
+$$;
 
 DROP TRIGGER IF EXISTS normalizar_telefone_candidatos ON public.candidatos;
 CREATE TRIGGER normalizar_telefone_candidatos
@@ -116,4 +116,4 @@ BEGIN
 
   RETURN NULL;
 END;
-$;
+$$;
