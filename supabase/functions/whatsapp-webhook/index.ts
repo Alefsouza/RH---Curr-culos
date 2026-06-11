@@ -53,20 +53,59 @@ Deno.serve(async (req: Request) => {
       let isIncomingMessage = false
       let remoteJid = event?.data?.key?.remoteJid || event?.sender || event?.data?.sender || ''
 
-      if (event?.data?.message?.buttonsResponseMessage?.selectedButtonId) {
-        selectedButtonId = event.data.message.buttonsResponseMessage.selectedButtonId
-        incomingText = event.data.message.buttonsResponseMessage.selectedDisplayText
-        isIncomingMessage = true
-      } else if (event?.data?.message?.templateButtonReplyMessage?.selectedId) {
-        selectedButtonId = event.data.message.templateButtonReplyMessage.selectedId
-        incomingText = event.data.message.templateButtonReplyMessage.selectedDisplayText
-        isIncomingMessage = true
-      } else if (event?.data?.message?.conversation) {
-        incomingText = event.data.message.conversation
-        isIncomingMessage = true
-      } else if (event?.data?.message?.extendedTextMessage?.text) {
-        incomingText = event.data.message.extendedTextMessage.text
-        isIncomingMessage = true
+      const msg = event?.data?.message
+      if (msg) {
+        if (msg.buttonsResponseMessage?.selectedButtonId) {
+          selectedButtonId = msg.buttonsResponseMessage.selectedButtonId
+          incomingText = msg.buttonsResponseMessage.selectedDisplayText
+          isIncomingMessage = true
+        } else if (msg.templateButtonReplyMessage?.selectedId) {
+          selectedButtonId = msg.templateButtonReplyMessage.selectedId
+          incomingText = msg.templateButtonReplyMessage.selectedDisplayText
+          isIncomingMessage = true
+        } else if (msg.listResponseMessage) {
+          selectedButtonId =
+            msg.listResponseMessage.singleSelectReply?.selectedRowId ||
+            msg.listResponseMessage.selectedRowId
+          incomingText =
+            msg.listResponseMessage.title ||
+            msg.listResponseMessage.description ||
+            msg.listResponseMessage.selectedDisplayText ||
+            selectedButtonId ||
+            '[Lista]'
+          isIncomingMessage = true
+        } else if (msg.pollResponseMessage) {
+          const opts = msg.pollResponseMessage.selectedOptions
+          incomingText = Array.isArray(opts)
+            ? opts.map((o: any) => o?.name || o).join(', ')
+            : opts || '[Enquete Respondida]'
+          selectedButtonId = incomingText
+          isIncomingMessage = true
+        } else if (msg.imageMessage) {
+          incomingText = msg.imageMessage.caption
+            ? `[Imagem] ${msg.imageMessage.caption}`
+            : '[Imagem Recebida]'
+          isIncomingMessage = true
+        } else if (msg.audioMessage) {
+          incomingText = '[Áudio Recebido]'
+          isIncomingMessage = true
+        } else if (msg.documentMessage) {
+          incomingText = msg.documentMessage.fileName
+            ? `[Documento] ${msg.documentMessage.fileName}`
+            : '[Documento Recebido]'
+          isIncomingMessage = true
+        } else if (msg.videoMessage) {
+          incomingText = msg.videoMessage.caption
+            ? `[Vídeo] ${msg.videoMessage.caption}`
+            : '[Vídeo Recebido]'
+          isIncomingMessage = true
+        } else if (msg.conversation) {
+          incomingText = msg.conversation
+          isIncomingMessage = true
+        } else if (msg.extendedTextMessage?.text) {
+          incomingText = msg.extendedTextMessage.text
+          isIncomingMessage = true
+        }
       }
 
       if (isIncomingMessage && remoteJid) {
@@ -77,10 +116,10 @@ Deno.serve(async (req: Request) => {
           if (normalized) {
             phoneNum = normalized
           }
-          
+
           let respostaClassificada = null
           let candId = null
-          
+
           if (selectedButtonId) {
             const btnMatch = selectedButtonId.match(/^(sim|nao)_(.+)$/)
             if (btnMatch) {
@@ -96,14 +135,22 @@ Deno.serve(async (req: Request) => {
           let candInfo: any = null
 
           if (!candId) {
-            const { data: cands } = await supabase.from('candidatos').select('id, user_id, etapa_id').ilike('telefone', `%${phoneNum}%`).limit(1)
+            const { data: cands } = await supabase
+              .from('candidatos')
+              .select('id, user_id, etapa_id')
+              .ilike('telefone', `%${phoneNum}%`)
+              .limit(1)
             if (cands && cands.length > 0) {
               candId = cands[0].id
               candInfo = cands[0]
             }
           } else {
-             const { data: c } = await supabase.from('candidatos').select('id, user_id, etapa_id').eq('id', candId).single()
-             candInfo = c
+            const { data: c } = await supabase
+              .from('candidatos')
+              .select('id, user_id, etapa_id')
+              .eq('id', candId)
+              .single()
+            candInfo = c
           }
 
           if (candId) {
@@ -112,7 +159,7 @@ Deno.serve(async (req: Request) => {
               candidato_id: candId,
               texto: incomingText || selectedButtonId || '',
               direcao: 'recebida',
-              uazapi_message_id: messageId
+              uazapi_message_id: messageId,
             })
 
             if (convErr && convErr.code === '23505') {
@@ -129,34 +176,43 @@ Deno.serve(async (req: Request) => {
               direcao: 'recebida',
               conteudo: incomingText || selectedButtonId || '',
               uazapi_message_id: messageId,
-              tipo: selectedButtonId ? 'botao' : 'texto'
+              tipo: selectedButtonId ? 'botao' : 'texto',
             })
 
             if (msgErr && msgErr.code === '23505') {
-              console.log('Mensagem duplicada em mensagens_whatsapp (idempotência), ignorando:', messageId)
+              console.log(
+                'Mensagem duplicada em mensagens_whatsapp (idempotência), ignorando:',
+                messageId,
+              )
               continue
             }
 
             if (respostaClassificada) {
-               await supabase.from('respostas_whatsapp').insert({
+              await supabase.from('respostas_whatsapp').insert({
                 candidato_id: candId,
                 resposta: respostaClassificada,
-                mensagem_id: messageId
+                mensagem_id: messageId,
               })
             }
 
             const updatePayload: any = {
               ultima_resposta_whatsapp: incomingText || selectedButtonId || '',
-              ultima_resposta_em: new Date().toISOString()
+              ultima_resposta_em: new Date().toISOString(),
             }
 
             if (candInfo && candInfo.etapa_id && respostaClassificada) {
               let moved = false
-              
-              const { data: tpl } = await supabase.from('templates_mensagens').select('*').eq('etapa_id', candInfo.etapa_id).eq('tipo', 'chatbot_interativo').maybeSingle()
-              
+
+              const { data: tpl } = await supabase
+                .from('templates_mensagens')
+                .select('*')
+                .eq('etapa_id', candInfo.etapa_id)
+                .eq('tipo', 'chatbot_interativo')
+                .maybeSingle()
+
               if (tpl) {
-                const acao = respostaClassificada === 'sim' ? tpl.botao_sim_acao : tpl.botao_nao_acao
+                const acao =
+                  respostaClassificada === 'sim' ? tpl.botao_sim_acao : tpl.botao_nao_acao
                 if (acao === 'remover') {
                   updatePayload.ativo_kanban = false
                   updatePayload.motivo_inativo = 'Recusou via WhatsApp'
@@ -169,9 +225,13 @@ Deno.serve(async (req: Request) => {
 
               // Ação Automática fallback: if "sim", move candidate to next stage based on sequence
               if (respostaClassificada === 'sim' && !moved) {
-                const { data: etapas } = await supabase.from('etapas').select('id').eq('user_id', candInfo.user_id).order('ordem', { ascending: true })
+                const { data: etapas } = await supabase
+                  .from('etapas')
+                  .select('id')
+                  .eq('user_id', candInfo.user_id)
+                  .order('ordem', { ascending: true })
                 if (etapas) {
-                  const currentIndex = etapas.findIndex(e => e.id === candInfo.etapa_id)
+                  const currentIndex = etapas.findIndex((e) => e.id === candInfo.etapa_id)
                   if (currentIndex >= 0 && currentIndex + 1 < etapas.length) {
                     updatePayload.etapa_id = etapas[currentIndex + 1].id
                   }
@@ -197,10 +257,10 @@ Deno.serve(async (req: Request) => {
         if (s === 'READ' || s === 'READ_ACK' || s === 'PLAYED') mappedStatus = 'lida'
         if (s === 'ERROR' || s === 'FAILED' || s === 'REJECTED') mappedStatus = 'falha'
       } else if (typeof status === 'number') {
-        if (status === 1) mappedStatus = 'enviada' 
-        if (status === 2) mappedStatus = 'entregue' 
-        if (status === 3 || status === 4) mappedStatus = 'lida' 
-        if (status === 5) mappedStatus = 'falha' 
+        if (status === 1) mappedStatus = 'enviada'
+        if (status === 2) mappedStatus = 'entregue'
+        if (status === 3 || status === 4) mappedStatus = 'lida'
+        if (status === 5) mappedStatus = 'falha'
       }
 
       if (mappedStatus && !isIncomingMessage) {
