@@ -124,8 +124,13 @@ export default function CandidateDetails() {
         .from('mensagens_whatsapp')
         .select('*, etapas(nome)')
         .eq('candidato_id', id)
+        .not('conteudo', 'is', null)
+        .neq('conteudo', '')
         .order('criado_em', { ascending: false })
-      if (msgData) setMessages(msgData)
+
+      if (msgData) {
+        setMessages(msgData.filter((m) => m.conteudo && m.conteudo.trim() !== ''))
+      }
     } catch (err: any) {
       console.error(err)
       setError(err.message || 'Erro ao carregar os dados do candidato.')

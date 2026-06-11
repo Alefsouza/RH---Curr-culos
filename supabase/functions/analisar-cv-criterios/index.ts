@@ -379,14 +379,14 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
     }
 
     if (numeros_whatsapp.length > 0) {
-      for (const numero of numeros_whatsapp) {
-        const { error: insertMsgError } = await supabaseAdmin.from('mensagens_whatsapp').insert({
-          candidato_id: cv_id,
-          numero_whatsapp: numero,
-          user_id: user_id,
-        })
-        if (insertMsgError) {
-          console.error('Erro ao salvar em mensagens_whatsapp:', insertMsgError)
+      if (!candidato.telefone || candidato.telefone.trim() === '') {
+        const { error: updatePhoneError } = await supabaseAdmin
+          .from('candidatos')
+          .update({ telefone: numeros_whatsapp[0] })
+          .eq('id', cv_id)
+
+        if (updatePhoneError) {
+          console.error('Erro ao atualizar telefone do candidato:', updatePhoneError)
         }
       }
     } else {

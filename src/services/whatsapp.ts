@@ -28,6 +28,8 @@ export async function getWhatsappDashboardData() {
       'id, candidato_id, conteudo, direcao, criado_em, uazapi_message_id, external_id, candidatos!inner(nome, telefone, user_id, ultima_resposta_whatsapp)',
     )
     .eq('candidatos.user_id', userId)
+    .not('conteudo', 'is', null)
+    .neq('conteudo', '')
     .order('criado_em', { ascending: true })
 
   if (error) throw error
@@ -66,6 +68,8 @@ export async function getWhatsappDashboardData() {
   const candMap = new Map<string, WhatsappCandidate>()
 
   convData?.forEach((c) => {
+    if (!c.conteudo || c.conteudo.trim() === '') return
+
     if (!candMap.has(c.candidato_id)) {
       candMap.set(c.candidato_id, {
         id: c.candidato_id,
@@ -93,12 +97,12 @@ export async function getWhatsappDashboardData() {
 
     cand.conversations.push({
       id: c.id,
-      texto: c.conteudo || '',
+      texto: c.conteudo,
       direcao: c.direcao as 'enviada' | 'recebida',
       criado_em: c.criado_em,
       respostaAssociada: resposta,
     })
-    cand.lastMessage = c.conteudo || ''
+    cand.lastMessage = c.conteudo
     cand.lastMessageTime = c.criado_em
   })
 
