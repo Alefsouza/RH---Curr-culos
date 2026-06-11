@@ -245,18 +245,40 @@ export default function WhatsappPage() {
                           msg.direcao === 'enviada' ? 'justify-end' : 'justify-start',
                         )}
                       >
-                        <div
-                          className={cn(
-                            'max-w-[70%] rounded-lg p-3 shadow-sm relative text-sm',
-                            msg.direcao === 'enviada'
-                              ? 'bg-[#dcf8c6] rounded-tr-none'
-                              : 'bg-white rounded-tl-none',
+                        <div className="flex flex-col">
+                          <div
+                            className={cn(
+                              'max-w-[70%] rounded-lg p-3 shadow-sm relative text-sm',
+                              msg.direcao === 'enviada'
+                                ? 'bg-[#dcf8c6] rounded-tr-none self-end'
+                                : 'bg-white rounded-tl-none self-start',
+                            )}
+                          >
+                            <p className="whitespace-pre-wrap break-words">{msg.texto}</p>
+                            <span className="text-[10px] text-slate-500 block text-right mt-1">
+                              {format(new Date(msg.criado_em), 'HH:mm')}
+                            </span>
+                          </div>
+                          {msg.respostaAssociada === 'sim' && (
+                            <div
+                              className={cn(
+                                'mt-1 flex items-center gap-1 text-[10px] text-green-700 font-medium',
+                                msg.direcao === 'enviada' ? 'justify-end' : 'justify-start',
+                              )}
+                            >
+                              <CheckCircle className="w-3 h-3" /> Interesse: Sim
+                            </div>
                           )}
-                        >
-                          <p className="whitespace-pre-wrap break-words">{msg.texto}</p>
-                          <span className="text-[10px] text-slate-500 block text-right mt-1">
-                            {format(new Date(msg.criado_em), 'HH:mm')}
-                          </span>
+                          {msg.respostaAssociada === 'nao' && (
+                            <div
+                              className={cn(
+                                'mt-1 flex items-center gap-1 text-[10px] text-red-700 font-medium',
+                                msg.direcao === 'enviada' ? 'justify-end' : 'justify-start',
+                              )}
+                            >
+                              <XCircle className="w-3 h-3" /> Interesse: Não
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}

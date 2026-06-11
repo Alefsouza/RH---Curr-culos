@@ -12,6 +12,7 @@ export interface WhatsappCandidate {
     texto: string
     direcao: 'enviada' | 'recebida'
     criado_em: string
+    respostaAssociada?: string | null
   }[]
 }
 
@@ -24,7 +25,7 @@ export async function getWhatsappDashboardData() {
   const { data: convData, error } = await supabase
     .from('mensagens_whatsapp')
     .select(
-      'id, candidato_id, conteudo, direcao, criado_em, candidatos!inner(nome, telefone, user_id, ultima_resposta_whatsapp)',
+      'id, candidato_id, conteudo, direcao, criado_em, uazapi_message_id, external_id, candidatos!inner(nome, telefone, user_id, ultima_resposta_whatsapp)',
     )
     .eq('candidatos.user_id', userId)
     .order('criado_em', { ascending: true })
@@ -33,7 +34,7 @@ export async function getWhatsappDashboardData() {
 
   const { data: resData, error: resError } = await supabase
     .from('respostas_whatsapp')
-    .select('candidato_id, resposta')
+    .select('candidato_id, resposta, mensagem_id')
     .order('criado_em', { ascending: true })
 
   if (resError) {
@@ -51,8 +52,15 @@ export async function getWhatsappDashboardData() {
   const totalNao = resData?.filter((r) => r.resposta === 'nao').length || 0
 
   const responsesByCandidato: Record<string, string> = {}
+  const responsesByMessage: Record<string, string> = {}
+
   resData?.forEach((r) => {
-    responsesByCandidato[r.candidato_id] = r.resposta
+    if (r.resposta) {
+      responsesByCandidato[r.candidato_id] = r.resposta
+    }
+    if (r.mensagem_id && r.resposta) {
+      responsesByMessage[r.mensagem_id] = r.resposta
+    }
   })
 
   const candMap = new Map<string, WhatsappCandidate>()
@@ -73,11 +81,22 @@ export async function getWhatsappDashboardData() {
       })
     }
     const cand = candMap.get(c.candidato_id)!
+
+    let resposta = null
+    if (c.uazapi_message_id && responsesByMessage[c.uazapi_message_id]) {
+      resposta = responsesByMessage[c.uazapi_message_id]
+    } else if (c.external_id && responsesByMessage[c.external_id]) {
+      resposta = responsesByMessage[c.external_id]
+    } else if (responsesByMessage[c.id]) {
+      resposta = responsesByMessage[c.id]
+    }
+
     cand.conversations.push({
       id: c.id,
       texto: c.conteudo || '',
       direcao: c.direcao as 'enviada' | 'recebida',
       criado_em: c.criado_em,
+      respostaAssociada: resposta,
     })
     cand.lastMessage = c.conteudo || ''
     cand.lastMessageTime = c.criado_em
