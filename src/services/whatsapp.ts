@@ -41,21 +41,11 @@ export async function getWhatsappDashboardData() {
   }
 
   let sentCount = 0
-  try {
-    const { count, error } = await supabase
-      .from('mensagens_whatsapp')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('direcao', 'enviada')
-
-    if (error) {
-      console.warn('Aviso: Falha ao contar mensagens no dashboard (ignorado)', error)
-    } else {
-      sentCount = count || 0
+  convData?.forEach((c) => {
+    if (c.direcao === 'enviada') {
+      sentCount++
     }
-  } catch (err) {
-    console.warn('Erro ao buscar contagem de mensagens (ignorado)', err)
-  }
+  })
 
   const totalSim = resData?.filter((r) => r.resposta === 'sim').length || 0
   const totalNao = resData?.filter((r) => r.resposta === 'nao').length || 0
