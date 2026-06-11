@@ -1,8 +1,8 @@
 export const normalizePhone = (phone: string | null | undefined): string | null => {
-  if (!phone) return null;
-  let digits = phone.replace(/\D/g, '');
-  if (digits.length === 10 || digits.length === 11) {
-    digits = `55${digits}`;
+  if (!phone) return null
+  let digits = phone.replace(/\D/g, '')
+  if (digits.startsWith('55') && digits.length > 11) {
+    digits = digits.substring(2)
   }
-  return digits || null;
+  return digits || null
 }
