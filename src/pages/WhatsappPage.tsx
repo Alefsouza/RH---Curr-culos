@@ -39,12 +39,12 @@ export default function WhatsappPage() {
       .channel('whatsapp-dashboard')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'conversas_whatsapp' },
+        { event: '*', schema: 'public', table: 'mensagens_whatsapp' },
         loadData,
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'mensagens_whatsapp' },
+        { event: '*', schema: 'public', table: 'respostas_whatsapp' },
         loadData,
       )
       .on('postgres_changes', { event: '*', schema: 'public', table: 'candidatos' }, loadData)
