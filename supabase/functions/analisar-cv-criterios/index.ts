@@ -384,7 +384,7 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
           .from('candidatos')
           .update({ telefone: numeros_whatsapp[0] })
           .eq('id', cv_id)
-          
+
         if (updatePhoneError) {
           console.error('Erro ao atualizar telefone do candidato:', updatePhoneError)
         }

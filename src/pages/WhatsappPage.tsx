@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { getWhatsappDashboardData, WhatsappCandidate } from '@/services/whatsapp'
 import { Skeleton } from '@/components/ui/skeleton'
-import { MessageCircle, CheckCircle, XCircle, Search, User, Clock } from 'lucide-react'
+import { MessageCircle, CheckCircle, XCircle, Search, User, Clock, AlertCircle } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
@@ -183,7 +183,10 @@ export default function WhatsappPage() {
                     onClick={() => setSelectedCandidate(c)}
                   >
                     <div className="flex justify-between items-start mb-1">
-                      <span className="font-medium text-sm text-slate-900 truncate pr-2">
+                      <span className="font-medium text-sm text-slate-900 truncate pr-2 flex items-center gap-1.5">
+                        {c.isUnlinked && (
+                          <AlertCircle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                        )}
                         {c.nome}
                       </span>
                       <span className="text-xs text-slate-400 flex-shrink-0">
@@ -217,7 +220,15 @@ export default function WhatsappPage() {
                   </div>
                   <div className="flex flex-col justify-center">
                     <div className="flex items-center gap-2">
-                      <h2 className="font-semibold text-sm">{selectedCandidate.nome}</h2>
+                      <h2 className="font-semibold text-sm flex items-center gap-1.5">
+                        {selectedCandidate.isUnlinked && (
+                          <AlertCircle
+                            className="w-4 h-4 text-amber-300"
+                            title="Contato não vinculado"
+                          />
+                        )}
+                        {selectedCandidate.nome}
+                      </h2>
                       {selectedCandidate.lastResponse === 'sim' ? (
                         <Badge className="bg-green-100 hover:bg-green-100 text-green-800 border-none text-xs px-2 py-0.5 h-5 rounded-md font-medium flex items-center gap-1">
                           <CheckCircle className="w-3 h-3" /> Sim
@@ -225,6 +236,10 @@ export default function WhatsappPage() {
                       ) : selectedCandidate.lastResponse === 'nao' ? (
                         <Badge className="bg-red-100 hover:bg-red-100 text-red-800 border-none text-xs px-2 py-0.5 h-5 rounded-md font-medium flex items-center gap-1">
                           <XCircle className="w-3 h-3" /> Não
+                        </Badge>
+                      ) : selectedCandidate.isUnlinked ? (
+                        <Badge className="bg-amber-100 hover:bg-amber-100 text-amber-800 border-none text-xs px-2 py-0.5 h-5 rounded-md font-medium flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" /> Não vinculado
                         </Badge>
                       ) : (
                         <Badge className="bg-slate-100 hover:bg-slate-100 text-slate-800 border-none text-xs px-2 py-0.5 h-5 rounded-md font-medium flex items-center gap-1">

@@ -7,6 +7,7 @@ export interface WhatsappCandidate {
   lastMessage: string
   lastMessageTime: string
   lastResponse: string | null
+  isUnlinked?: boolean
   conversations: {
     id: string
     texto: string
@@ -25,9 +26,9 @@ export async function getWhatsappDashboardData() {
   const { data: convData, error } = await supabase
     .from('mensagens_whatsapp')
     .select(
-      'id, candidato_id, conteudo, direcao, criado_em, uazapi_message_id, external_id, candidatos!inner(nome, telefone, user_id, ultima_resposta_whatsapp)',
+      'id, candidato_id, conteudo, direcao, criado_em, uazapi_message_id, external_id, numero_whatsapp, candidatos(nome, telefone, user_id, ultima_resposta_whatsapp)',
     )
-    .eq('candidatos.user_id', userId)
+    .eq('user_id', userId)
     .not('conteudo', 'is', null)
     .neq('conteudo', '')
     .order('criado_em', { ascending: true })
@@ -70,21 +71,24 @@ export async function getWhatsappDashboardData() {
   convData?.forEach((c) => {
     if (!c.conteudo || c.conteudo.trim() === '') return
 
-    if (!candMap.has(c.candidato_id)) {
-      candMap.set(c.candidato_id, {
-        id: c.candidato_id,
-        nome: (c.candidatos as any)?.nome || 'Desconhecido',
-        telefone: (c.candidatos as any)?.telefone || '',
+    const candidateId = c.candidato_id || `unlinked_${c.numero_whatsapp}`
+
+    if (!candMap.has(candidateId)) {
+      candMap.set(candidateId, {
+        id: candidateId,
+        nome: (c.candidatos as any)?.nome || 'Contato Desconhecido',
+        telefone: (c.candidatos as any)?.telefone || c.numero_whatsapp || '',
         lastMessage: '',
         lastMessageTime: '',
         lastResponse:
           (c.candidatos as any)?.ultima_resposta_whatsapp ||
-          responsesByCandidato[c.candidato_id] ||
+          (c.candidato_id ? responsesByCandidato[c.candidato_id] : null) ||
           null,
+        isUnlinked: !c.candidato_id,
         conversations: [],
       })
     }
-    const cand = candMap.get(c.candidato_id)!
+    const cand = candMap.get(candidateId)!
 
     let resposta = null
     if (c.uazapi_message_id && responsesByMessage[c.uazapi_message_id]) {
