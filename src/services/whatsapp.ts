@@ -44,9 +44,9 @@ export async function getWhatsappDashboardData() {
   try {
     const { count, error } = await supabase
       .from('mensagens_whatsapp')
-      .select('id', { count: 'exact' })
+      .select('*', { count: 'exact', head: true })
       .eq('user_id', userId)
-      .limit(1)
+      .eq('direcao', 'enviada')
 
     if (error) {
       console.warn('Aviso: Falha ao contar mensagens no dashboard (ignorado)', error)
