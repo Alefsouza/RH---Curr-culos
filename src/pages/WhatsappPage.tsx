@@ -79,8 +79,9 @@ export default function WhatsappPage() {
 
   const filteredCandidates =
     data?.candidates.filter((c) => {
-      if (filter === 'sim' && c.lastResponse !== 'sim') return false
-      if (filter === 'nao' && c.lastResponse !== 'nao') return false
+      const response = c.lastResponse?.toLowerCase()
+      if (filter === 'sim' && response !== 'sim') return false
+      if (filter === 'nao' && response !== 'nao') return false
       if (search && !c.nome.toLowerCase().includes(search.toLowerCase())) return false
       return true
     }) || []
@@ -197,10 +198,10 @@ export default function WhatsappPage() {
                       <p className="text-xs text-slate-500 truncate max-w-[200px]">
                         {c.lastMessage}
                       </p>
-                      {c.lastResponse === 'sim' && (
+                      {c.lastResponse?.toLowerCase() === 'sim' && (
                         <Badge className="bg-green-500 text-[10px] px-1.5 py-0">Sim</Badge>
                       )}
-                      {c.lastResponse === 'nao' && (
+                      {c.lastResponse?.toLowerCase() === 'nao' && (
                         <Badge className="bg-red-500 text-[10px] px-1.5 py-0">Não</Badge>
                       )}
                     </div>
@@ -229,11 +230,11 @@ export default function WhatsappPage() {
                         )}
                         {selectedCandidate.nome}
                       </h2>
-                      {selectedCandidate.lastResponse === 'sim' ? (
+                      {selectedCandidate.lastResponse?.toLowerCase() === 'sim' ? (
                         <Badge className="bg-green-100 hover:bg-green-100 text-green-800 border-none text-xs px-2 py-0.5 h-5 rounded-md font-medium flex items-center gap-1">
                           <CheckCircle className="w-3 h-3" /> Sim
                         </Badge>
-                      ) : selectedCandidate.lastResponse === 'nao' ? (
+                      ) : selectedCandidate.lastResponse?.toLowerCase() === 'nao' ? (
                         <Badge className="bg-red-100 hover:bg-red-100 text-red-800 border-none text-xs px-2 py-0.5 h-5 rounded-md font-medium flex items-center gap-1">
                           <XCircle className="w-3 h-3" /> Não
                         </Badge>
@@ -270,30 +271,22 @@ export default function WhatsappPage() {
                             )}
                           >
                             <p className="whitespace-pre-wrap break-words">{msg.texto}</p>
-                            <span className="text-[10px] text-slate-500 block text-right mt-1">
-                              {format(new Date(msg.criado_em), 'HH:mm')}
-                            </span>
+                            <div className="flex items-center justify-end gap-2 mt-1">
+                              {msg.respostaAssociada?.toLowerCase() === 'sim' && (
+                                <span className="flex items-center gap-1 text-[10px] text-green-700 font-medium">
+                                  <CheckCircle className="w-3 h-3" /> Interesse: Sim
+                                </span>
+                              )}
+                              {msg.respostaAssociada?.toLowerCase() === 'nao' && (
+                                <span className="flex items-center gap-1 text-[10px] text-red-700 font-medium">
+                                  <XCircle className="w-3 h-3" /> Interesse: Não
+                                </span>
+                              )}
+                              <span className="text-[10px] text-slate-500">
+                                {format(new Date(msg.criado_em), 'HH:mm')}
+                              </span>
+                            </div>
                           </div>
-                          {msg.respostaAssociada === 'sim' && (
-                            <div
-                              className={cn(
-                                'mt-1 flex items-center gap-1 text-[10px] text-green-700 font-medium',
-                                msg.direcao === 'enviada' ? 'justify-end' : 'justify-start',
-                              )}
-                            >
-                              <CheckCircle className="w-3 h-3" /> Interesse: Sim
-                            </div>
-                          )}
-                          {msg.respostaAssociada === 'nao' && (
-                            <div
-                              className={cn(
-                                'mt-1 flex items-center gap-1 text-[10px] text-red-700 font-medium',
-                                msg.direcao === 'enviada' ? 'justify-end' : 'justify-start',
-                              )}
-                            >
-                              <XCircle className="w-3 h-3" /> Interesse: Não
-                            </div>
-                          )}
                         </div>
                       </div>
                     ))}

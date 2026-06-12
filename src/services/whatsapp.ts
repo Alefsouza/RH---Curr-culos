@@ -51,18 +51,18 @@ export async function getWhatsappDashboardData() {
     }
   })
 
-  const totalSim = resData?.filter((r) => r.resposta === 'sim').length || 0
-  const totalNao = resData?.filter((r) => r.resposta === 'nao').length || 0
+  const totalSim = resData?.filter((r) => r.resposta?.toLowerCase() === 'sim').length || 0
+  const totalNao = resData?.filter((r) => r.resposta?.toLowerCase() === 'nao').length || 0
 
   const responsesByCandidato: Record<string, string> = {}
   const responsesByMessage: Record<string, string> = {}
 
   resData?.forEach((r) => {
     if (r.resposta) {
-      responsesByCandidato[r.candidato_id] = r.resposta
+      responsesByCandidato[r.candidato_id] = r.resposta.toLowerCase()
     }
     if (r.mensagem_id && r.resposta) {
-      responsesByMessage[r.mensagem_id] = r.resposta
+      responsesByMessage[r.mensagem_id] = r.resposta.toLowerCase()
     }
   })
 
@@ -80,10 +80,11 @@ export async function getWhatsappDashboardData() {
         telefone: (c.candidatos as any)?.telefone || c.numero_whatsapp || '',
         lastMessage: '',
         lastMessageTime: '',
-        lastResponse:
-          (c.candidatos as any)?.ultima_resposta_whatsapp ||
-          (c.candidato_id ? responsesByCandidato[c.candidato_id] : null) ||
-          null,
+        lastResponse: (() => {
+          const ultResp = (c.candidatos as any)?.ultima_resposta_whatsapp?.toLowerCase()
+          if (ultResp === 'sim' || ultResp === 'nao') return ultResp
+          return (c.candidato_id ? responsesByCandidato[c.candidato_id] : null) || null
+        })(),
         isUnlinked: !c.candidato_id,
         conversations: [],
       })
@@ -97,6 +98,28 @@ export async function getWhatsappDashboardData() {
       resposta = responsesByMessage[c.external_id]
     } else if (responsesByMessage[c.id]) {
       resposta = responsesByMessage[c.id]
+    } else if (c.direcao === 'recebida' && c.conteudo) {
+      const lower = c.conteudo.toLowerCase().trim()
+      if (
+        ['sim', 's', 'sim!', 'sin', 'quero', 'sim|sim'].includes(lower) ||
+        lower.startsWith('sim|')
+      ) {
+        resposta = 'sim'
+      } else if (
+        [
+          'nao',
+          'não',
+          'n',
+          'não!',
+          'nao tenho interesse',
+          'não tenho interesse',
+          'nao|nao',
+          'não|nao',
+        ].includes(lower) ||
+        lower.startsWith('nao|')
+      ) {
+        resposta = 'nao'
+      }
     }
 
     cand.conversations.push({
