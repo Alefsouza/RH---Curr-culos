@@ -273,16 +273,16 @@ export default function WhatsappPage() {
                         <div className="flex flex-col">
                           <div
                             className={cn(
-                              'w-fit max-w-[85%] sm:max-w-[70%] rounded-lg px-2.5 py-1.5 shadow-sm relative text-sm flex flex-wrap items-end gap-x-2 gap-y-1',
+                              'w-fit max-w-[85%] sm:max-w-[70%] rounded-lg px-3 py-2 shadow-sm relative text-sm flex flex-col gap-1',
                               msg.direcao === 'enviada'
                                 ? 'bg-[#dcf8c6] rounded-tr-none self-end'
                                 : 'bg-white rounded-tl-none self-start',
                             )}
                           >
-                            <div className="whitespace-pre-wrap break-words min-w-0 pb-0.5">
+                            <div className="whitespace-pre-wrap break-words min-w-0">
                               {msg.texto}
                             </div>
-                            <div className="flex items-center gap-1.5 shrink-0 ml-auto self-end">
+                            <div className="flex flex-wrap items-center justify-end gap-1.5 shrink-0 self-end">
                               {msg.respostaAssociada?.toLowerCase() === 'sim' && (
                                 <span className="flex items-center gap-1 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium border border-green-200">
                                   <CircleCheckBig className="w-3 h-3" /> Interesse: Sim
@@ -293,7 +293,7 @@ export default function WhatsappPage() {
                                   <XCircle className="w-3 h-3" /> Interesse: Não
                                 </span>
                               )}
-                              <span className="text-[10px] text-slate-500 font-medium leading-none">
+                              <span className="text-[10px] text-slate-500 font-medium leading-none whitespace-nowrap ml-1 mt-0.5">
                                 {format(new Date(msg.criado_em), 'HH:mm')}
                               </span>
                             </div>

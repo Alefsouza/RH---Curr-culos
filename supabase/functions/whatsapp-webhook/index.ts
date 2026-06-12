@@ -200,63 +200,18 @@ Deno.serve(async (req: Request) => {
             phoneNum = normalized
           }
 
-          let respostaClassificada = null
           let candId = null
+          let candInfo: any = null
 
+          // Primeiro, tentamos pegar o candId direto do botão (se for um payload nosso)
           if (selectedButtonId) {
             const btnMatch = selectedButtonId.match(/^(sim|nao)_(.+)$/i)
             if (btnMatch) {
-              respostaClassificada = btnMatch[1].toLowerCase()
               candId = btnMatch[2]
-            } else {
-              const txt = selectedButtonId.toLowerCase().trim()
-              if (
-                ['sim', 's', 'sim!', 'sin', 'quero', 'sim|sim'].includes(txt) ||
-                txt.startsWith('sim|')
-              )
-                respostaClassificada = 'sim'
-              else if (
-                [
-                  'nao',
-                  'não',
-                  'n',
-                  'não!',
-                  'nao tenho interesse',
-                  'não tenho interesse',
-                  'nao|nao',
-                  'não|nao',
-                ].includes(txt) ||
-                txt.startsWith('nao|')
-              )
-                respostaClassificada = 'nao'
             }
           }
 
-          if (!respostaClassificada && incomingText) {
-            const txt = incomingText.toLowerCase().trim()
-            if (
-              ['sim', 's', 'sim!', 'sin', 'quero', 'sim|sim'].includes(txt) ||
-              txt.startsWith('sim|')
-            )
-              respostaClassificada = 'sim'
-            else if (
-              [
-                'nao',
-                'não',
-                'n',
-                'não!',
-                'nao tenho interesse',
-                'não tenho interesse',
-                'nao|nao',
-                'não|nao',
-              ].includes(txt) ||
-              txt.startsWith('nao|')
-            )
-              respostaClassificada = 'nao'
-          }
-
-          let candInfo: any = null
-
+          // Se não tiver, busca pelo telefone
           if (!candId) {
             const { data: matchedId, error: rpcErr } = await supabase.rpc(
               'buscar_candidato_por_telefone',
@@ -266,20 +221,98 @@ Deno.serve(async (req: Request) => {
             )
             if (!rpcErr && matchedId) {
               candId = matchedId
-              const { data: c } = await supabase
-                .from('candidatos')
-                .select('id, user_id, etapa_id')
-                .eq('id', candId)
-                .single()
-              candInfo = c
             }
-          } else {
+          }
+
+          if (candId) {
             const { data: c } = await supabase
               .from('candidatos')
               .select('id, user_id, etapa_id')
               .eq('id', candId)
-              .single()
-            candInfo = c
+              .maybeSingle()
+            if (c) candInfo = c
+          }
+
+          // Descobrir qual o template provável desta interação para classificar "Sim" / "Não"
+          let resolvedTemplateId = null
+          let templateData = null
+
+          if (contextMsgId) {
+            const { data: origMsg } = await supabase
+              .from('mensagens_whatsapp')
+              .select('template_id')
+              .or(`uazapi_message_id.eq.${contextMsgId},external_id.eq.${contextMsgId}`)
+              .limit(1)
+              .maybeSingle()
+            if (origMsg?.template_id) {
+              resolvedTemplateId = origMsg.template_id
+            }
+          }
+
+          if (!resolvedTemplateId && candId) {
+            const { data: lastBotMsg } = await supabase
+              .from('mensagens_whatsapp')
+              .select('template_id')
+              .eq('candidato_id', candId)
+              .eq('direcao', 'enviada')
+              .not('template_id', 'is', null)
+              .order('criado_em', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+
+            if (lastBotMsg?.template_id) {
+              resolvedTemplateId = lastBotMsg.template_id
+            }
+          }
+
+          if (resolvedTemplateId) {
+            const { data: tData } = await supabase
+              .from('templates_mensagens')
+              .select('*')
+              .eq('id', resolvedTemplateId)
+              .maybeSingle()
+            if (tData) {
+              templateData = tData
+            }
+          }
+
+          // Classificar a resposta com base no texto recebido e no template
+          let respostaClassificada = null
+
+          const txtToCheck = (incomingText || selectedButtonId || '').toLowerCase().trim()
+
+          if (selectedButtonId) {
+            const btnMatch = selectedButtonId.match(/^(sim|nao)_(.+)$/i)
+            if (btnMatch) {
+              respostaClassificada = btnMatch[1].toLowerCase()
+            }
+          }
+
+          if (!respostaClassificada) {
+            const simWords = ['sim', 's', 'sim!', 'sin', 'quero', 'sim|sim']
+            const naoWords = [
+              'nao',
+              'não',
+              'n',
+              'não!',
+              'nao tenho interesse',
+              'não tenho interesse',
+              'nao|nao',
+              'não|nao',
+            ]
+
+            if (templateData) {
+              if (templateData.botao_sim_texto)
+                simWords.push(templateData.botao_sim_texto.toLowerCase().trim())
+              if (templateData.botao_nao_texto)
+                naoWords.push(templateData.botao_nao_texto.toLowerCase().trim())
+            }
+
+            if (simWords.some((w) => txtToCheck === w || txtToCheck.startsWith('sim|'))) {
+              respostaClassificada = 'sim'
+            } else if (naoWords.some((w) => txtToCheck === w || txtToCheck.startsWith('nao|'))) {
+              respostaClassificada = 'nao'
+            }
           }
 
           // Determinar o user_id (tentar pegar do candidato, senao do historico, senao fallback)
@@ -348,29 +381,7 @@ Deno.serve(async (req: Request) => {
               ultima_resposta_em: new Date().toISOString(),
             }
 
-            let resolvedTemplateId = null
-            let templateData = null
-            if (contextMsgId) {
-              const { data: origMsg } = await supabase
-                .from('mensagens_whatsapp')
-                .select('template_id')
-                .or(`uazapi_message_id.eq.${contextMsgId},external_id.eq.${contextMsgId}`)
-                .limit(1)
-                .maybeSingle()
-              if (origMsg?.template_id) {
-                resolvedTemplateId = origMsg.template_id
-                const { data: tData } = await supabase
-                  .from('templates_mensagens')
-                  .select('*')
-                  .eq('id', resolvedTemplateId)
-                  .maybeSingle()
-                if (tData) {
-                  templateData = tData
-                }
-              }
-            }
-
-            if (candInfo && respostaClassificada) {
+            if (respostaClassificada) {
               let acao = 'manter'
               let etapaDestino = null
 
@@ -396,11 +407,20 @@ Deno.serve(async (req: Request) => {
                   .eq('id', candId)
                 if (delErr) {
                   console.error('Erro ao deletar candidato', delErr)
+                } else {
+                  console.log(`Candidato ${candId} removido com sucesso via resposta Não`)
                 }
                 // Limpa o payload para não tentar atualizar um candidato que acabou de ser deletado
                 Object.keys(updatePayload).forEach((key) => delete updatePayload[key])
-              } else if (acao === 'mover' && etapaDestino) {
-                updatePayload.etapa_id = etapaDestino
+              } else if (acao === 'mover') {
+                if (etapaDestino) {
+                  updatePayload.etapa_id = etapaDestino
+                  console.log(`Candidato ${candId} será movido para a etapa ${etapaDestino}`)
+                } else {
+                  console.warn(
+                    `Ação "mover" configurada mas sem etapa_destino_id no template ${templateData?.id}`,
+                  )
+                }
               }
             }
 
