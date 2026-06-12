@@ -2,7 +2,16 @@ import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { getWhatsappDashboardData, WhatsappCandidate } from '@/services/whatsapp'
 import { Skeleton } from '@/components/ui/skeleton'
-import { MessageCircle, CheckCircle, XCircle, Search, User, Clock, AlertCircle } from 'lucide-react'
+import {
+  MessageCircle,
+  CheckCircle,
+  CircleCheckBig,
+  XCircle,
+  Search,
+  User,
+  Clock,
+  AlertCircle,
+} from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
@@ -264,24 +273,24 @@ export default function WhatsappPage() {
                         <div className="flex flex-col">
                           <div
                             className={cn(
-                              'max-w-[85%] sm:max-w-[70%] rounded-lg px-2.5 py-1.5 shadow-sm relative text-sm flex flex-row items-end gap-2',
+                              'w-fit max-w-[85%] sm:max-w-[70%] rounded-lg px-2.5 py-1.5 shadow-sm relative text-sm flex flex-wrap items-end gap-x-2 gap-y-1',
                               msg.direcao === 'enviada'
                                 ? 'bg-[#dcf8c6] rounded-tr-none self-end'
                                 : 'bg-white rounded-tl-none self-start',
                             )}
                           >
-                            <div className="whitespace-pre-wrap break-words flex-1 min-w-0 pb-0.5">
+                            <div className="whitespace-pre-wrap break-words min-w-0 pb-0.5">
                               {msg.texto}
                             </div>
                             <div className="flex items-center gap-1.5 shrink-0 ml-auto self-end">
                               {msg.respostaAssociada?.toLowerCase() === 'sim' && (
-                                <span className="flex items-center gap-0.5 text-[10px] bg-green-100/60 text-green-700 px-1 py-0.5 rounded font-medium border border-green-200/50">
-                                  <CheckCircle className="w-2.5 h-2.5" /> Sim
+                                <span className="flex items-center gap-1 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium border border-green-200">
+                                  <CircleCheckBig className="w-3 h-3" /> Interesse: Sim
                                 </span>
                               )}
                               {msg.respostaAssociada?.toLowerCase() === 'nao' && (
-                                <span className="flex items-center gap-0.5 text-[10px] bg-red-100/60 text-red-700 px-1 py-0.5 rounded font-medium border border-red-200/50">
-                                  <XCircle className="w-2.5 h-2.5" /> Não
+                                <span className="flex items-center gap-1 text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-medium border border-red-200">
+                                  <XCircle className="w-3 h-3" /> Interesse: Não
                                 </span>
                               )}
                               <span className="text-[10px] text-slate-500 font-medium leading-none">
