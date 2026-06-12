@@ -204,9 +204,9 @@ Deno.serve(async (req: Request) => {
           let candId = null
 
           if (selectedButtonId) {
-            const btnMatch = selectedButtonId.match(/^(sim|nao)_(.+)$/)
+            const btnMatch = selectedButtonId.match(/^(sim|nao)_(.+)$/i)
             if (btnMatch) {
-              respostaClassificada = btnMatch[1]
+              respostaClassificada = btnMatch[1].toLowerCase()
               candId = btnMatch[2]
             } else {
               const txt = selectedButtonId.toLowerCase().trim()
@@ -401,20 +401,7 @@ Deno.serve(async (req: Request) => {
                 }
               }
 
-              // Ação Automática fallback: if "sim", move candidate to next stage based on sequence
-              if (respostaClassificada === 'sim' && !moved && candInfo.etapa_id) {
-                const { data: etapas } = await supabase
-                  .from('etapas')
-                  .select('id')
-                  .eq('user_id', candInfo.user_id)
-                  .order('ordem', { ascending: true })
-                if (etapas) {
-                  const currentIndex = etapas.findIndex((e) => e.id === candInfo.etapa_id)
-                  if (currentIndex >= 0 && currentIndex + 1 < etapas.length) {
-                    updatePayload.etapa_id = etapas[currentIndex + 1].id
-                  }
-                }
-              }
+              // Removed auto-advance logic to keep candidate in the current stage when responding "sim"
             }
 
             if (Object.keys(updatePayload).length > 0) {

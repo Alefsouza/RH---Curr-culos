@@ -264,25 +264,27 @@ export default function WhatsappPage() {
                         <div className="flex flex-col">
                           <div
                             className={cn(
-                              'max-w-[70%] rounded-lg p-3 shadow-sm relative text-sm',
+                              'max-w-[85%] sm:max-w-[70%] rounded-lg px-2.5 py-1.5 shadow-sm relative text-sm flex flex-row items-end gap-2',
                               msg.direcao === 'enviada'
                                 ? 'bg-[#dcf8c6] rounded-tr-none self-end'
                                 : 'bg-white rounded-tl-none self-start',
                             )}
                           >
-                            <p className="whitespace-pre-wrap break-words">{msg.texto}</p>
-                            <div className="flex items-center justify-end gap-2 mt-1">
+                            <div className="whitespace-pre-wrap break-words flex-1 min-w-0 pb-0.5">
+                              {msg.texto}
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0 ml-auto self-end">
                               {msg.respostaAssociada?.toLowerCase() === 'sim' && (
-                                <span className="flex items-center gap-1 text-[10px] text-green-700 font-medium">
-                                  <CheckCircle className="w-3 h-3" /> Interesse: Sim
+                                <span className="flex items-center gap-0.5 text-[10px] bg-green-100/60 text-green-700 px-1 py-0.5 rounded font-medium border border-green-200/50">
+                                  <CheckCircle className="w-2.5 h-2.5" /> Sim
                                 </span>
                               )}
                               {msg.respostaAssociada?.toLowerCase() === 'nao' && (
-                                <span className="flex items-center gap-1 text-[10px] text-red-700 font-medium">
-                                  <XCircle className="w-3 h-3" /> Interesse: Não
+                                <span className="flex items-center gap-0.5 text-[10px] bg-red-100/60 text-red-700 px-1 py-0.5 rounded font-medium border border-red-200/50">
+                                  <XCircle className="w-2.5 h-2.5" /> Não
                                 </span>
                               )}
-                              <span className="text-[10px] text-slate-500">
+                              <span className="text-[10px] text-slate-500 font-medium leading-none">
                                 {format(new Date(msg.criado_em), 'HH:mm')}
                               </span>
                             </div>
