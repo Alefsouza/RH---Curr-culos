@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { getWhatsappDashboardData, WhatsappCandidate } from '@/services/whatsapp'
+import { fetchStages } from '@/services/kanban'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   MessageCircle,
   CheckCircle,
@@ -22,6 +24,8 @@ import { cn } from '@/lib/utils'
 
 export default function WhatsappPage() {
   const [data, setData] = useState<{ stats: any; candidates: WhatsappCandidate[] } | null>(null)
+  const [stages, setStages] = useState<{ id: string; name: string }[]>([])
+  const [activeStageId, setActiveStageId] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'todos' | 'sim' | 'nao'>('todos')
   const [search, setSearch] = useState('')
@@ -29,8 +33,18 @@ export default function WhatsappPage() {
 
   const loadData = async () => {
     try {
-      const dashboardData = await getWhatsappDashboardData()
+      const [dashboardData, stagesData] = await Promise.all([
+        getWhatsappDashboardData(),
+        fetchStages(),
+      ])
       setData(dashboardData)
+      setStages(stagesData)
+
+      setActiveStageId((prev) => {
+        if (!prev && stagesData.length > 0) return stagesData[0].id
+        return prev
+      })
+
       setSelectedCandidate((prev) => {
         if (!prev) return null
         return dashboardData.candidates.find((c) => c.id === prev.id) || null
@@ -88,6 +102,7 @@ export default function WhatsappPage() {
 
   const filteredCandidates =
     data?.candidates.filter((c) => {
+      if (activeStageId && c.etapaId !== activeStageId) return false
       const response = c.lastResponse?.toLowerCase()
       if (filter === 'sim' && response !== 'sim') return false
       if (filter === 'nao' && response !== 'nao') return false
@@ -106,6 +121,30 @@ export default function WhatsappPage() {
             </p>
           </div>
         </div>
+
+        {stages.length > 0 && (
+          <div className="w-full overflow-x-auto pb-2 mb-4 scrollbar-thin">
+            <Tabs
+              value={activeStageId}
+              onValueChange={(val) => {
+                setActiveStageId(val)
+                setSelectedCandidate(null)
+              }}
+            >
+              <TabsList className="h-10 bg-slate-100 p-1 inline-flex w-max min-w-full justify-start">
+                {stages.map((stage) => (
+                  <TabsTrigger
+                    key={stage.id}
+                    value={stage.id}
+                    className="text-sm font-medium px-4 data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm whitespace-nowrap"
+                  >
+                    {stage.name}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
           <Card className="shadow-sm border-slate-200">
@@ -179,8 +218,9 @@ export default function WhatsappPage() {
             <ScrollArea className="flex-1">
               <div className="divide-y divide-slate-100">
                 {filteredCandidates.length === 0 && (
-                  <div className="p-6 text-center text-slate-500 text-sm">
-                    Nenhum candidato encontrado.
+                  <div className="p-6 text-center text-slate-500 text-sm flex flex-col items-center">
+                    <MessageCircle className="h-8 w-8 mb-2 text-slate-300" />
+                    <p>Nenhuma conversa ativa nesta etapa.</p>
                   </div>
                 )}
                 {filteredCandidates.map((c) => (

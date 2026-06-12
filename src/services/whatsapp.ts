@@ -8,6 +8,7 @@ export interface WhatsappCandidate {
   lastMessageTime: string
   lastResponse: string | null
   isUnlinked?: boolean
+  etapaId: string | null
   conversations: {
     id: string
     texto: string
@@ -26,7 +27,7 @@ export async function getWhatsappDashboardData() {
   const { data: convData, error } = await supabase
     .from('mensagens_whatsapp')
     .select(
-      'id, candidato_id, conteudo, direcao, criado_em, uazapi_message_id, external_id, numero_whatsapp, candidatos(nome, telefone, user_id, ultima_resposta_whatsapp)',
+      'id, candidato_id, conteudo, direcao, criado_em, uazapi_message_id, external_id, numero_whatsapp, candidatos(nome, telefone, user_id, ultima_resposta_whatsapp, etapa_id)',
     )
     .eq('user_id', userId)
     .not('conteudo', 'is', null)
@@ -86,6 +87,7 @@ export async function getWhatsappDashboardData() {
           return (c.candidato_id ? responsesByCandidato[c.candidato_id] : null) || null
         })(),
         isUnlinked: !c.candidato_id,
+        etapaId: (c.candidatos as any)?.etapa_id || null,
         conversations: [],
       })
     }
