@@ -24,12 +24,15 @@ Deno.serve(async (req: Request) => {
 
   try {
     const bodyText = await req.text()
+    console.log('Raw Webhook Payload received:', bodyText)
+
     let body: any = {}
     if (bodyText) {
       try {
         body = JSON.parse(bodyText)
       } catch (e) {
-        console.error('Payload JSON inválido')
+        console.error('Payload JSON inválido', e)
+        body = { unparseable: true, raw_text: bodyText }
       }
     }
 
@@ -40,6 +43,14 @@ Deno.serve(async (req: Request) => {
     const supabase = createClient(supabaseUrl, supabaseKey)
 
     for (const event of events) {
+      if (event?.unparseable) {
+        await supabase.from('whatsapp_eventos_nao_identificados').insert({
+          payload_completo: { raw: event.raw_text },
+          conteudo: 'Payload JSON inválido',
+        })
+        continue
+      }
+
       let messageId = null
       let status = null
 
@@ -54,7 +65,24 @@ Deno.serve(async (req: Request) => {
         status = event.data.update?.status || event.status || event.data.status
       }
 
-      if (!messageId) continue
+      if (!messageId) {
+        console.log('Mensagem sem ID identificado, salvando no log:', JSON.stringify(event))
+
+        let possiblePhone =
+          event?.data?.key?.remoteJid || event?.sender || event?.data?.sender || ''
+        const phoneMatch = typeof possiblePhone === 'string' ? possiblePhone.match(/\d+/) : null
+        if (phoneMatch) {
+          const normalized = normalizePhone(phoneMatch[0])
+          if (normalized) possiblePhone = normalized
+        }
+
+        await supabase.from('whatsapp_eventos_nao_identificados').insert({
+          payload_completo: event,
+          conteudo: 'Formato não reconhecido - Sem Message ID',
+          telefone_recebido: possiblePhone || null,
+        })
+        continue
+      }
 
       let selectedButtonId = null
       let incomingText = null
