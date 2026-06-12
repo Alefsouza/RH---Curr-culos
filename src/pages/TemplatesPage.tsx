@@ -444,15 +444,6 @@ export default function TemplatesPage() {
                         </div>
                       </div>
 
-                      <div className="space-y-2 bg-slate-50/50 p-4 rounded-lg border border-slate-100">
-                        <Label>Rodapé (Footer)</Label>
-                        <Input
-                          placeholder="Ex: Escolha uma das opções abaixo"
-                          value={activeData.footer_text || ''}
-                          onChange={(e) => updateTemplate('footer_text', e.target.value)}
-                        />
-                      </div>
-
                       {(activeData.botao_sim_acao === 'mover' ||
                         activeData.botao_nao_acao === 'mover') && (
                         <div className="space-y-2 bg-blue-50/50 p-4 rounded-lg border border-blue-100">
@@ -476,6 +467,15 @@ export default function TemplatesPage() {
                           </Select>
                         </div>
                       )}
+
+                      <div className="space-y-2 bg-slate-50/50 p-4 rounded-lg border border-slate-100">
+                        <Label>Rodapé (Footer)</Label>
+                        <Input
+                          placeholder="Ex: Escolha uma das opções abaixo"
+                          value={activeData.footer_text || ''}
+                          onChange={(e) => updateTemplate('footer_text', e.target.value)}
+                        />
+                      </div>
                     </div>
                   )}
 

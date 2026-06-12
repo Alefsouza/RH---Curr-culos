@@ -33,7 +33,7 @@ export default function WhatsappPage() {
       setData(dashboardData)
       setSelectedCandidate((prev) => {
         if (!prev) return null
-        return dashboardData.candidates.find((c) => c.id === prev.id) || prev
+        return dashboardData.candidates.find((c) => c.id === prev.id) || null
       })
     } catch (err) {
       console.error(err)
