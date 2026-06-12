@@ -54,7 +54,10 @@ Deno.serve(async (req: Request) => {
       let messageId = null
       let status = null
 
-      if (event?.data?.id) {
+      if (event?.EventType === 'messages' && event?.message?.messageid) {
+        messageId = event.message.messageid
+        status = event.message.status
+      } else if (event?.data?.id) {
         messageId = event.data.id
         status = event.data.status
       } else if (event?.id) {
@@ -69,7 +72,14 @@ Deno.serve(async (req: Request) => {
         console.log('Mensagem sem ID identificado, salvando no log:', JSON.stringify(event))
 
         let possiblePhone =
-          event?.data?.key?.remoteJid || event?.sender || event?.data?.sender || ''
+          event?.message?.sender_pn ||
+          event?.data?.key?.remoteJid ||
+          event?.sender ||
+          event?.data?.sender ||
+          ''
+        if (typeof possiblePhone === 'string' && possiblePhone.includes('@')) {
+          possiblePhone = possiblePhone.split('@')[0]
+        }
         const phoneMatch = typeof possiblePhone === 'string' ? possiblePhone.match(/\d+/) : null
         if (phoneMatch) {
           const normalized = normalizePhone(phoneMatch[0])
@@ -87,9 +97,17 @@ Deno.serve(async (req: Request) => {
       let selectedButtonId = null
       let incomingText = null
       let isIncomingMessage = false
-      let remoteJid = event?.data?.key?.remoteJid || event?.sender || event?.data?.sender || ''
+      let remoteJid =
+        event?.message?.sender_pn ||
+        event?.data?.key?.remoteJid ||
+        event?.sender ||
+        event?.data?.sender ||
+        ''
+      if (typeof remoteJid === 'string' && remoteJid.includes('@')) {
+        remoteJid = remoteJid.split('@')[0]
+      }
 
-      let contextMsgId = null
+      let contextMsgId = event?.message?.quoted || null
 
       const msg = event?.data?.message
       if (msg) {
@@ -155,6 +173,20 @@ Deno.serve(async (req: Request) => {
           isIncomingMessage = true
         } else if (msg.extendedTextMessage?.text) {
           incomingText = msg.extendedTextMessage.text
+          isIncomingMessage = true
+        }
+      } else if (event?.EventType === 'messages' && event?.message) {
+        const uazapiMsg = event.message
+        if (
+          uazapiMsg.messageType === 'TemplateButtonReplyMessage' ||
+          uazapiMsg.buttonOrListid ||
+          uazapiMsg.vote
+        ) {
+          selectedButtonId = uazapiMsg.buttonOrListid || uazapiMsg.vote
+          incomingText = uazapiMsg.vote || uazapiMsg.buttonOrListid
+          isIncomingMessage = true
+        } else if (uazapiMsg.text) {
+          incomingText = uazapiMsg.text
           isIncomingMessage = true
         }
       }
@@ -316,15 +348,39 @@ Deno.serve(async (req: Request) => {
               ultima_resposta_em: new Date().toISOString(),
             }
 
-            if (candInfo && candInfo.etapa_id && respostaClassificada) {
+            let resolvedTemplateId = null
+            if (contextMsgId) {
+              const { data: origMsg } = await supabase
+                .from('mensagens_whatsapp')
+                .select('template_id')
+                .or(`uazapi_message_id.eq.${contextMsgId},external_id.eq.${contextMsgId}`)
+                .limit(1)
+                .maybeSingle()
+              if (origMsg?.template_id) {
+                resolvedTemplateId = origMsg.template_id
+              }
+            }
+
+            if (candInfo && respostaClassificada) {
               let moved = false
 
-              const { data: tpl } = await supabase
-                .from('templates_mensagens')
-                .select('*')
-                .eq('etapa_id', candInfo.etapa_id)
-                .eq('tipo', 'chatbot_interativo')
-                .maybeSingle()
+              let tpl = null
+              if (resolvedTemplateId) {
+                const { data: foundTpl } = await supabase
+                  .from('templates_mensagens')
+                  .select('*')
+                  .eq('id', resolvedTemplateId)
+                  .maybeSingle()
+                tpl = foundTpl
+              } else if (candInfo.etapa_id) {
+                const { data: foundTpl } = await supabase
+                  .from('templates_mensagens')
+                  .select('*')
+                  .eq('etapa_id', candInfo.etapa_id)
+                  .eq('tipo', 'chatbot_interativo')
+                  .maybeSingle()
+                tpl = foundTpl
+              }
 
               if (tpl) {
                 const acao =
@@ -336,11 +392,17 @@ Deno.serve(async (req: Request) => {
                 } else if (acao === 'mover' && tpl.etapa_destino_id) {
                   updatePayload.etapa_id = tpl.etapa_destino_id
                   moved = true
+
+                  await supabase.from('candidato_etapa').insert({
+                    candidato_id: candId,
+                    etapa_id: tpl.etapa_destino_id,
+                    usuario_id: finalUserId,
+                  })
                 }
               }
 
               // Ação Automática fallback: if "sim", move candidate to next stage based on sequence
-              if (respostaClassificada === 'sim' && !moved) {
+              if (respostaClassificada === 'sim' && !moved && candInfo.etapa_id) {
                 const { data: etapas } = await supabase
                   .from('etapas')
                   .select('id')
