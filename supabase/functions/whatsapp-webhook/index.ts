@@ -362,45 +362,10 @@ Deno.serve(async (req: Request) => {
             }
 
             if (candInfo && respostaClassificada) {
-              let moved = false
-
-              let tpl = null
-              if (resolvedTemplateId) {
-                const { data: foundTpl } = await supabase
-                  .from('templates_mensagens')
-                  .select('*')
-                  .eq('id', resolvedTemplateId)
-                  .maybeSingle()
-                tpl = foundTpl
-              } else if (candInfo.etapa_id) {
-                const { data: foundTpl } = await supabase
-                  .from('templates_mensagens')
-                  .select('*')
-                  .eq('etapa_id', candInfo.etapa_id)
-                  .eq('tipo', 'chatbot_interativo')
-                  .maybeSingle()
-                tpl = foundTpl
+              if (respostaClassificada === 'nao') {
+                updatePayload.ativo_kanban = false
+                updatePayload.motivo_inativo = "Candidato respondeu 'Não' via WhatsApp"
               }
-
-              if (tpl) {
-                const acao =
-                  respostaClassificada === 'sim' ? tpl.botao_sim_acao : tpl.botao_nao_acao
-                if (acao === 'remover') {
-                  updatePayload.ativo_kanban = false
-                  updatePayload.motivo_inativo = 'Recusou via WhatsApp'
-                  moved = true
-                } else if (acao === 'mover' && tpl.etapa_destino_id) {
-                  updatePayload.etapa_id = tpl.etapa_destino_id
-                  moved = true
-
-                  await supabase.from('candidato_etapa').insert({
-                    candidato_id: candId,
-                    etapa_id: tpl.etapa_destino_id,
-                    usuario_id: finalUserId,
-                  })
-                }
-              }
-
               // Removed auto-advance logic to keep candidate in the current stage when responding "sim"
             }
 
