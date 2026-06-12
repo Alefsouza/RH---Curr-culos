@@ -74,7 +74,7 @@ export default function TemplatesPage() {
     botao_sim_texto: 'Sim',
     botao_sim_acao: 'manter',
     botao_nao_texto: 'Não',
-    botao_nao_acao: 'manter',
+    botao_nao_acao: 'remover',
     etapa_destino_id: null,
     footer_text: 'Escolha uma das opções abaixo',
   }
@@ -97,7 +97,7 @@ export default function TemplatesPage() {
               botao_sim_texto: e.template.botao_sim_texto || 'Sim',
               botao_sim_acao: e.template.botao_sim_acao || 'manter',
               botao_nao_texto: e.template.botao_nao_texto || 'Não',
-              botao_nao_acao: e.template.botao_nao_acao || 'manter',
+              botao_nao_acao: e.template.botao_nao_acao || 'remover',
               etapa_destino_id: e.template.etapa_destino_id || null,
               footer_text: e.template.footer_text || 'Escolha uma das opções abaixo',
             }
@@ -417,15 +417,6 @@ export default function TemplatesPage() {
                         </div>
                       </div>
 
-                      <div className="space-y-2 bg-slate-50/50 p-4 rounded-lg border border-slate-100">
-                        <Label>Rodapé (Footer)</Label>
-                        <Input
-                          placeholder="Ex: Escolha uma das opções abaixo"
-                          value={activeData.footer_text || ''}
-                          onChange={(e) => updateTemplate('footer_text', e.target.value)}
-                        />
-                      </div>
-
                       <div className="grid grid-cols-2 gap-4 bg-red-50/50 p-4 rounded-lg border border-red-100">
                         <div className="space-y-2">
                           <Label className="text-red-700">Botão Negativo (Texto)</Label>
@@ -445,12 +436,21 @@ export default function TemplatesPage() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
+                              <SelectItem value="remover">Remover do Kanban</SelectItem>
                               <SelectItem value="manter">Manter na Etapa</SelectItem>
                               <SelectItem value="mover">Mover para Etapa</SelectItem>
-                              <SelectItem value="remover">Remover do Kanban</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
+                      </div>
+
+                      <div className="space-y-2 bg-slate-50/50 p-4 rounded-lg border border-slate-100">
+                        <Label>Rodapé (Footer)</Label>
+                        <Input
+                          placeholder="Ex: Escolha uma das opções abaixo"
+                          value={activeData.footer_text || ''}
+                          onChange={(e) => updateTemplate('footer_text', e.target.value)}
+                        />
                       </div>
 
                       {(activeData.botao_sim_acao === 'mover' ||

@@ -349,6 +349,7 @@ Deno.serve(async (req: Request) => {
             }
 
             let resolvedTemplateId = null
+            let templateData = null
             if (contextMsgId) {
               const { data: origMsg } = await supabase
                 .from('mensagens_whatsapp')
@@ -358,15 +359,42 @@ Deno.serve(async (req: Request) => {
                 .maybeSingle()
               if (origMsg?.template_id) {
                 resolvedTemplateId = origMsg.template_id
+                const { data: tData } = await supabase
+                  .from('templates_mensagens')
+                  .select('*')
+                  .eq('id', resolvedTemplateId)
+                  .maybeSingle()
+                if (tData) {
+                  templateData = tData
+                }
               }
             }
 
             if (candInfo && respostaClassificada) {
-              if (respostaClassificada === 'nao') {
-                updatePayload.ativo_kanban = false
-                updatePayload.motivo_inativo = "Candidato respondeu 'Não' via WhatsApp"
+              let acao = 'manter'
+              let etapaDestino = null
+
+              if (templateData) {
+                if (respostaClassificada === 'sim') {
+                  acao = templateData.botao_sim_acao || 'manter'
+                  etapaDestino = templateData.etapa_destino_id
+                } else if (respostaClassificada === 'nao') {
+                  acao = templateData.botao_nao_acao || 'remover'
+                  etapaDestino = templateData.etapa_destino_id
+                }
+              } else {
+                // Default fallback se não tiver template configurado
+                if (respostaClassificada === 'nao') {
+                  acao = 'remover'
+                }
               }
-              // Removed auto-advance logic to keep candidate in the current stage when responding "sim"
+
+              if (acao === 'remover') {
+                updatePayload.ativo_kanban = false
+                updatePayload.motivo_inativo = `Candidato respondeu '${respostaClassificada === 'nao' ? 'Não' : 'Sim'}' via WhatsApp`
+              } else if (acao === 'mover' && etapaDestino) {
+                updatePayload.etapa_id = etapaDestino
+              }
             }
 
             if (Object.keys(updatePayload).length > 0) {
