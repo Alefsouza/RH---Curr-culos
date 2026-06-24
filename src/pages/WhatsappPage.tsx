@@ -23,9 +23,13 @@ import { supabase } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 
 export default function WhatsappPage() {
-  const [data, setData] = useState<{ stats: any; candidates: WhatsappCandidate[] } | null>(null)
+  const [data, setData] = useState<{
+    stats: { sent: number; yes: number; no: number }
+    statsByStage: Record<string, { sent: number; yes: number; no: number }>
+    candidates: WhatsappCandidate[]
+  } | null>(null)
   const [stages, setStages] = useState<{ id: string; name: string }[]>([])
-  const [activeStageId, setActiveStageId] = useState<string>('')
+  const [activeStageId, setActiveStageId] = useState<string>('todos')
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'todos' | 'sim' | 'nao'>('todos')
   const [search, setSearch] = useState('')
@@ -41,7 +45,7 @@ export default function WhatsappPage() {
       setStages(stagesData)
 
       setActiveStageId((prev) => {
-        if (!prev && stagesData.length > 0) return stagesData[0].id
+        if (!prev) return 'todos'
         return prev
       })
 
@@ -102,7 +106,7 @@ export default function WhatsappPage() {
 
   const filteredCandidates =
     data?.candidates.filter((c) => {
-      if (activeStageId && c.etapaId !== activeStageId) return false
+      if (activeStageId !== 'todos' && c.etapaId !== activeStageId) return false
       const response = c.lastResponse?.toLowerCase()
       if (filter === 'sim' && response !== 'sim') return false
       if (filter === 'nao' && response !== 'nao') return false
@@ -122,29 +126,33 @@ export default function WhatsappPage() {
           </div>
         </div>
 
-        {stages.length > 0 && (
-          <div className="w-full overflow-x-auto pb-2 mb-4 scrollbar-thin">
-            <Tabs
-              value={activeStageId}
-              onValueChange={(val) => {
-                setActiveStageId(val)
-                setSelectedCandidate(null)
-              }}
-            >
-              <TabsList className="h-10 bg-slate-100 p-1 inline-flex w-max min-w-full justify-start">
-                {stages.map((stage) => (
-                  <TabsTrigger
-                    key={stage.id}
-                    value={stage.id}
-                    className="text-sm font-medium px-4 data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm whitespace-nowrap"
-                  >
-                    {stage.name}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-          </div>
-        )}
+        <div className="w-full overflow-x-auto pb-2 mb-4 scrollbar-thin">
+          <Tabs
+            value={activeStageId}
+            onValueChange={(val) => {
+              setActiveStageId(val)
+              setSelectedCandidate(null)
+            }}
+          >
+            <TabsList className="h-10 bg-slate-100 p-1 inline-flex w-max min-w-full justify-start">
+              <TabsTrigger
+                value="todos"
+                className="text-sm font-medium px-4 data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm whitespace-nowrap"
+              >
+                Todos
+              </TabsTrigger>
+              {stages.map((stage) => (
+                <TabsTrigger
+                  key={stage.id}
+                  value={stage.id}
+                  className="text-sm font-medium px-4 data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm whitespace-nowrap"
+                >
+                  {stage.name}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
           <Card className="shadow-sm border-slate-200">
@@ -153,7 +161,11 @@ export default function WhatsappPage() {
               <MessageCircle className="h-4 w-4 text-blue-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-slate-800">{data?.stats.sent}</div>
+              <div className="text-2xl font-bold text-slate-800">
+                {activeStageId === 'todos'
+                  ? data?.stats.sent || 0
+                  : data?.statsByStage[activeStageId]?.sent || 0}
+              </div>
             </CardContent>
           </Card>
           <Card className="shadow-sm border-slate-200">
@@ -162,7 +174,11 @@ export default function WhatsappPage() {
               <CheckCircle className="h-4 w-4 text-green-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-slate-800">{data?.stats.yes}</div>
+              <div className="text-2xl font-bold text-slate-800">
+                {activeStageId === 'todos'
+                  ? data?.stats.yes || 0
+                  : data?.statsByStage[activeStageId]?.yes || 0}
+              </div>
             </CardContent>
           </Card>
           <Card className="shadow-sm border-slate-200">
@@ -171,7 +187,11 @@ export default function WhatsappPage() {
               <XCircle className="h-4 w-4 text-red-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-slate-800">{data?.stats.no}</div>
+              <div className="text-2xl font-bold text-slate-800">
+                {activeStageId === 'todos'
+                  ? data?.stats.no || 0
+                  : data?.statsByStage[activeStageId]?.no || 0}
+              </div>
             </CardContent>
           </Card>
         </div>

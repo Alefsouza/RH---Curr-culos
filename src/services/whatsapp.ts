@@ -24,46 +24,77 @@ export async function getWhatsappDashboardData() {
 
   const userId = userData.user.id
 
-  const { data: convData, error } = await supabase
-    .from('mensagens_whatsapp')
-    .select(
-      'id, candidato_id, conteudo, direcao, criado_em, uazapi_message_id, external_id, numero_whatsapp, candidatos(nome, telefone, user_id, ultima_resposta_whatsapp, etapa_id)',
-    )
-    .eq('user_id', userId)
-    .not('conteudo', 'is', null)
-    .neq('conteudo', '')
-    .order('criado_em', { ascending: true })
+  const [
+    { data: convData, error: convError },
+    { data: resData, error: resError },
+    { data: candsData, error: candsError },
+  ] = await Promise.all([
+    supabase
+      .from('mensagens_whatsapp')
+      .select(
+        'id, candidato_id, conteudo, direcao, criado_em, uazapi_message_id, external_id, numero_whatsapp, candidatos(nome, telefone, user_id, ultima_resposta_whatsapp, etapa_id)',
+      )
+      .eq('user_id', userId)
+      .not('conteudo', 'is', null)
+      .neq('conteudo', '')
+      .order('criado_em', { ascending: true }),
+    supabase
+      .from('respostas_whatsapp')
+      .select('candidato_id, resposta, mensagem_id, candidatos!inner(user_id)')
+      .eq('candidatos.user_id', userId)
+      .order('criado_em', { ascending: true }),
+    supabase.from('candidatos').select('id, etapa_id').eq('user_id', userId),
+  ])
 
-  if (error) throw error
-
-  const { data: resData, error: resError } = await supabase
-    .from('respostas_whatsapp')
-    .select('candidato_id, resposta, mensagem_id')
-    .order('criado_em', { ascending: true })
+  if (convError) throw convError
 
   if (resError) {
     console.warn('Aviso: Falha ao buscar respostas (ignorado)', resError)
   }
 
-  let sentCount = 0
+  const candidatoEtapaMap: Record<string, string | null> = {}
+  if (candsData) {
+    candsData.forEach((c) => {
+      candidatoEtapaMap[c.id] = c.etapa_id
+    })
+  }
+
+  const statsByStage: Record<string, { sent: number; yes: number; no: number }> = {}
+  const allStats = { sent: 0, yes: 0, no: 0 }
+
   convData?.forEach((c) => {
     if (c.direcao === 'enviada') {
-      sentCount++
+      allStats.sent++
+      const etapaId = c.candidato_id ? candidatoEtapaMap[c.candidato_id] : null
+      if (etapaId) {
+        if (!statsByStage[etapaId]) statsByStage[etapaId] = { sent: 0, yes: 0, no: 0 }
+        statsByStage[etapaId].sent++
+      }
     }
   })
-
-  const totalSim = resData?.filter((r) => r.resposta?.toLowerCase() === 'sim').length || 0
-  const totalNao = resData?.filter((r) => r.resposta?.toLowerCase() === 'nao').length || 0
 
   const responsesByCandidato: Record<string, string> = {}
   const responsesByMessage: Record<string, string> = {}
 
   resData?.forEach((r) => {
     if (r.resposta) {
-      responsesByCandidato[r.candidato_id] = r.resposta.toLowerCase()
-    }
-    if (r.mensagem_id && r.resposta) {
-      responsesByMessage[r.mensagem_id] = r.resposta.toLowerCase()
+      const respLower = r.resposta.toLowerCase()
+      if (r.candidato_id) {
+        responsesByCandidato[r.candidato_id] = respLower
+      }
+      if (r.mensagem_id) {
+        responsesByMessage[r.mensagem_id] = respLower
+      }
+
+      if (respLower === 'sim') allStats.yes++
+      if (respLower === 'nao') allStats.no++
+
+      const etapaId = r.candidato_id ? candidatoEtapaMap[r.candidato_id] : null
+      if (etapaId) {
+        if (!statsByStage[etapaId]) statsByStage[etapaId] = { sent: 0, yes: 0, no: 0 }
+        if (respLower === 'sim') statsByStage[etapaId].yes++
+        if (respLower === 'nao') statsByStage[etapaId].no++
+      }
     }
   })
 
@@ -140,7 +171,8 @@ export async function getWhatsappDashboardData() {
   )
 
   return {
-    stats: { sent: sentCount || 0, yes: totalSim, no: totalNao },
+    stats: allStats,
+    statsByStage,
     candidates,
   }
 }
