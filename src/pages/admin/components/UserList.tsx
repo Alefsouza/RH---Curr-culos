@@ -12,6 +12,7 @@ import {
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Shield, ShieldCheck, MoreVertical, Pencil, KeyRound, Trash2 } from 'lucide-react'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
+import { supabase } from '@/lib/supabase/client'
 
 interface Props {
   users: SystemUser[]
@@ -30,6 +32,21 @@ interface Props {
 }
 
 export function UserList({ users, onEdit, onDelete, onReset, currentUserId }: Props) {
+  const getAvatarUrl = (url: string | null | undefined) => {
+    if (!url) return ''
+    if (url.startsWith('http') || url.startsWith('data:')) return url
+    const { data } = supabase.storage.from('avatars').getPublicUrl(url)
+    return data.publicUrl
+  }
+
+  const getInitials = (name: string | null) => {
+    if (!name) return '??'
+    const parts = name.trim().split(/\s+/)
+    if (parts.length >= 2) return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+    if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase()
+    return '??'
+  }
+
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return 'Nunca'
     return format(new Date(dateStr), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })
@@ -71,16 +88,26 @@ export function UserList({ users, onEdit, onDelete, onReset, currentUserId }: Pr
           <Card key={user.id} className="overflow-hidden">
             <CardContent className="p-4">
               <div className="flex justify-between items-start mb-2">
-                <div className="space-y-1">
-                  <h4 className="font-medium flex items-center gap-2">
-                    {user.nome}
-                    {user.is_admin && (
-                      <Badge variant="secondary" className="h-5 px-1.5">
-                        <ShieldCheck className="h-3 w-3 mr-1 text-primary" /> Admin
-                      </Badge>
-                    )}
-                  </h4>
-                  <p className="text-sm text-muted-foreground">{user.email}</p>
+                <div className="flex items-center gap-3">
+                  <Avatar>
+                    <AvatarImage
+                      src={getAvatarUrl(user.avatar_url)}
+                      alt={user.nome || 'Avatar'}
+                      className="object-cover aspect-square h-full w-full"
+                    />
+                    <AvatarFallback>{getInitials(user.nome)}</AvatarFallback>
+                  </Avatar>
+                  <div className="space-y-1">
+                    <h4 className="font-medium flex items-center gap-2">
+                      {user.nome}
+                      {user.is_admin && (
+                        <Badge variant="secondary" className="h-5 px-1.5">
+                          <ShieldCheck className="h-3 w-3 mr-1 text-primary" /> Admin
+                        </Badge>
+                      )}
+                    </h4>
+                    <p className="text-sm text-muted-foreground">{user.email}</p>
+                  </div>
                 </div>
                 <Actions user={user} />
               </div>
@@ -113,8 +140,20 @@ export function UserList({ users, onEdit, onDelete, onReset, currentUserId }: Pr
             {users.map((user) => (
               <TableRow key={user.id}>
                 <TableCell>
-                  <div className="font-medium">{user.nome}</div>
-                  <div className="text-sm text-muted-foreground">{user.email}</div>
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-9 w-9">
+                      <AvatarImage
+                        src={getAvatarUrl(user.avatar_url)}
+                        alt={user.nome || 'Avatar'}
+                        className="object-cover aspect-square h-full w-full"
+                      />
+                      <AvatarFallback>{getInitials(user.nome)}</AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <div className="font-medium">{user.nome}</div>
+                      <div className="text-sm text-muted-foreground">{user.email}</div>
+                    </div>
+                  </div>
                 </TableCell>
                 <TableCell>
                   {user.is_admin ? (

@@ -4,19 +4,26 @@ export async function getEtapasComTemplates() {
   const { data: userData } = await supabase.auth.getUser()
   if (!userData.user) throw new Error('Não autenticado')
 
-  const { data: etapas, error: etapasError } = await supabase
-    .from('etapas')
-    .select('*')
-    .eq('user_id', userData.user.id)
-    .order('ordem')
+  const { data: userProfile } = await supabase
+    .from('usuarios')
+    .select('is_admin')
+    .eq('id', userData.user.id)
+    .single()
 
+  const isAdmin = userProfile?.is_admin || false
+
+  let etapasQuery = supabase.from('etapas').select('*').order('ordem')
+  let templatesQuery = supabase.from('templates_mensagens').select('*')
+
+  if (!isAdmin) {
+    etapasQuery = etapasQuery.eq('user_id', userData.user.id)
+    templatesQuery = templatesQuery.eq('user_id', userData.user.id)
+  }
+
+  const { data: etapas, error: etapasError } = await etapasQuery
   if (etapasError) throw etapasError
 
-  const { data: templates, error: templatesError } = await supabase
-    .from('templates_mensagens')
-    .select('*')
-    .eq('user_id', userData.user.id)
-
+  const { data: templates, error: templatesError } = await templatesQuery
   if (templatesError) throw templatesError
 
   return (etapas || []).map((etapa) => ({
@@ -65,7 +72,15 @@ export async function getMessageHistory() {
   if (!userData.user) throw new Error('Não autenticado')
 
   try {
-    const { data, error } = await supabase
+    const { data: userProfile } = await supabase
+      .from('usuarios')
+      .select('is_admin')
+      .eq('id', userData.user.id)
+      .single()
+
+    const isAdmin = userProfile?.is_admin || false
+
+    let query = supabase
       .from('mensagens_whatsapp')
       .select(`
         id,
@@ -74,9 +89,14 @@ export async function getMessageHistory() {
         candidatos (nome, telefone),
         etapas (nome)
       `)
-      .eq('user_id', userData.user.id)
       .order('criado_em', { ascending: false })
       .limit(50)
+
+    if (!isAdmin) {
+      query = query.eq('user_id', userData.user.id)
+    }
+
+    const { data, error } = await query
 
     if (error) {
       console.warn('Erro ao buscar histórico de mensagens:', error)

@@ -16,19 +16,27 @@ export interface VagaComEstatisticas extends Vaga {
 
 export const vagasService = {
   async getVagasComEstatisticas(userId: string): Promise<VagaComEstatisticas[]> {
-    const { data: vagas, error: vagasError } = await supabase
-      .from('vagas')
-      .select('*')
-      .eq('user_id', userId)
-      .order('criado_em', { ascending: false })
+    const { data: userProfile } = await supabase
+      .from('usuarios')
+      .select('is_admin')
+      .eq('id', userId)
+      .single()
 
+    const isAdmin = userProfile?.is_admin || false
+
+    let vagasQuery = supabase.from('vagas').select('*').order('criado_em', { ascending: false })
+
+    let analisesQuery = supabase.from('analises').select('vaga_id, resultado')
+
+    if (!isAdmin) {
+      vagasQuery = vagasQuery.eq('user_id', userId)
+      analisesQuery = analisesQuery.eq('user_id', userId)
+    }
+
+    const { data: vagas, error: vagasError } = await vagasQuery
     if (vagasError) throw vagasError
 
-    const { data: analises, error: analisesError } = await supabase
-      .from('analises')
-      .select('vaga_id, resultado')
-      .eq('user_id', userId)
-
+    const { data: analises, error: analisesError } = await analisesQuery
     if (analisesError) throw analisesError
 
     return vagas.map((vaga) => {

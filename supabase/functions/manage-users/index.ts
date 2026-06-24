@@ -1,6 +1,12 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'jsr:@supabase/supabase-js@2'
-import { corsHeaders } from '../_shared/cors.ts'
+
+export const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, x-supabase-client-platform, apikey, content-type',
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -45,7 +51,9 @@ Deno.serve(async (req: Request) => {
       const { data: usersData, error: listError } = await supabaseAdmin.auth.admin.listUsers()
       if (listError) throw listError
 
-      const { data: profiles } = await supabaseAdmin.from('usuarios').select('id, nome, is_admin')
+      const { data: profiles } = await supabaseAdmin
+        .from('usuarios')
+        .select('id, nome, is_admin, avatar_url')
 
       const users = usersData.users.map((u) => {
         const p = profiles?.find((pr) => pr.id === u.id)
@@ -54,6 +62,7 @@ Deno.serve(async (req: Request) => {
           email: u.email,
           nome: p?.nome || u.user_metadata?.name || 'Sem nome',
           is_admin: p?.is_admin || false,
+          avatar_url: p?.avatar_url || null,
           last_sign_in_at: u.last_sign_in_at,
           created_at: u.created_at,
         }

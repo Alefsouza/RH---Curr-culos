@@ -7,6 +7,7 @@ export type SystemUser = {
   is_admin: boolean
   last_sign_in_at: string | null
   created_at: string
+  avatar_url: string | null
 }
 
 export const usersService = {
