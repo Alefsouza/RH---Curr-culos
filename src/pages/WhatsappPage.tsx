@@ -85,6 +85,10 @@ export default function WhatsappPage() {
       if (error) throw error
       if (data && data.success === false) throw new Error(data.message || 'Falha no envio')
       setMessageInput('')
+      toast({
+        title: 'Mensagem enviada',
+        description: 'A mensagem foi enviada com sucesso.',
+      })
     } catch {
       toast({
         title: 'Erro ao enviar mensagem',
@@ -155,7 +159,7 @@ export default function WhatsappPage() {
     }) || []
 
   return (
-    <div className="flex flex-col h-full bg-slate-50/50">
+    <div className="flex flex-col h-full overflow-hidden bg-slate-50/50">
       <div className={cn('p-6 pb-0 flex-shrink-0', isMobile && selectedCandidate && 'hidden')}>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 sm:mb-6 gap-4">
           <div>
@@ -237,10 +241,10 @@ export default function WhatsappPage() {
         </div>
       </div>
 
-      <div className={cn('flex-1 overflow-hidden pt-0', isMobile ? 'px-0' : 'p-6')}>
+      <div className={cn('flex-1 overflow-hidden pt-0 min-h-0 flex', isMobile ? 'px-0' : 'p-6')}>
         <Card
           className={cn(
-            'h-full flex overflow-hidden border-slate-200 shadow-sm',
+            'flex-1 min-h-0 flex overflow-hidden border-slate-200 shadow-sm',
             isMobile && 'border-0 rounded-none shadow-none',
           )}
         >
@@ -248,7 +252,7 @@ export default function WhatsappPage() {
           {(!isMobile || !selectedCandidate) && (
             <div
               className={cn(
-                'border-r border-slate-200 bg-white flex flex-col',
+                'border-r border-slate-200 bg-white flex flex-col min-h-0',
                 isMobile ? 'w-full' : 'w-[350px]',
               )}
             >
@@ -286,7 +290,7 @@ export default function WhatsappPage() {
                   </Badge>
                 </div>
               </div>
-              <ScrollArea className="flex-1">
+              <ScrollArea className="flex-1 min-h-0">
                 <div className="divide-y divide-slate-100">
                   {filteredCandidates.length === 0 && (
                     <div className="p-6 text-center text-slate-500 text-sm flex flex-col items-center">
@@ -336,7 +340,7 @@ export default function WhatsappPage() {
           {(!isMobile || selectedCandidate) && (
             <div
               className={cn(
-                'bg-[#e5ddd5] flex flex-col relative',
+                'bg-[#e5ddd5] flex flex-col relative min-h-0',
                 isMobile ? 'w-full flex-1' : 'flex-1',
               )}
             >
@@ -406,7 +410,7 @@ export default function WhatsappPage() {
                       </div>
                     </div>
                   </div>
-                  <ScrollArea className="flex-1 p-6">
+                  <ScrollArea className="flex-1 p-6 min-h-0">
                     <div className="space-y-4 max-w-3xl mx-auto pb-4">
                       {selectedCandidate.conversations.map((msg) => (
                         <div
