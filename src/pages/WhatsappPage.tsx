@@ -101,8 +101,11 @@ export default function WhatsappPage() {
   }
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [selectedCandidate?.conversations.length])
+    const timer = setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    }, 50)
+    return () => clearTimeout(timer)
+  }, [selectedCandidate?.id, selectedCandidate?.conversations.length])
 
   useEffect(() => {
     loadData()
@@ -159,7 +162,7 @@ export default function WhatsappPage() {
     }) || []
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-slate-50/50">
+    <div className="flex flex-col h-full overflow-hidden bg-slate-50/50 min-h-0">
       <div className={cn('p-6 pb-0 flex-shrink-0', isMobile && selectedCandidate && 'hidden')}>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 sm:mb-6 gap-4">
           <div>
@@ -241,7 +244,9 @@ export default function WhatsappPage() {
         </div>
       </div>
 
-      <div className={cn('flex-1 overflow-hidden pt-0 min-h-0 flex', isMobile ? 'px-0' : 'p-6')}>
+      <div
+        className={cn('flex-1 overflow-hidden pt-0 min-h-0 flex', isMobile ? 'px-0' : 'px-6 pb-6')}
+      >
         <Card
           className={cn(
             'flex-1 min-h-0 flex overflow-hidden border-slate-200 shadow-sm',
