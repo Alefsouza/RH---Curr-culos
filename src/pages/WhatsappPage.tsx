@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { getWhatsappDashboardData, WhatsappCandidate } from '@/services/whatsapp'
 import { fetchStages } from '@/services/kanban'
@@ -14,7 +14,11 @@ import {
   Clock,
   AlertCircle,
   ArrowLeft,
+  Send,
+  Loader2,
 } from 'lucide-react'
+import { toast } from '@/hooks/use-toast'
+import { sendDirectMessage } from '@/services/whatsapp'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
@@ -37,6 +41,9 @@ export default function WhatsappPage() {
   const [filter, setFilter] = useState<'todos' | 'sim' | 'nao'>('todos')
   const [search, setSearch] = useState('')
   const [selectedCandidate, setSelectedCandidate] = useState<WhatsappCandidate | null>(null)
+  const [messageInput, setMessageInput] = useState('')
+  const [sending, setSending] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const isMobile = useIsMobile()
 
@@ -64,6 +71,34 @@ export default function WhatsappPage() {
       setLoading(false)
     }
   }
+
+  const handleSendMessage = async () => {
+    const trimmed = messageInput.trim()
+    if (!trimmed || !selectedCandidate || sending) return
+    setSending(true)
+    try {
+      const { data, error } = await sendDirectMessage({
+        candidato_id: selectedCandidate.isUnlinked ? null : selectedCandidate.id,
+        telefone: selectedCandidate.telefone,
+        mensagem: trimmed,
+      })
+      if (error) throw error
+      if (data && data.success === false) throw new Error(data.message || 'Falha no envio')
+      setMessageInput('')
+    } catch {
+      toast({
+        title: 'Erro ao enviar mensagem',
+        description: 'Não foi possível enviar a mensagem. Tente novamente.',
+        variant: 'destructive',
+      })
+    } finally {
+      setSending(false)
+    }
+  }
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [selectedCandidate?.conversations.length])
 
   useEffect(() => {
     loadData()
@@ -413,7 +448,36 @@ export default function WhatsappPage() {
                         </div>
                       ))}
                     </div>
+                    <div ref={messagesEndRef} />
                   </ScrollArea>
+                  <div className="flex items-end gap-2 p-3 bg-[#f0f2f5] border-t border-slate-200">
+                    <textarea
+                      value={messageInput}
+                      onChange={(e) => setMessageInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault()
+                          handleSendMessage()
+                        }
+                      }}
+                      placeholder="Digite uma mensagem..."
+                      rows={1}
+                      disabled={sending}
+                      className="flex-1 resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#075e54] focus:border-transparent max-h-32 min-h-[40px] disabled:opacity-50"
+                    />
+                    <Button
+                      size="icon"
+                      onClick={handleSendMessage}
+                      disabled={!messageInput.trim() || sending}
+                      className="bg-[#075e54] hover:bg-[#075e54]/90 rounded-full shrink-0 h-10 w-10"
+                    >
+                      {sending ? (
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                      ) : (
+                        <Send className="h-5 w-5" />
+                      )}
+                    </Button>
+                  </div>
                 </>
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center text-slate-500 bg-[#f0f2f5] p-4 text-center">

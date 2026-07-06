@@ -190,3 +190,14 @@ export async function getWhatsappDashboardData() {
     candidates,
   }
 }
+
+export async function sendDirectMessage(params: {
+  candidato_id: string | null
+  telefone: string
+  mensagem: string
+}) {
+  const { data, error } = await supabase.functions.invoke('enviar-mensagem-direta', {
+    body: params,
+  })
+  return { data, error }
+}
