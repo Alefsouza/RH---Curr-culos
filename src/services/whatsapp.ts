@@ -201,3 +201,47 @@ export async function sendDirectMessage(params: {
   })
   return { data, error }
 }
+
+export async function deleteConversation(params: {
+  candidato_id: string | null
+  numero_whatsapp?: string | null
+}) {
+  let msgQuery = supabase.from('mensagens_whatsapp').select('id, uazapi_message_id, external_id')
+
+  if (params.candidato_id) {
+    msgQuery = msgQuery.eq('candidato_id', params.candidato_id)
+  } else if (params.numero_whatsapp) {
+    msgQuery = msgQuery.eq('numero_whatsapp', params.numero_whatsapp)
+  } else {
+    throw new Error('Nenhum identificador fornecido')
+  }
+
+  const { data: messages, error: msgError } = await msgQuery
+  if (msgError) throw msgError
+
+  const messageIds: string[] = []
+  messages?.forEach((m) => {
+    if (m.id) messageIds.push(m.id)
+    if (m.uazapi_message_id) messageIds.push(m.uazapi_message_id)
+    if (m.external_id) messageIds.push(m.external_id)
+  })
+
+  if (messageIds.length > 0) {
+    const { error: resError } = await supabase
+      .from('respostas_whatsapp')
+      .delete()
+      .in('mensagem_id', messageIds)
+    if (resError) throw resError
+  }
+
+  let delQuery = supabase.from('mensagens_whatsapp').delete()
+  if (params.candidato_id) {
+    delQuery = delQuery.eq('candidato_id', params.candidato_id)
+  } else if (params.numero_whatsapp) {
+    delQuery = delQuery.eq('numero_whatsapp', params.numero_whatsapp)
+  }
+  const { error: delError } = await delQuery
+  if (delError) throw delError
+
+  return { success: true }
+}

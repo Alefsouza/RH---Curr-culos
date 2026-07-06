@@ -16,9 +16,20 @@ import {
   ArrowLeft,
   Send,
   Loader2,
+  Trash2,
 } from 'lucide-react'
 import { toast } from '@/hooks/use-toast'
-import { sendDirectMessage } from '@/services/whatsapp'
+import { sendDirectMessage, deleteConversation } from '@/services/whatsapp'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
@@ -43,6 +54,8 @@ export default function WhatsappPage() {
   const [selectedCandidate, setSelectedCandidate] = useState<WhatsappCandidate | null>(null)
   const [messageInput, setMessageInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const isMobile = useIsMobile()
@@ -69,6 +82,28 @@ export default function WhatsappPage() {
       console.error(err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDeleteConversation = async () => {
+    if (!selectedCandidate || deleting) return
+    setDeleting(true)
+    try {
+      const candidatoId = selectedCandidate.isUnlinked ? null : selectedCandidate.id
+      const numeroWhatsapp = selectedCandidate.isUnlinked ? selectedCandidate.telefone : null
+      await deleteConversation({ candidato_id: candidatoId, numero_whatsapp: numeroWhatsapp })
+      toast({ title: 'Conversa excluída com sucesso.' })
+      setSelectedCandidate(null)
+      setShowDeleteDialog(false)
+      loadData()
+    } catch {
+      toast({
+        title: 'Erro ao excluir conversa',
+        description: 'Não foi possível excluir a conversa. Tente novamente.',
+        variant: 'destructive',
+      })
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -414,6 +449,14 @@ export default function WhatsappPage() {
                         </div>
                       </div>
                     </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="ml-auto text-white hover:bg-white/20 rounded-full shrink-0"
+                      onClick={() => setShowDeleteDialog(true)}
+                    >
+                      <Trash2 className="h-5 w-5" />
+                    </Button>
                   </div>
                   <ScrollArea className="flex-1 p-6 min-h-0">
                     <div className="space-y-4 max-w-3xl mx-auto pb-4">
@@ -498,6 +541,32 @@ export default function WhatsappPage() {
           )}
         </Card>
       </div>
+
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir conversa</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir todas as mensagens desta conversa? Esta ação não pode
+              ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                handleDeleteConversation()
+              }}
+              className="bg-red-600 hover:bg-red-700 text-white"
+              disabled={deleting}
+            >
+              {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
