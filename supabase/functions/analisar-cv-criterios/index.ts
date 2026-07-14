@@ -201,7 +201,7 @@ ${JSON.stringify(cvData)}
 
 Retorne ESTRITAMENTE um JSON com as seguintes chaves:
 - resultado (qualificado, nao_qualificado ou revisar)
-- detalhes (objeto com pontos_fortes (array), pontos_fracos (array), aderencia (string) e motivo (string, explicação breve sobre a decisão, focando na localização se for reprovado))`
+- detalhes (objeto com score (número inteiro de 0 a 100 representando a compatibilidade geral do candidato), matched_criteria (array de objetos com nome (string) e evidencia (string)), unmatched_criteria (array de objetos com nome (string) e motivo (string)), summary (string com resumo conciso da análise), pontos_fortes (array), pontos_fracos (array), aderencia (string) e motivo (string, explicação breve sobre a decisão, focando na localização se for reprovado))`
 
     const openaiKey =
       Deno.env.get('OPENIA_KEY') || Deno.env.get('OPENAI_API_KEY') || Deno.env.get('OPENAI_KEY')

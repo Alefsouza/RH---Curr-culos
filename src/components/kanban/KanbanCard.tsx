@@ -17,9 +17,18 @@ interface KanbanCardProps {
 }
 
 const sourceColors: Record<string, string> = {
+  outlook_import: 'bg-blue-100 text-blue-700 hover:bg-blue-200',
   Outlook: 'bg-blue-100 text-blue-700 hover:bg-blue-200',
-  Cato: 'bg-orange-100 text-orange-700 hover:bg-orange-200',
+  site_form: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200',
   Site: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200',
+  manual_upload: 'bg-purple-100 text-purple-700 hover:bg-purple-200',
+  Cato: 'bg-orange-100 text-orange-700 hover:bg-orange-200',
+}
+
+const sourceLabels: Record<string, string> = {
+  outlook_import: 'Via Outlook',
+  site_form: 'Site',
+  manual_upload: 'Manual',
 }
 
 export function KanbanCard({ candidate, isDragging, onDragStart, onDragEnd }: KanbanCardProps) {
@@ -48,7 +57,8 @@ export function KanbanCard({ candidate, isDragging, onDragStart, onDragEnd }: Ka
   }
 
   const formattedSource = candidate.source
-    ? candidate.source.charAt(0).toUpperCase() + candidate.source.slice(1).toLowerCase()
+    ? sourceLabels[candidate.source] ||
+      candidate.source.charAt(0).toUpperCase() + candidate.source.slice(1).toLowerCase()
     : 'Outro'
 
   const formattedAderencia = candidate.analysisDetails?.aderencia
@@ -117,7 +127,9 @@ export function KanbanCard({ candidate, isDragging, onDragStart, onDragEnd }: Ka
               variant="secondary"
               className={cn(
                 'text-[10px] font-semibold px-2 py-0',
-                sourceColors[formattedSource] || 'bg-slate-100 text-slate-700 hover:bg-slate-200',
+                sourceColors[candidate.source] ||
+                  sourceColors[formattedSource] ||
+                  'bg-slate-100 text-slate-700 hover:bg-slate-200',
               )}
             >
               {formattedSource}

@@ -56,6 +56,7 @@ export default function CandidateDetails() {
   const [editData, setEditData] = useState({ nome: '', email: '', telefone: '' })
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [resendingId, setResendingId] = useState<string | null>(null)
+  const [reanalyzing, setReanalyzing] = useState(false)
 
   const fetchCandidateData = async () => {
     if (!id) return
@@ -209,6 +210,27 @@ export default function CandidateDetails() {
     }
   }
 
+  const handleReanalyze = async () => {
+    if (!candidate?.vaga_id) {
+      toast.error('Candidato não possui vaga associada.')
+      return
+    }
+    setReanalyzing(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('reanalisar-candidato', {
+        body: { candidate_id: candidate.id },
+      })
+      if (error) throw error
+      if (data?.error) throw new Error(data.error)
+      toast.success('Reanálise concluída com sucesso!')
+      fetchCandidateData()
+    } catch (e: any) {
+      toast.error('Erro ao reanalisar: ' + e.message)
+    } finally {
+      setReanalyzing(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="container mx-auto p-4 md:p-6 max-w-6xl space-y-6">
@@ -314,6 +336,14 @@ export default function CandidateDetails() {
               <FileText className="w-4 h-4 mr-2" /> Ver Currículo
             </Button>
           )}
+          <Button
+            variant="outline"
+            onClick={handleReanalyze}
+            disabled={reanalyzing}
+            className="min-w-[44px]"
+          >
+            <RefreshCw className={cn('w-4 h-4 mr-2', reanalyzing && 'animate-spin')} /> Reanalisar
+          </Button>
           <Button variant="outline" onClick={() => setEditOpen(true)} className="min-w-[44px]">
             <Edit className="w-4 h-4 mr-2" /> Editar
           </Button>
@@ -501,6 +531,27 @@ export default function CandidateDetails() {
                       <Badge variant="outline">{a.detalhes?.aderencia || 'N/A'}</Badge>
                     </div>
 
+                    {a.detalhes?.score !== undefined && (
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-slate-700">
+                          Score de compatibilidade:
+                        </span>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            'text-sm font-bold',
+                            a.detalhes.score >= 70
+                              ? 'bg-green-50 text-green-700 border-green-200'
+                              : a.detalhes.score >= 40
+                                ? 'bg-yellow-50 text-yellow-700 border-yellow-200'
+                                : 'bg-red-50 text-red-700 border-red-200',
+                          )}
+                        >
+                          {a.detalhes.score}/100
+                        </Badge>
+                      </div>
+                    )}
+
                     {a.detalhes?.pontos_fortes && a.detalhes.pontos_fortes.length > 0 && (
                       <div className="bg-green-50/50 p-3 rounded-md border border-green-100">
                         <span className="font-semibold text-green-800 flex items-center gap-1.5 mb-2">
@@ -533,6 +584,51 @@ export default function CandidateDetails() {
                           Motivo (Regra / Localização)
                         </span>
                         <p className="text-slate-600 text-sm">{a.detalhes.motivo}</p>
+                      </div>
+                    )}
+
+                    {a.detalhes?.summary && (
+                      <div className="bg-blue-50/50 p-3 rounded-md border border-blue-100 mt-4">
+                        <span className="font-semibold text-blue-800 flex items-center gap-1.5 mb-1">
+                          Resumo da Análise
+                        </span>
+                        <p className="text-slate-600 text-sm">{a.detalhes.summary}</p>
+                      </div>
+                    )}
+
+                    {a.detalhes?.matched_criteria && a.detalhes.matched_criteria.length > 0 && (
+                      <div className="bg-green-50/50 p-3 rounded-md border border-green-100 mt-4">
+                        <span className="font-semibold text-green-800 flex items-center gap-1.5 mb-2">
+                          <CheckCircle className="w-4 h-4" /> Critérios Atendidos
+                        </span>
+                        <ul className="space-y-1.5 text-sm text-slate-600">
+                          {a.detalhes.matched_criteria.map((c: any, i: number) => (
+                            <li key={i} className="flex gap-2">
+                              <CheckCircle className="w-3.5 h-3.5 text-green-600 mt-0.5 shrink-0" />
+                              <span>
+                                <strong>{c.nome}:</strong> {c.evidencia}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {a.detalhes?.unmatched_criteria && a.detalhes.unmatched_criteria.length > 0 && (
+                      <div className="bg-red-50/50 p-3 rounded-md border border-red-100 mt-4">
+                        <span className="font-semibold text-red-800 flex items-center gap-1.5 mb-2">
+                          <XCircle className="w-4 h-4" /> Critérios Não Atendidos
+                        </span>
+                        <ul className="space-y-1.5 text-sm text-slate-600">
+                          {a.detalhes.unmatched_criteria.map((c: any, i: number) => (
+                            <li key={i} className="flex gap-2">
+                              <XCircle className="w-3.5 h-3.5 text-red-600 mt-0.5 shrink-0" />
+                              <span>
+                                <strong>{c.nome}:</strong> {c.motivo}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
                       </div>
                     )}
                   </CardContent>

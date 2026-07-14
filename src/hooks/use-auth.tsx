@@ -67,6 +67,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [user])
 
   const signUp = async (email: string, password: string, name?: string) => {
+    if (!email.toLowerCase().endsWith('@viasudeste.com')) {
+      return { error: { message: 'Acesso restrito a e-mails @viasudeste.com' } as any }
+    }
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -79,6 +82,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }
 
   const signIn = async (email: string, password: string) => {
+    if (!email.toLowerCase().endsWith('@viasudeste.com')) {
+      return { error: { message: 'Acesso restrito a e-mails @viasudeste.com' } as any }
+    }
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     return { error }
   }

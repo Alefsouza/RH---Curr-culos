@@ -22,6 +22,8 @@ import {
   MessageSquare,
   ClipboardCheck,
   MessageCircleCode,
+  RefreshCw,
+  Settings,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -37,6 +39,8 @@ export function AppSidebar() {
     { title: 'Revisão de IA', url: '/revisao', icon: ClipboardCheck },
     { title: 'Templates', url: '/templates', icon: MessageSquare },
     { title: 'WhatsApp', url: '/whatsapp', icon: MessageCircleCode },
+    { title: 'Sincronização', url: '/sincronizacao', icon: RefreshCw },
+    { title: 'Configurações', url: '/configuracoes', icon: Settings },
     ...(profile?.is_admin ? [{ title: 'Usuários', url: '/usuarios', icon: Users }] : []),
   ]
 
