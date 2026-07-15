@@ -143,18 +143,7 @@ export default function AuthPage() {
                 </div>
               </div>
 
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowResetForm(true)
-                    setResetEmail(email)
-                  }}
-                  className="text-xs text-[hsl(149_100%_55%)] hover:text-[hsl(149_100%_65%)] transition-colors duration-200 font-medium"
-                >
-                  Esqueci minha senha
-                </button>
-              </div>
+              <div className="flex justify-end"></div>
 
               <Button
                 type="submit"
@@ -221,26 +210,7 @@ export default function AuthPage() {
             </form>
           )}
 
-          {!showResetForm && (
-            <div className="mt-6 text-center">
-              <p className="text-sm text-white/50">
-                Não tem uma conta?{' '}
-                <Link
-                  to="/auth"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    toast({
-                      title: 'Cadastro',
-                      description: 'Entre em contato com o administrador para criar uma conta.',
-                    })
-                  }}
-                  className="text-[hsl(149_100%_55%)] hover:text-[hsl(149_100%_65%)] transition-colors duration-200 font-medium"
-                >
-                  Cadastre-se
-                </Link>
-              </p>
-            </div>
-          )}
+          {!showResetForm && <div className="mt-6 text-center"></div>}
         </div>
 
         <p className="mt-6 text-center text-xs text-white/40">
