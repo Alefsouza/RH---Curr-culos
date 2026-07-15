@@ -69,12 +69,14 @@ export default function AuthPage() {
 
       <div className="relative z-10 w-full max-w-md animate-fade-in-up">
         {/* Logo Section */}
-        <div className="flex flex-col items-center mb-6">
-          <img
-            src="https://wrnhfpncasqifaisvyaf.supabase.co/storage/v1/object/public/assets/logo_branco_transparente_nitido-80a6a-BIUCr1YD.png"
-            alt="Via Sudeste"
-            className="w-48 md:w-56 h-auto object-contain drop-shadow-lg"
-          />
+        <div className="flex justify-center mb-6">
+          <div className="glass-logo-container rounded-2xl border border-white/20 bg-white/10 backdrop-blur-xl px-8 py-6 shadow-lg transition-all duration-300 hover:shadow-xl hover:bg-white/15">
+            <img
+              src="https://wrnhfpncasqifaisvyaf.supabase.co/storage/v1/object/public/assets/logo_branco_transparente_nitido-80a6a-BIUCr1YD.png"
+              alt="Via Sudeste"
+              className="w-44 md:w-52 h-auto object-contain drop-shadow-lg"
+            />
+          </div>
         </div>
 
         {/* Card */}
