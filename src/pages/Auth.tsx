@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { Navigate } from 'react-router-dom'
-import { Briefcase, Mail, Lock, Eye, EyeOff, AlertCircle, Bus } from 'lucide-react'
+import { Mail, Lock, Eye, EyeOff, AlertCircle, Bus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export default function AuthPage() {
@@ -21,7 +21,7 @@ export default function AuthPage() {
   const { toast } = useToast()
 
   if (user) {
-    return <Navigate to="/" replace />
+    return <Navigate to="/dashboard" replace />
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
