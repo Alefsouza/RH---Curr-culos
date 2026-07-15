@@ -10,6 +10,7 @@ type CandidatesListItem = {
   criado_em: string
   duplicado_de: string | null
   vaga_id: string | null
+  etapa_id: string | null
   vagas: { titulo: string } | { titulo: string }[] | null
   etapas: { nome: string; cor: string | null } | { nome: string; cor: string | null }[] | null
   analises: { id: string; resultado: string | null; criado_em: string; detalhes: any }[] | null
@@ -28,6 +29,7 @@ export async function getCandidatesList() {
       criado_em,
       duplicado_de,
       vaga_id,
+      etapa_id,
       vagas (titulo),
       etapas (nome, cor),
       analises (id, resultado, criado_em, detalhes)
@@ -55,6 +57,7 @@ export async function getCandidatesList() {
       fonte: c.fonte || 'Site',
       criado_em: c.criado_em,
       vaga_id: c.vaga_id,
+      etapa_id: c.etapa_id,
       vaga: c.vagas ? (Array.isArray(c.vagas) ? c.vagas[0]?.titulo : c.vagas.titulo) : 'Sem vaga',
       etapa: c.etapas ? (Array.isArray(c.etapas) ? c.etapas[0]?.nome : c.etapas.nome) : 'Sem etapa',
       etapa_cor: c.etapas

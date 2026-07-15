@@ -11,8 +11,13 @@ import { Badge } from '@/components/ui/badge'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
+type Resultado = string | null | undefined
+
 export function DetailsTable({ candidatos, etapas, vagas, analises }: any) {
-  const getBadgeColor = (resultado: string) => {
+  const getBadgeColor = (cand: any, resultado: Resultado) => {
+    if (!cand.vaga_id) {
+      return 'bg-slate-200 text-slate-600 hover:bg-slate-300 border-none'
+    }
     switch (resultado) {
       case 'qualificado':
         return 'bg-green-100 text-green-800 hover:bg-green-200 border-none'
@@ -21,11 +26,13 @@ export function DetailsTable({ candidatos, etapas, vagas, analises }: any) {
       case 'revisar':
         return 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200 border-none'
       default:
-        return 'bg-slate-100 text-slate-800 hover:bg-slate-200 border-none'
+        return 'bg-blue-100 text-blue-800 hover:bg-blue-200 border-none'
     }
   }
 
-  const getResultadoText = (resultado: string) => {
+  const getResultadoText = (cand: any, resultado: Resultado) => {
+    if (!cand.vaga_id) return 'Sem vaga'
+    if (!resultado) return 'Pendente'
     switch (resultado) {
       case 'qualificado':
         return 'Qualificado'
@@ -36,6 +43,13 @@ export function DetailsTable({ candidatos, etapas, vagas, analises }: any) {
       default:
         return 'Pendente'
     }
+  }
+
+  const getAnaliseResultado = (cand: any) => {
+    const analise = analises.find(
+      (a: any) => a.candidato_id === cand.id && (a.vaga_id === cand.vaga_id || !a.vaga_id),
+    )
+    return analise?.resultado
   }
 
   return (
@@ -65,10 +79,7 @@ export function DetailsTable({ candidatos, etapas, vagas, analises }: any) {
               candidatos.map((cand: any) => {
                 const vaga = vagas.find((v: any) => v.id === cand.vaga_id)
                 const etapa = etapas.find((e: any) => e.id === cand.etapa_id)
-                const analise = analises.find(
-                  (a: any) =>
-                    a.candidato_id === cand.id && (a.vaga_id === cand.vaga_id || !a.vaga_id),
-                )
+                const resultado = getAnaliseResultado(cand)
 
                 return (
                   <TableRow key={cand.id}>
@@ -88,8 +99,8 @@ export function DetailsTable({ candidatos, etapas, vagas, analises }: any) {
                         : '-'}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={getBadgeColor(analise?.resultado)}>
-                        {getResultadoText(analise?.resultado)}
+                      <Badge variant="outline" className={getBadgeColor(cand, resultado)}>
+                        {getResultadoText(cand, resultado)}
                       </Badge>
                     </TableCell>
                   </TableRow>

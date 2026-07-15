@@ -20,6 +20,34 @@ import { MoreVertical, Trash2, Edit, FileText, ExternalLink, Wand2, Loader2 } fr
 import { Card, CardContent } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { useState } from 'react'
+
+function StatusBadge({ status }: { status: string | null }) {
+  if (status === 'revisar') {
+    return (
+      <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
+        Revisar
+      </Badge>
+    )
+  }
+  if (status === 'qualificado') {
+    return (
+      <Badge variant="secondary" className="bg-green-100 text-green-800">
+        Sim
+      </Badge>
+    )
+  }
+  if (status === 'nao_qualificado') {
+    return (
+      <Badge variant="secondary" className="bg-red-100 text-red-800">
+        Não
+      </Badge>
+    )
+  }
+  if (status === 'pendente' || !status) {
+    return null
+  }
+  return <span className="text-xs text-slate-500">-</span>
+}
 import { useAuth } from '@/hooks/use-auth'
 import { reanalyzeCandidate, updateCandidateVaga } from '@/services/candidates'
 import { toast } from 'sonner'
@@ -260,15 +288,7 @@ export function CandidateTable({
                       checked={c.status_analise === 'qualificado'}
                       onCheckedChange={() => onToggleStatus(c.id, c.status_analise, c.vaga_id)}
                     />
-                    <span className="text-xs text-slate-500">
-                      {c.status_analise === 'qualificado'
-                        ? 'Sim'
-                        : c.status_analise === 'nao_qualificado'
-                          ? 'Não'
-                          : c.status_analise === 'revisar'
-                            ? 'Revisar'
-                            : '-'}
-                    </span>
+                    <StatusBadge status={c.status_analise} />
                   </div>
                 </TableCell>
                 <TableCell className="text-sm text-slate-500">{formatDate(c.criado_em)}</TableCell>
@@ -377,15 +397,7 @@ export function CandidateTable({
                       checked={c.status_analise === 'qualificado'}
                       onCheckedChange={() => onToggleStatus(c.id, c.status_analise, c.vaga_id)}
                     />
-                    <span className="text-xs text-slate-500">
-                      {c.status_analise === 'qualificado'
-                        ? 'Sim'
-                        : c.status_analise === 'nao_qualificado'
-                          ? 'Não'
-                          : c.status_analise === 'revisar'
-                            ? 'Revisar'
-                            : '-'}
-                    </span>
+                    <StatusBadge status={c.status_analise} />
                   </div>
                 </div>
               </div>

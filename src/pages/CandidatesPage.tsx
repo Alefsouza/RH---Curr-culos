@@ -89,6 +89,8 @@ export default function CandidatesPage() {
         matchStatus = c.status_analise === 'nao_qualificado'
       } else if (statusFilter === 'revisar') {
         matchStatus = c.status_analise === 'revisar'
+      } else if (statusFilter === 'sem_etapa') {
+        matchStatus = !c.etapa_id
       }
 
       return matchSearch && matchStatus
@@ -280,6 +282,7 @@ export default function CandidatesPage() {
               <SelectItem value="qualificado">Qualificados</SelectItem>
               <SelectItem value="nao_qualificado">Não Qualificados</SelectItem>
               <SelectItem value="revisar">Para Revisão</SelectItem>
+              <SelectItem value="sem_etapa">Sem Etapa</SelectItem>
             </SelectContent>
           </Select>
           <div className="relative w-full sm:w-[280px]">
