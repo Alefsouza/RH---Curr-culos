@@ -31,8 +31,7 @@ Deno.serve(async (req: Request) => {
 
     let body
     try {
-      const bodyText = await req.text()
-      body = JSON.parse(bodyText)
+      body = JSON.parse(await req.text())
     } catch (e) {
       return new Response(JSON.stringify({ error: 'Payload inválido. Formato JSON esperado.' }), {
         status: 400,
@@ -58,6 +57,33 @@ Deno.serve(async (req: Request) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
     const supabase = createClient(supabaseUrl, supabaseKey)
 
+    // UAZAPI configuration (defined at top level)
+    const uazapiUrl = Deno.env.get('UAZAPI_URL') || 'https://cvviasudeste.uazapi.com'
+    const uazapiToken = Deno.env.get('UAZAPI_TOKEN') || Deno.env.get('UAZAPI_KEY') || ''
+    const instanceId =
+      Deno.env.get('UAZAPI_INSTANCE_ID') ||
+      Deno.env.get('UAZAPI_INSTANCE') ||
+      Deno.env.get('INSTANCE_ID') ||
+      'cvviasudeste'
+
+    let baseUrl = uazapiUrl.endsWith('/') ? uazapiUrl.slice(0, -1) : uazapiUrl
+    if (baseUrl.startsWith('http://') && !baseUrl.includes('localhost')) {
+      baseUrl = baseUrl.replace('http://', 'https://')
+    }
+
+    if (!uazapiToken) {
+      return new Response(
+        JSON.stringify({
+          error: true,
+          message: 'Configuração ausente: UAZAPI_TOKEN não encontrado.',
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
+    }
+
     // 1. Buscando candidato e telefone
     const { data: candidato, error: candidatoError } = await supabase
       .from('candidatos')
@@ -73,7 +99,8 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    const telefoneRaw = candidato.telefone
+    // Use telefone_normalizado (comma-separated) with fallback to telefone
+    const telefoneRaw = candidato.telefone_normalizado || candidato.telefone
     if (!telefoneRaw) {
       return new Response(
         JSON.stringify({ warning: true, message: 'Candidato não possui telefone cadastrado.' }),
@@ -125,7 +152,7 @@ Deno.serve(async (req: Request) => {
     tituloTexto = tituloTexto.replace(/{{vaga}}/gi, tituloVaga || 'a vaga')
     tituloTexto = tituloTexto.replace(/{{nome_vaga}}/gi, tituloVaga || 'a vaga')
 
-    let isChatbot = template.tipo === 'chatbot_interativo' || template.tipo === 'chatbot'
+    const isChatbot = template.tipo === 'chatbot_interativo' || template.tipo === 'chatbot'
     let perguntaTexto = template.pergunta_texto || template.texto || ''
     const btnSimText = (template.botao_sim_texto || 'Sim').substring(0, 20)
     const btnNaoText = (template.botao_nao_texto || 'Não').substring(0, 20)
@@ -139,8 +166,11 @@ Deno.serve(async (req: Request) => {
       perguntaTexto = perguntaTexto.replace(/{nome_vaga}/gi, tituloVaga || 'a vaga')
     }
 
-    // 4. Preparar números
-    const telefonesStrList = telefoneRaw.split(',')
+    // 4. Preparar números (split comma-separated)
+    const telefonesStrList = telefoneRaw
+      .split(',')
+      .map((t: string) => t.trim())
+      .filter(Boolean)
     const validPhones: string[] = []
 
     for (const t of telefonesStrList) {
@@ -166,52 +196,25 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    // 5. Verificação de 24 horas removida (permitindo múltiplos envios sem restrição de tempo conforme requisitos)
-
-    // 6. Enviando via UAZAPI
-    const uazapiUrl = Deno.env.get('UAZAPI_URL') || 'https://cvviasudeste.uazapi.com'
-    const uazapiToken = Deno.env.get('UAZAPI_TOKEN') || Deno.env.get('UAZAPI_KEY') || ''
-
-    if (!uazapiToken) {
-      return new Response(
-        JSON.stringify({
-          error: true,
-          message: 'Configuração ausente: UAZAPI_TOKEN não encontrado.',
-        }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
-      )
-    }
-
+    // 5. Função de envio via UAZAPI (sem pré-validação)
     const sendWhatsAppWithRetry = async (
       phone: string,
       message: string,
       retries = 3,
       backoff = 2000,
     ): Promise<any> => {
-      let baseUrl = uazapiUrl.endsWith('/') ? uazapiUrl.slice(0, -1) : uazapiUrl
-      if (baseUrl.startsWith('http://') && !baseUrl.includes('localhost')) {
-        baseUrl = baseUrl.replace('http://', 'https://')
-      }
-      const instanceId =
-        Deno.env.get('UAZAPI_INSTANCE_ID') ||
-        Deno.env.get('UAZAPI_INSTANCE') ||
-        Deno.env.get('INSTANCE_ID') ||
-        'cvviasudeste'
-
       let numWpp = phone
       if (numWpp && !numWpp.startsWith('55')) {
         numWpp = '55' + numWpp
       }
 
+      const fallbackText =
+        (tituloTexto ? `*${tituloTexto}*\n\n` : '') +
+        `${perguntaTexto}\n\n${template.footer_text || 'Escolha uma das opções abaixo'}\n- ${btnSimText}\n- ${btnNaoText}`
+
       let payloadsToTry: any[] = []
 
       if (isChatbot) {
-        const fallbackText =
-          (tituloTexto ? `*${tituloTexto}*\n\n` : '') +
-          `${perguntaTexto}\n\n${template.footer_text || 'Escolha uma das opções abaixo'}\n- ${btnSimText}\n- ${btnNaoText}`
         const menuBody: any = {
           number: numWpp,
           type: 'button',
@@ -323,14 +326,35 @@ Deno.serve(async (req: Request) => {
       )
     }
 
+    // 6. Iterar sobre cada número e enviar individualmente
     let allSuccess = true
     const errors: string[] = []
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
 
     for (const phone of validPhones) {
       let isSuccess = false
-      let errorMessage = null
-      let externalId = null
+      let errorMessage: string | null = null
+      let externalId: string | null = null
       let responseData: any = null
+
+      // Idempotency: skip if a non-failed message was already sent recently
+      const { data: existingMsg } = await supabase
+        .from('mensagens_whatsapp')
+        .select('id, status')
+        .eq('candidato_id', candidato.id)
+        .eq('numero_whatsapp', phone)
+        .eq('etapa_id', etapa_id)
+        .eq('template_id', template.id)
+        .eq('direcao', 'enviada')
+        .neq('status', 'falha')
+        .gte('criado_em', oneHourAgo)
+        .limit(1)
+        .maybeSingle()
+
+      if (existingMsg) {
+        console.log(`[enviar-whatsapp] Mensagem já enviada para ${phone} (idempotência). Pulando.`)
+        continue
+      }
 
       try {
         responseData = await sendWhatsAppWithRetry(phone, mensagemTexto)
@@ -375,6 +399,7 @@ Deno.serve(async (req: Request) => {
             ? (tituloTexto ? `*${tituloTexto}*\n\n` : '') + `${perguntaTexto}`
             : mensagemTexto
 
+      // Individual logging per number
       const { error: insertError } = await supabase.from('mensagens_whatsapp').insert({
         candidato_id: candidato.id,
         etapa_id: etapa_id,
@@ -399,6 +424,7 @@ Deno.serve(async (req: Request) => {
       return new Response(
         JSON.stringify({
           error: true,
+          warning: false,
           message: 'Alguns envios falharam.',
           detalhe: errors.join(' | '),
         }),

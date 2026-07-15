@@ -243,7 +243,25 @@ ${extractedText.substring(0, 15000)}`
       telefonesArr = [extractedData.telefone]
     }
 
-    const finalTelefone = telefonesArr.length > 0 ? telefonesArr.join(',') : telefone || null
+    const rawTelefone = telefonesArr.length > 0 ? telefonesArr.join(',') : telefone || null
+    let finalTelefone = null
+    if (rawTelefone) {
+      const parts = rawTelefone
+        .split(',')
+        .map((t: string) => t.trim())
+        .filter(Boolean)
+      const normalizedParts = parts
+        .map((t: string) => {
+          let digits = t.replace(/\D/g, '')
+          if (digits.startsWith('55') && digits.length > 11) {
+            digits = digits.substring(2)
+          }
+          return digits && digits.length >= 10 && digits.length <= 11 ? digits : null
+        })
+        .filter(Boolean)
+      const uniqueParts = Array.from(new Set(normalizedParts))
+      finalTelefone = uniqueParts.length > 0 ? uniqueParts.join(',') : rawTelefone
+    }
     const finalNome = extractedData.nome || nome || 'Candidato Desconhecido'
 
     // 4. Deduplication and Database operations

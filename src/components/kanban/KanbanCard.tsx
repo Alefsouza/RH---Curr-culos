@@ -2,7 +2,16 @@ import React from 'react'
 import { Candidate } from '@/types/kanban'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Mail, Phone, GripVertical, ExternalLink, Trash2, CheckCircle, XCircle } from 'lucide-react'
+import {
+  Mail,
+  Phone,
+  GripVertical,
+  ExternalLink,
+  Trash2,
+  CheckCircle,
+  XCircle,
+  Users,
+} from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { deleteCandidate } from '@/services/kanban'
@@ -117,8 +126,14 @@ export function KanbanCard({ candidate, isDragging, onDragStart, onDragEnd }: Ka
           </div>
           <div className="flex items-center text-xs text-slate-500">
             <Phone className="mr-2 h-3.5 w-3.5" />
-            <span>{candidate.phone}</span>
-          </div>
+            <span className="truncate">{candidate.phone}</span>
+            {candidate.phone && candidate.phone.includes(',') && (
+              <span className="ml-1 inline-flex items-center gap-0.5 text-[10px] text-blue-600 font-medium bg-blue-50 px-1 py-0 rounded">
+                <Users className="w-2.5 h-2.5" />
+                {candidate.phone.split(',').filter(Boolean).length} números
+              </span>
+            )}
+          </div>{' '}
         </div>
 
         <div className="flex items-center justify-between pt-1">
