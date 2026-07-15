@@ -367,17 +367,34 @@ Deno.serve(async (req: Request) => {
             continue
           }
 
-          if (candId && candInfo) {
-            if (respostaClassificada) {
-              await supabase.from('respostas_whatsapp').insert({
-                candidato_id: candId,
-                resposta: respostaClassificada,
-                mensagem_id: contextMsgId || messageId,
-              })
+          if (candId) {
+            const { error: convErr } = await supabase.from('conversas_whatsapp').insert({
+              candidato_id: candId,
+              texto: incomingText || selectedButtonId || '',
+              direcao: 'recebida',
+              uazapi_message_id: messageId,
+            })
+            if (convErr && convErr.code !== '23505') {
+              console.error('Erro ao salvar conversa_whatsapp', convErr)
             }
+          }
 
+          if (candId && respostaClassificada) {
+            await supabase.from('respostas_whatsapp').insert({
+              candidato_id: candId,
+              resposta: respostaClassificada,
+              mensagem_id: contextMsgId || messageId,
+            })
+          }
+
+          if (candId && candInfo) {
             const updatePayload: any = {
-              ultima_resposta_whatsapp: incomingText || selectedButtonId || '',
+              ultima_resposta_whatsapp:
+                respostaClassificada === 'sim'
+                  ? 'Sim'
+                  : respostaClassificada === 'nao'
+                    ? 'Não'
+                    : incomingText || selectedButtonId || '',
               ultima_resposta_em: new Date().toISOString(),
             }
 

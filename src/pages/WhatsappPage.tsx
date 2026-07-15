@@ -189,7 +189,10 @@ export default function WhatsappPage() {
   const filteredCandidates =
     data?.candidates.filter((c) => {
       if (activeStageId !== 'todos' && c.etapaId !== activeStageId) return false
-      const response = c.lastResponse?.toLowerCase()
+      const response = c.lastResponse
+        ?.toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
       if (filter === 'sim' && response !== 'sim') return false
       if (filter === 'nao' && response !== 'nao') return false
       if (search && !c.nome.toLowerCase().includes(search.toLowerCase())) return false

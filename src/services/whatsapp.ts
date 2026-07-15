@@ -71,26 +71,13 @@ export async function getWhatsappDashboardData() {
     }
   })
 
-  const validMessageIds = new Set<string>()
-  convData?.forEach((c) => {
-    if (c.id) validMessageIds.add(c.id)
-    if (c.uazapi_message_id) validMessageIds.add(c.uazapi_message_id)
-    if (c.external_id) validMessageIds.add(c.external_id)
-  })
-
-  const responsesByCandidato: Record<string, string> = {}
   const responsesByMessage: Record<string, string> = {}
 
-  const validResData = (resData || []).filter(
-    (r) => r.mensagem_id && validMessageIds.has(r.mensagem_id),
-  )
+  const allResData = resData || []
 
-  validResData.forEach((r) => {
+  allResData.forEach((r) => {
     if (r.resposta) {
       const respLower = r.resposta.toLowerCase()
-      if (r.candidato_id) {
-        responsesByCandidato[r.candidato_id] = respLower
-      }
       if (r.mensagem_id) {
         responsesByMessage[r.mensagem_id] = respLower
       }
@@ -122,8 +109,12 @@ export async function getWhatsappDashboardData() {
         lastMessage: '',
         lastMessageTime: '',
         lastResponse: (() => {
-          const computed = c.candidato_id ? responsesByCandidato[c.candidato_id] : null
-          if (computed === 'sim' || computed === 'nao') return computed
+          const dbResponse = (c.candidatos as any)?.ultima_resposta_whatsapp
+          if (dbResponse) {
+            const lower = dbResponse.toLowerCase()
+            if (lower === 'sim') return 'sim'
+            if (lower === 'não' || lower === 'nao') return 'nao'
+          }
           return null
         })(),
         isUnlinked: !c.candidato_id,
