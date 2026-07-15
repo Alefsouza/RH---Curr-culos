@@ -87,10 +87,21 @@ export async function getWhatsappDashboardData() {
     }
   })
 
+  const validMessageIds = new Set<string>()
+  convData?.forEach((c) => {
+    if (c.id) validMessageIds.add(c.id)
+    if (c.uazapi_message_id) validMessageIds.add(c.uazapi_message_id)
+    if (c.external_id) validMessageIds.add(c.external_id)
+  })
+
   const responsesByCandidato: Record<string, string> = {}
   const responsesByMessage: Record<string, string> = {}
 
-  resData?.forEach((r) => {
+  const validResData = (resData || []).filter(
+    (r) => r.mensagem_id && validMessageIds.has(r.mensagem_id),
+  )
+
+  validResData.forEach((r) => {
     if (r.resposta) {
       const respLower = r.resposta.toLowerCase()
       if (r.candidato_id) {
@@ -127,9 +138,9 @@ export async function getWhatsappDashboardData() {
         lastMessage: '',
         lastMessageTime: '',
         lastResponse: (() => {
-          const ultResp = (c.candidatos as any)?.ultima_resposta_whatsapp?.toLowerCase()
-          if (ultResp === 'sim' || ultResp === 'nao') return ultResp
-          return (c.candidato_id ? responsesByCandidato[c.candidato_id] : null) || null
+          const computed = c.candidato_id ? responsesByCandidato[c.candidato_id] : null
+          if (computed === 'sim' || computed === 'nao') return computed
+          return null
         })(),
         isUnlinked: !c.candidato_id,
         etapaId: (c.candidatos as any)?.etapa_id || null,
@@ -206,7 +217,9 @@ export async function deleteConversation(params: {
   candidato_id: string | null
   numero_whatsapp?: string | null
 }) {
-  let msgQuery = supabase.from('mensagens_whatsapp').select('id, uazapi_message_id, external_id')
+  let msgQuery = supabase
+    .from('mensagens_whatsapp')
+    .select('id, candidato_id, uazapi_message_id, external_id')
 
   if (params.candidato_id) {
     msgQuery = msgQuery.eq('candidato_id', params.candidato_id)
@@ -220,10 +233,12 @@ export async function deleteConversation(params: {
   if (msgError) throw msgError
 
   const messageIds: string[] = []
+  const candidatoIds = new Set<string>()
   messages?.forEach((m) => {
     if (m.id) messageIds.push(m.id)
     if (m.uazapi_message_id) messageIds.push(m.uazapi_message_id)
     if (m.external_id) messageIds.push(m.external_id)
+    if (m.candidato_id) candidatoIds.add(m.candidato_id)
   })
 
   if (messageIds.length > 0) {
@@ -234,6 +249,20 @@ export async function deleteConversation(params: {
     if (resError) throw resError
   }
 
+  for (const candId of candidatoIds) {
+    const { error: resByCandError } = await supabase
+      .from('respostas_whatsapp')
+      .delete()
+      .eq('candidato_id', candId)
+    if (resByCandError) throw resByCandError
+
+    const { error: convError } = await supabase
+      .from('conversas_whatsapp')
+      .delete()
+      .eq('candidato_id', candId)
+    if (convError) throw convError
+  }
+
   let delQuery = supabase.from('mensagens_whatsapp').delete()
   if (params.candidato_id) {
     delQuery = delQuery.eq('candidato_id', params.candidato_id)
@@ -242,6 +271,14 @@ export async function deleteConversation(params: {
   }
   const { error: delError } = await delQuery
   if (delError) throw delError
+
+  for (const candId of candidatoIds) {
+    const { error: candError } = await supabase
+      .from('candidatos')
+      .update({ ultima_resposta_whatsapp: null, ultima_resposta_em: null })
+      .eq('id', candId)
+    if (candError) throw candError
+  }
 
   return { success: true }
 }

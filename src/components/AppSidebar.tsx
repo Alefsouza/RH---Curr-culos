@@ -18,7 +18,6 @@ import {
   Users,
   Briefcase,
   Plus,
-  SquareKanban,
   MessageSquare,
   ClipboardCheck,
   MessageCircleCode,
@@ -47,13 +46,12 @@ export function AppSidebar() {
   return (
     <Sidebar className="border-r border-border bg-sidebar">
       <SidebarHeader className="h-16 flex items-center justify-center border-b border-border">
-        <div className="flex items-center gap-2 px-4 w-full">
-          <div className="bg-primary p-1.5 rounded-lg">
-            <SquareKanban className="h-5 w-5 text-primary-foreground" />
-          </div>
-          <span className="font-bold text-lg text-sidebar-foreground tracking-tight">
-            Via Sudeste
-          </span>
+        <div className="flex items-center justify-center px-4 w-full">
+          <img
+            src="https://pagamentos.goskip.app/visual-edits/sem-nome-190-50-px-610b0304.png"
+            alt="Logo Via Sudeste"
+            className="h-9 w-auto max-w-[180px] object-contain"
+          />
         </div>
       </SidebarHeader>
 
