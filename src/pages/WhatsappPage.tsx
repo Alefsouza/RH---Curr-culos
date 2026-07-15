@@ -49,7 +49,7 @@ export default function WhatsappPage() {
   const [stages, setStages] = useState<{ id: string; name: string }[]>([])
   const [activeStageId, setActiveStageId] = useState<string>('todos')
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<'todos' | 'sim' | 'nao'>('todos')
+  const [filter, setFilter] = useState<'todos' | 'sim' | 'nao' | 'pendente'>('todos')
   const [search, setSearch] = useState('')
   const [selectedCandidate, setSelectedCandidate] = useState<WhatsappCandidate | null>(null)
   const [messageInput, setMessageInput] = useState('')
@@ -195,6 +195,7 @@ export default function WhatsappPage() {
         .replace(/[\u0300-\u036f]/g, '')
       if (filter === 'sim' && response !== 'sim') return false
       if (filter === 'nao' && response !== 'nao') return false
+      if (filter === 'pendente' && (response === 'sim' || response === 'nao')) return false
       if (search && !c.nome.toLowerCase().includes(search.toLowerCase())) return false
       return true
     }) || []
@@ -330,6 +331,13 @@ export default function WhatsappPage() {
                     onClick={() => setFilter('nao')}
                   >
                     Não
+                  </Badge>
+                  <Badge
+                    variant={filter === 'pendente' ? 'default' : 'outline'}
+                    className="cursor-pointer bg-amber-50 text-amber-700 hover:bg-amber-100 border-amber-200"
+                    onClick={() => setFilter('pendente')}
+                  >
+                    Pendente
                   </Badge>
                 </div>
               </div>

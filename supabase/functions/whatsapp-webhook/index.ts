@@ -315,6 +315,15 @@ Deno.serve(async (req: Request) => {
             }
           }
 
+          if (!respostaClassificada) {
+            const normalizedText = txtToCheck.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            if (/\bnao\b/i.test(normalizedText)) {
+              respostaClassificada = 'nao'
+            } else if (/\bsim\b/i.test(normalizedText)) {
+              respostaClassificada = 'sim'
+            }
+          }
+
           // Determinar o user_id (tentar pegar do candidato, senao do historico, senao fallback)
           let finalUserId = candInfo?.user_id
           if (!finalUserId) {
@@ -388,14 +397,11 @@ Deno.serve(async (req: Request) => {
           }
 
           if (candId && candInfo) {
-            const updatePayload: any = {
-              ultima_resposta_whatsapp:
-                respostaClassificada === 'sim'
-                  ? 'Sim'
-                  : respostaClassificada === 'nao'
-                    ? 'Não'
-                    : incomingText || selectedButtonId || '',
-              ultima_resposta_em: new Date().toISOString(),
+            const updatePayload: any = {}
+            if (respostaClassificada) {
+              updatePayload.ultima_resposta_whatsapp =
+                respostaClassificada === 'sim' ? 'Sim' : 'Não'
+              updatePayload.ultima_resposta_em = new Date().toISOString()
             }
 
             if (respostaClassificada) {
