@@ -25,6 +25,7 @@ import {
   Star,
   ArrowLeft,
   ShieldAlert,
+  Smartphone,
 } from 'lucide-react'
 import {
   Dialog,
@@ -690,17 +691,197 @@ export default function CandidateDetails() {
         </TabsContent>
 
         <TabsContent value="mensagens" className="space-y-4 mt-4">
-          {messages.length === 0 ? (
-            <div className="text-center p-12 bg-muted/30 rounded-lg border border-dashed flex flex-col items-center">
-              <MessageSquare className="w-10 h-10 text-slate-300 mb-3" />
-              <h3 className="text-lg font-semibold text-slate-700">Sem Mensagens</h3>
-              <p className="text-muted-foreground">
-                Nenhuma comunicação via WhatsApp foi disparada para este candidato ainda.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {messages.map((m) => (
+          {(() => {
+            const phoneList = (candidate.telefone || '')
+              .split(',')
+              .map((t: string) => t.trim())
+              .filter(Boolean)
+
+            const statusByPhone: Record<string, { status: string | null; count: number }> = {}
+            messages.forEach((m) => {
+              const num = m.numero_whatsapp
+              if (!num) return
+              if (!statusByPhone[num]) statusByPhone[num] = { status: null, count: 0 }
+              statusByPhone[num].count++
+              statusByPhone[num].status = m.status
+            })
+
+            return (
+              <>
+                {phoneList.length > 0 && (
+                  <Card className="shadow-elevation border-border">
+                    <CardHeader className="pb-3 bg-slate-50/80 border-b">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Smartphone className="w-5 h-5 text-primary" /> Números de Telefone Detectados
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-4">
+                      <div className="flex flex-wrap gap-3">
+                        {phoneList.map((num: string, idx: number) => {
+                          const info = statusByPhone[num]
+                          const status = info?.status
+                          const isInvalid = status === 'numero_invalido'
+                          const isSent =
+                            status === 'enviada' ||
+                            status === 'entregue' ||
+                            status === 'lida' ||
+                            (status || '').startsWith('enviada')
+                          const isFailed = status === 'falha'
+                          return (
+                            <div
+                              key={idx}
+                              className={cn(
+                                'flex flex-col items-start gap-1 rounded-lg border px-3 py-2 min-w-[160px]',
+                                isInvalid
+                                  ? 'bg-red-50/50 border-red-200'
+                                  : isSent
+                                    ? 'bg-green-50/50 border-green-200'
+                                    : isFailed
+                                      ? 'bg-orange-50/50 border-orange-200'
+                                      : 'bg-slate-50 border-slate-200',
+                              )}
+                            >
+                              <span className="text-sm font-semibold text-slate-800 flex items-center gap-1.5">
+                                <Phone className="w-3.5 h-3.5 text-slate-400" />
+                                {num}
+                              </span>
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  'text-[10px] px-1.5 py-0 h-5',
+                                  isInvalid
+                                    ? 'bg-red-100 text-red-700 border-red-200'
+                                    : isSent
+                                      ? 'bg-green-100 text-green-700 border-green-200'
+                                      : isFailed
+                                        ? 'bg-orange-100 text-orange-700 border-orange-200'
+                                        : 'bg-slate-100 text-slate-600 border-slate-200',
+                                )}
+                              >
+                                {isInvalid ? (
+                                  <>
+                                    <XCircle className="w-3 h-3 mr-0.5" /> WhatsApp inválido
+                                  </>
+                                ) : isSent ? (
+                                  <>
+                                    <CheckCircle className="w-3 h-3 mr-0.5" /> Enviada
+                                  </>
+                                ) : isFailed ? (
+                                  <>
+                                    <XCircle className="w-3 h-3 mr-0.5" /> Falhou
+                                  </>
+                                ) : (
+                                  <>
+                                    <Clock className="w-3 h-3 mr-0.5" /> Pendente
+                                  </>
+                                )}
+                              </Badge>
+                              {info?.count > 0 && (
+                                <span className="text-[10px] text-slate-400">
+                                  {info.count} mensagem(ns)
+                                </span>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {messages.length === 0 ? (
+                  <div className="text-center p-12 bg-muted/30 rounded-lg border border-dashed flex flex-col items-center">
+                    <MessageSquare className="w-10 h-10 text-slate-300 mb-3" />
+                    <h3 className="text-lg font-semibold text-slate-700">Sem Mensagens</h3>
+                    <p className="text-muted-foreground">
+                      Nenhuma comunicação via WhatsApp foi disparada para este candidato ainda.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {messages.map((m) => (
+                      <Card key={m.id} className="shadow-elevation border-border">
+                        <CardContent className="p-4 flex flex-col sm:flex-row gap-4 justify-between sm:items-center">
+                          <div className="flex gap-4 items-center">
+                            <div
+                              className={cn(
+                                'p-3 rounded-full shrink-0',
+                                m.status === 'enviada' || m.status === 'entregue' || m.status === 'lida'
+                                  ? 'bg-green-100 text-green-700'
+                                  : m.status === 'falha'
+                                    ? 'bg-red-100 text-red-700'
+                                    : m.status === 'numero_invalido'
+                                      ? 'bg-orange-100 text-orange-700'
+                                      : 'bg-slate-100 text-slate-700',
+                              )}
+                            >
+                              <MessageSquare className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <h4 className="font-semibold flex items-center gap-2 text-slate-800 flex-wrap">
+                                Etapa: {m.etapas?.nome || 'Desconhecida'}
+                                {m.numero_whatsapp && (
+                                  <Badge variant="outline" className="text-[10px] h-5 px-1.5">
+                                    <Phone className="w-3 h-3 mr-0.5" />
+                                    {m.numero_whatsapp}
+                                  </Badge>
+                                )}
+                                <Badge
+                                  variant={
+                                    m.status === 'enviada' ||
+                                    m.status === 'entregue' ||
+                                    m.status === 'lida'
+                                      ? 'default'
+                                      : m.status === 'falha' || m.status === 'numero_invalido'
+                                        ? 'destructive'
+                                        : 'secondary'
+                                  }
+                                  className="text-[10px] h-5 px-1.5 uppercase tracking-wider"
+                                >
+                                  {m.status === 'enviada'
+                                    ? 'Enviada'
+                                    : m.status === 'entregue'
+                                      ? 'Entregue'
+                                      : m.status === 'lida'
+                                        ? 'Lida'
+                                        : m.status === 'falha'
+                                          ? 'Falhou'
+                                          : m.status === 'numero_invalido'
+                                            ? 'WhatsApp Inválido'
+                                            : m.status}
+                                </Badge>
+                              </h4>
+                              <p className="text-sm text-slate-500 mt-1 flex items-center gap-1.5">
+                                <Clock className="w-3.5 h-3.5" />
+                                {format(new Date(m.criado_em), "dd 'de' MMM, yyyy 'às' HH:mm", {
+                                  locale: ptBR,
+                                })}
+                              </p>
+                            </div>
+                          </div>
+                          {m.status !== 'numero_invalido' && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full sm:w-auto min-h-[44px]"
+                              disabled={resendingId === m.id}
+                              onClick={() => resendMessage(m.etapa_id, m.id)}
+                            >
+                              <RefreshCw
+                                className={cn('w-4 h-4 mr-2', resendingId === m.id && 'animate-spin')}
+                              />
+                              {resendingId === m.id ? 'Reenviando...' : 'Tentar Novamente'}
+                            </Button>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </>
+            )
+          })()}
+        </TabsContent>
                 <Card key={m.id} className="shadow-elevation border-border">
                   <CardContent className="p-4 flex flex-col sm:flex-row gap-4 justify-between sm:items-center">
                     <div className="flex gap-4 items-center">
@@ -768,7 +949,8 @@ export default function CandidateDetails() {
             </div>
           )}
         </TabsContent>
-      </Tabs>
+
+</Tabs>
 
       {/* Edit Modal */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
