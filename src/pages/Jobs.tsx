@@ -26,7 +26,7 @@ export default function JobsPage() {
     try {
       setLoading(true)
       setError(null)
-      const data = await vagasService.getVagasComEstatisticas(user.id)
+      const data = await vagasService.getVagasComEstatisticas()
       setVagas(data)
     } catch (err: any) {
       setError('Não foi possível carregar as vagas. ' + err.message)

@@ -35,7 +35,6 @@ export default function Layout() {
           vagas ( titulo ),
           analises ( resultado )
         `)
-        .eq('user_id', user.id)
         .gte('criado_em', fiveMinsAgo)
         .order('criado_em', { ascending: false })
 
@@ -73,7 +72,6 @@ export default function Layout() {
           event: 'INSERT',
           schema: 'public',
           table: 'candidatos',
-          filter: `user_id=eq.${user.id}`,
         },
         () => {
           fetchRecentCVs()

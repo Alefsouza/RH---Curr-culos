@@ -4,21 +4,8 @@ export async function getEtapasComTemplates() {
   const { data: userData } = await supabase.auth.getUser()
   if (!userData.user) throw new Error('Não autenticado')
 
-  const { data: userProfile } = await supabase
-    .from('usuarios')
-    .select('is_admin')
-    .eq('id', userData.user.id)
-    .single()
-
-  const isAdmin = userProfile?.is_admin || false
-
-  let etapasQuery = supabase.from('etapas').select('*').order('ordem')
-  let templatesQuery = supabase.from('templates_mensagens').select('*')
-
-  if (!isAdmin) {
-    etapasQuery = etapasQuery.eq('user_id', userData.user.id)
-    templatesQuery = templatesQuery.eq('user_id', userData.user.id)
-  }
+  const etapasQuery = supabase.from('etapas').select('*').order('ordem')
+  const templatesQuery = supabase.from('templates_mensagens').select('*')
 
   const { data: etapas, error: etapasError } = await etapasQuery
   if (etapasError) throw etapasError
@@ -40,7 +27,6 @@ export async function saveTemplate(etapaId: string, templateData: any) {
     .from('templates_mensagens')
     .select('id')
     .eq('etapa_id', etapaId)
-    .eq('user_id', userData.user.id)
     .maybeSingle()
 
   if (existing) {
@@ -72,15 +58,7 @@ export async function getMessageHistory() {
   if (!userData.user) throw new Error('Não autenticado')
 
   try {
-    const { data: userProfile } = await supabase
-      .from('usuarios')
-      .select('is_admin')
-      .eq('id', userData.user.id)
-      .single()
-
-    const isAdmin = userProfile?.is_admin || false
-
-    let query = supabase
+    const query = supabase
       .from('mensagens_whatsapp')
       .select(`
         id,
@@ -91,10 +69,6 @@ export async function getMessageHistory() {
       `)
       .order('criado_em', { ascending: false })
       .limit(50)
-
-    if (!isAdmin) {
-      query = query.eq('user_id', userData.user.id)
-    }
 
     const { data, error } = await query
 

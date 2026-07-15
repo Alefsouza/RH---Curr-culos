@@ -38,15 +38,10 @@ export function useKanban() {
   useEffect(() => {
     loadData()
 
-    if (!user || profile === null) return
+    if (!user) return
 
-    const configCandidatos = profile.is_admin
-      ? { event: '*', schema: 'public', table: 'candidatos' }
-      : { event: '*', schema: 'public', table: 'candidatos', filter: `user_id=eq.${user.id}` }
-
-    const configAnalises = profile.is_admin
-      ? { event: '*', schema: 'public', table: 'analises' }
-      : { event: '*', schema: 'public', table: 'analises', filter: `user_id=eq.${user.id}` }
+    const configCandidatos = { event: '*', schema: 'public', table: 'candidatos' }
+    const configAnalises = { event: '*', schema: 'public', table: 'analises' }
 
     const channel = supabase
       .channel('kanban-updates')
@@ -57,7 +52,7 @@ export function useKanban() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [loadData, user, profile])
+  }, [loadData, user])
 
   useEffect(() => {
     const handleCandidateDelete = (event: any) => {

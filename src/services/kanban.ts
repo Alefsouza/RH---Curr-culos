@@ -109,7 +109,6 @@ export async function createStage(name: string) {
   const { data: stages } = await supabase
     .from('etapas')
     .select('ordem')
-    .eq('user_id', session.user.id)
     .order('ordem', { ascending: false })
     .limit(1)
 

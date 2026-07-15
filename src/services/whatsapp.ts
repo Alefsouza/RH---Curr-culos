@@ -22,17 +22,7 @@ export async function getWhatsappDashboardData() {
   const { data: userData } = await supabase.auth.getUser()
   if (!userData.user) throw new Error('Não autenticado')
 
-  const userId = userData.user.id
-
-  const { data: userProfile } = await supabase
-    .from('usuarios')
-    .select('is_admin')
-    .eq('id', userId)
-    .single()
-
-  const isAdmin = userProfile?.is_admin || false
-
-  let msgQuery = supabase
+  const msgQuery = supabase
     .from('mensagens_whatsapp')
     .select(
       'id, candidato_id, conteudo, direcao, criado_em, uazapi_message_id, external_id, numero_whatsapp, candidatos(nome, telefone, user_id, ultima_resposta_whatsapp, etapa_id)',
@@ -41,18 +31,12 @@ export async function getWhatsappDashboardData() {
     .neq('conteudo', '')
     .order('criado_em', { ascending: true })
 
-  let resQuery = supabase
+  const resQuery = supabase
     .from('respostas_whatsapp')
     .select('candidato_id, resposta, mensagem_id, candidatos!inner(user_id)')
     .order('criado_em', { ascending: true })
 
-  let candsQuery = supabase.from('candidatos').select('id, etapa_id')
-
-  if (!isAdmin) {
-    msgQuery = msgQuery.eq('user_id', userId)
-    resQuery = resQuery.eq('candidatos.user_id', userId)
-    candsQuery = candsQuery.eq('user_id', userId)
-  }
+  const candsQuery = supabase.from('candidatos').select('id, etapa_id')
 
   const [
     { data: convData, error: convError },

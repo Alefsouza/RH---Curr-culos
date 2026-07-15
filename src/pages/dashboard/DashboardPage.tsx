@@ -44,15 +44,11 @@ export default function DashboardPage() {
     try {
       // Fetch data using correct 'analises' table identifier
       const [candRes, etapasRes, vagasRes, analisesRes, ceRes] = await Promise.all([
-        supabase.from('candidatos').select('*').eq('user_id', user.id),
-        supabase.from('etapas').select('*').eq('user_id', user.id).order('ordem'),
-        supabase.from('vagas').select('*').eq('user_id', user.id),
-        supabase.from('analises').select('*').eq('user_id', user.id),
-        supabase
-          .from('candidato_etapa')
-          .select('*')
-          .eq('usuario_id', user.id)
-          .order('data_entrada'),
+        supabase.from('candidatos').select('*'),
+        supabase.from('etapas').select('*').order('ordem'),
+        supabase.from('vagas').select('*'),
+        supabase.from('analises').select('*'),
+        supabase.from('candidato_etapa').select('*').order('data_entrada'),
       ])
 
       if (candRes.error) throw candRes.error
