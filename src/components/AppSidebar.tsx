@@ -23,6 +23,7 @@ import {
   MessageCircleCode,
   RefreshCw,
   Settings,
+  SquareKanban,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
