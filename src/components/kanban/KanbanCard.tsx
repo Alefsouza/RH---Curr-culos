@@ -1,4 +1,5 @@
-import React from 'react'
+import { memo } from 'react'
+import type { DragEvent, MouseEvent } from 'react'
 import { Candidate } from '@/types/kanban'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -21,6 +22,7 @@ import { cn } from '@/lib/utils'
 interface KanbanCardProps {
   candidate: Candidate
   isDragging: boolean
+  recentlyDropped: boolean
   onDragStart: (id: string) => void
   onDragEnd: () => void
 }
@@ -40,17 +42,22 @@ const sourceLabels: Record<string, string> = {
   manual_upload: 'Manual',
 }
 
-export function KanbanCard({ candidate, isDragging, onDragStart, onDragEnd }: KanbanCardProps) {
+function KanbanCardBase({
+  candidate,
+  isDragging,
+  recentlyDropped,
+  onDragStart,
+  onDragEnd,
+}: KanbanCardProps) {
   const { toast } = useToast()
 
-  const handleDragStart = (e: React.DragEvent) => {
+  const handleDragStart = (e: DragEvent) => {
     e.dataTransfer.setData('text/plain', candidate.id)
     e.dataTransfer.effectAllowed = 'move'
-    // Small delay to allow the drag image to be generated before we dim the original
     setTimeout(() => onDragStart(candidate.id), 0)
   }
 
-  const handleDelete = async (e: React.MouseEvent) => {
+  const handleDelete = async (e: MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
     if (!confirm('Deseja excluir este currículo do Kanban?')) return
@@ -60,7 +67,7 @@ export function KanbanCard({ candidate, isDragging, onDragStart, onDragEnd }: Ka
       window.dispatchEvent(
         new CustomEvent('kanban:delete-candidate', { detail: { candidateId: candidate.id } }),
       )
-    } catch (err) {
+    } catch {
       toast({ variant: 'destructive', title: 'Erro ao excluir currículo. Tente novamente.' })
     }
   }
@@ -81,8 +88,9 @@ export function KanbanCard({ candidate, isDragging, onDragStart, onDragEnd }: Ka
       onDragStart={handleDragStart}
       onDragEnd={onDragEnd}
       className={cn(
-        'group relative cursor-grab active:cursor-grabbing border-border hover:border-primary/30 hover:shadow-elevation hover:opacity-80 opacity-100 transition-all duration-200 bg-white',
-        isDragging && '!opacity-90 scale-95 shadow-elevation',
+        'group relative cursor-grab active:cursor-grabbing border-border hover:border-primary/30 hover:shadow-elevation transition-[border-color,box-shadow] duration-200 bg-white',
+        isDragging && 'opacity-90 shadow-elevation',
+        recentlyDropped && 'animate-fade-in-up card-dropped-highlight',
       )}
     >
       <div
@@ -133,7 +141,7 @@ export function KanbanCard({ candidate, isDragging, onDragStart, onDragEnd }: Ka
                 {candidate.phone.split(',').filter(Boolean).length} números
               </span>
             )}
-          </div>{' '}
+          </div>
         </div>
 
         <div className="flex items-center justify-between pt-1">
@@ -159,22 +167,22 @@ export function KanbanCard({ candidate, isDragging, onDragStart, onDragEnd }: Ka
             )}
           </div>
           <div className="flex items-center gap-2">
-            {(candidate as any).ultima_resposta_whatsapp && (
+            {candidate.ultima_resposta_whatsapp && (
               <Badge
                 variant="outline"
                 className={cn(
                   'text-[10px] font-medium px-1 py-0 shadow-none border gap-0.5 flex items-center h-4',
-                  (candidate as any).ultima_resposta_whatsapp === 'sim'
+                  candidate.ultima_resposta_whatsapp === 'sim'
                     ? 'bg-green-50 text-green-700 border-green-200'
                     : 'bg-red-50 text-red-700 border-red-200',
                 )}
               >
-                {(candidate as any).ultima_resposta_whatsapp === 'sim' ? (
+                {candidate.ultima_resposta_whatsapp === 'sim' ? (
                   <CheckCircle className="w-2.5 h-2.5" />
                 ) : (
                   <XCircle className="w-2.5 h-2.5" />
                 )}
-                {(candidate as any).ultima_resposta_whatsapp === 'sim' ? 'Sim' : 'Não'}
+                {candidate.ultima_resposta_whatsapp === 'sim' ? 'Sim' : 'Não'}
               </Badge>
             )}
             <span className="text-[10px] text-slate-400">
@@ -189,3 +197,5 @@ export function KanbanCard({ candidate, isDragging, onDragStart, onDragEnd }: Ka
     </Card>
   )
 }
+
+export const KanbanCard = memo(KanbanCardBase)

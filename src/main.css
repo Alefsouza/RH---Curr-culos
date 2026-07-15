@@ -49,6 +49,15 @@
   }
 }
 
+@layer components {
+  .card-dropped-highlight {
+    border-color: hsl(var(--primary) / 0.5) !important;
+    box-shadow:
+      0 0 0 3px hsl(var(--primary) / 0.15),
+      0 4px 20px hsl(var(--primary) / 0.1) !important;
+  }
+}
+
 .shadow-elevation {
   box-shadow:
     0 4px 6px -1px rgb(0 0 0 / 0.1),

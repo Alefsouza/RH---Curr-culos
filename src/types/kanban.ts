@@ -5,6 +5,7 @@ export interface Candidate {
   phone: string
   source: string
   stageId: string
+  vaga_id: string | null
   job: string
   appliedAt: string
   analysisResult?: string | null

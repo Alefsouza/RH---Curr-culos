@@ -85,11 +85,12 @@ Deno.serve(async (req: Request) => {
     }
 
     // 1. Buscando candidato e telefone
+    // Nota: dados de recrutamento são compartilhados entre todos os usuários autenticados (RLS shared policies).
+    // Não filtramos por user_id para evitar 404 quando o candidato foi criado por outro recrutador.
     const { data: candidato, error: candidatoError } = await supabase
       .from('candidatos')
       .select('*, vagas!candidatos_vaga_id_fkey(titulo)')
       .eq('id', candidato_id)
-      .eq('user_id', userId)
       .single()
 
     if (candidatoError || !candidato) {
@@ -112,11 +113,11 @@ Deno.serve(async (req: Request) => {
     }
 
     // 2. Buscando template da etapa
+    // Templates também são compartilhados entre usuários autenticados.
     const { data: template, error: templateError } = await supabase
       .from('templates_mensagens')
       .select('*')
       .eq('etapa_id', etapa_id)
-      .eq('user_id', userId)
       .maybeSingle()
 
     if (templateError || !template || !template.texto) {

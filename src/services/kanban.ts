@@ -21,6 +21,7 @@ type CandidateWithRelations = {
   telefone: string | null
   fonte: string | null
   etapa_id: string | null
+  vaga_id: string | null
   criado_em: string
   vagas: { titulo: string } | { titulo: string }[] | null
   analises: { resultado: string | null; detalhes: any; criado_em: string }[] | null
@@ -63,6 +64,7 @@ export async function fetchCandidates() {
         phone: d.telefone || '',
         source: d.fonte || 'Site',
         stageId: d.etapa_id || '',
+        vaga_id: d.vaga_id || null,
         job: d.vagas ? (Array.isArray(d.vagas) ? d.vagas[0]?.titulo : d.vagas.titulo) : 'Sem Vaga',
         appliedAt: d.criado_em,
         analysisResult: latestIa?.resultado || null,
@@ -127,4 +129,40 @@ export async function createStage(name: string) {
 
   if (error) throw error
   return data
+}
+
+export async function fetchVagas() {
+  const { data, error } = await supabase
+    .from('vagas')
+    .select('id, titulo')
+    .order('titulo', { ascending: true })
+  if (error) throw error
+  return data as { id: string; titulo: string }[]
+}
+
+export async function updateCandidateVagaAndStage(
+  candidateId: string,
+  vagaId: string,
+  stageId: string,
+) {
+  const { error } = await supabase
+    .from('candidatos')
+    .update({ vaga_id: vagaId, etapa_id: stageId })
+    .eq('id', candidateId)
+  if (error) throw error
+
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    if (session) {
+      await supabase.from('candidato_etapa').insert({
+        candidato_id: candidateId,
+        etapa_id: stageId,
+        usuario_id: session.user.id,
+      })
+    }
+  } catch (e) {
+    console.error('Erro ao salvar histórico de etapas:', e)
+  }
 }

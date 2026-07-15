@@ -21,6 +21,7 @@ import { CandidateEditDialog } from '@/components/candidates/CandidateEditDialog
 import { CandidateDeleteDialog } from '@/components/candidates/CandidateDeleteDialog'
 import { BulkActionBar } from '@/components/candidates/BulkActionBar'
 import { BulkDeleteDialog } from '@/components/candidates/BulkDeleteDialog'
+import { VagaSelectDialog } from '@/components/candidates/VagaSelectDialog'
 import {
   Select,
   SelectContent,
@@ -41,6 +42,10 @@ export default function CandidatesPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [showBulkDelete, setShowBulkDelete] = useState(false)
   const [bulkReanalyzing, setBulkReanalyzing] = useState(false)
+  const [pendingQualify, setPendingQualify] = useState<{
+    candidateId: string
+    userId: string
+  } | null>(null)
   const { toast } = useToast()
 
   const loadData = useCallback(async () => {
@@ -139,11 +144,38 @@ export default function CandidatesPage() {
       } = await supabase.auth.getUser()
       if (!user) throw new Error('Usuário não autenticado')
 
+      if (newStatus === 'qualificado' && !vagaId) {
+        setPendingQualify({ candidateId, userId: user.id })
+        return
+      }
+
       await updateAnaliseStatus(candidateId, vagaId, newStatus, user.id)
       toast({ title: 'Status atualizado com sucesso' })
       loadData()
     } catch (err: any) {
       toast({ variant: 'destructive', title: 'Erro ao atualizar status', description: err.message })
+    }
+  }
+
+  const handleConfirmVaga = async (vagaId: string) => {
+    if (!pendingQualify) return
+    try {
+      await updateCandidateVaga(pendingQualify.candidateId, vagaId)
+      await updateAnaliseStatus(
+        pendingQualify.candidateId,
+        vagaId,
+        'qualificado',
+        pendingQualify.userId,
+      )
+      toast({ title: 'Candidato qualificado com sucesso' })
+      setPendingQualify(null)
+      loadData()
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao qualificar candidato',
+        description: err.message,
+      })
     }
   }
 
@@ -348,6 +380,13 @@ export default function CandidatesPage() {
         onDelete={() => setShowBulkDelete(true)}
         onClear={handleClearSelection}
         isReanalyzing={bulkReanalyzing}
+      />
+
+      <VagaSelectDialog
+        isOpen={!!pendingQualify}
+        vagas={vagas}
+        onClose={() => setPendingQualify(null)}
+        onConfirm={handleConfirmVaga}
       />
     </div>
   )
