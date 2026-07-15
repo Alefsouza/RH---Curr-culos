@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { Navigate } from 'react-router-dom'
-import { Mail, Lock, Eye, EyeOff, AlertCircle, Bus } from 'lucide-react'
+import { Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react'
 
 export default function AuthPage() {
   const [email, setEmail] = useState('financeiro@viasudeste.com')
@@ -50,16 +50,12 @@ export default function AuthPage() {
         <div className="flex flex-col md:flex-row items-stretch gap-0">
           {/* Logo Section */}
           <div className="flex-1 flex flex-col items-center justify-center glass-card rounded-t-2xl md:rounded-l-2xl md:rounded-tr-none border border-white/20 bg-white/10 backdrop-blur-xl p-8 md:p-12">
-            <div className="flex flex-col items-center gap-4">
-              <div className="flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-[hsl(149_100%_33%)] to-[hsl(149_100%_25%)] shadow-lg">
-                <Bus className="h-10 w-10 text-white" />
-              </div>
-              <div className="text-center">
-                <h1 className="text-2xl font-bold text-white tracking-tight">Via Sudeste</h1>
-                <p className="text-xs text-white/70 font-medium tracking-wide uppercase mt-1">
-                  Gestão de Currículos
-                </p>
-              </div>
+            <div className="flex flex-col items-center gap-6">
+              <img
+                src="https://wrnhfpncasqifaisvyaf.supabase.co/storage/v1/object/public/assets/logo_branco_transparente_nitido-80a6a-BIUCr1YD.png"
+                alt="Via Sudeste"
+                className="w-48 md:w-64 h-auto object-contain drop-shadow-lg"
+              />
             </div>
           </div>
 
@@ -70,7 +66,7 @@ export default function AuthPage() {
                 Gestão de Currículos
               </h2>
               <p className="text-sm text-white/60 mt-2">
-                Insira suas credencias para acessar sua conta
+                Insira suas credenciais para acessar sua conta
               </p>
             </div>
 
