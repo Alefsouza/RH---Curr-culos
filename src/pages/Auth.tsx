@@ -6,18 +6,15 @@ import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { Navigate } from 'react-router-dom'
 import { Mail, Lock, Eye, EyeOff, AlertCircle, Bus } from 'lucide-react'
-import { cn } from '@/lib/utils'
 
 export default function AuthPage() {
   const [email, setEmail] = useState('financeiro@viasudeste.com')
-  const [password, setPassword] = useState('Skip@Pass')
-  const [name, setName] = useState('')
-  const [isLogin, setIsLogin] = useState(true)
+  const [password, setPassword] = useState('Skip@Pass123')
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [authError, setAuthError] = useState<string | null>(null)
 
-  const { signIn, signUp, user } = useAuth()
+  const { signIn, user } = useAuth()
   const { toast } = useToast()
 
   if (user) {
@@ -29,22 +26,12 @@ export default function AuthPage() {
     setLoading(true)
     setAuthError(null)
 
-    if (isLogin) {
-      const { error } = await signIn(email, password)
-      if (error) {
-        setAuthError(error.message)
-        toast({ variant: 'destructive', title: 'Erro no login', description: error.message })
-      } else {
-        toast({ title: 'Bem-vindo de volta!' })
-      }
+    const { error } = await signIn(email, password)
+    if (error) {
+      setAuthError(error.message)
+      toast({ variant: 'destructive', title: 'Erro no login', description: error.message })
     } else {
-      const { error } = await signUp(email, password, name)
-      if (error) {
-        setAuthError(error.message)
-        toast({ variant: 'destructive', title: 'Erro no cadastro', description: error.message })
-      } else {
-        toast({ title: 'Conta criada!', description: 'Sua conta foi criada com sucesso.' })
-      }
+      toast({ title: 'Bem-vindo de volta!' })
     }
     setLoading(false)
   }
@@ -59,29 +46,31 @@ export default function AuthPage() {
       />
       <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/80" />
 
-      <div className="relative z-10 w-full max-w-md animate-fade-in-up">
-        <div className="glass-card rounded-2xl border border-white/20 bg-white/10 backdrop-blur-xl shadow-2xl">
-          <div className="flex flex-col items-center pt-8 px-8 pb-2">
-            <div className="flex flex-col items-center gap-3 mb-6">
-              <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-[hsl(149_100%_33%)] to-[hsl(149_100%_25%)] shadow-lg">
-                <Bus className="h-8 w-8 text-white" />
+      <div className="relative z-10 w-full max-w-4xl animate-fade-in-up">
+        <div className="flex flex-col md:flex-row items-stretch gap-0">
+          {/* Logo Section */}
+          <div className="flex-1 flex flex-col items-center justify-center glass-card rounded-t-2xl md:rounded-l-2xl md:rounded-tr-none border border-white/20 bg-white/10 backdrop-blur-xl p-8 md:p-12">
+            <div className="flex flex-col items-center gap-4">
+              <div className="flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-[hsl(149_100%_33%)] to-[hsl(149_100%_25%)] shadow-lg">
+                <Bus className="h-10 w-10 text-white" />
               </div>
               <div className="text-center">
                 <h1 className="text-2xl font-bold text-white tracking-tight">Via Sudeste</h1>
-                <p className="text-xs text-white/70 font-medium tracking-wide uppercase">
+                <p className="text-xs text-white/70 font-medium tracking-wide uppercase mt-1">
                   Gestão de Currículos
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="px-8 pb-8">
-            <div className="mb-6 text-center">
-              <h2 className="text-xl font-semibold text-white">
-                {isLogin ? 'Entrar' : 'Criar Conta'}
+          {/* Form Section */}
+          <div className="flex-1 glass-card rounded-b-2xl md:rounded-r-2xl md:rounded-bl-none border border-white/20 bg-white/10 backdrop-blur-xl p-8 md:p-12">
+            <div className="mb-6">
+              <h2 className="text-xl font-bold text-white uppercase tracking-wide">
+                Gestão de Currículos
               </h2>
-              <p className="text-sm text-white/60 mt-1">
-                {isLogin ? 'Acesse o Kanban de Candidatos' : 'Preencha os dados para começar'}
+              <p className="text-sm text-white/60 mt-2">
+                Insira suas credencias para acessar sua conta
               </p>
             </div>
 
@@ -93,27 +82,9 @@ export default function AuthPage() {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              {!isLogin && (
-                <div className="space-y-2">
-                  <Label htmlFor="name" className="text-white/80 text-sm font-medium">
-                    Nome completo
-                  </Label>
-                  <div className="relative">
-                    <Input
-                      id="name"
-                      placeholder="Seu nome"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      required
-                      className="glass-input h-11 pl-4"
-                    />
-                  </div>
-                </div>
-              )}
-
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-white/80 text-sm font-medium">
-                  E-mail
+                  Email
                 </Label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40 pointer-events-none" />
@@ -165,26 +136,11 @@ export default function AuthPage() {
                     <span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     Aguarde...
                   </span>
-                ) : isLogin ? (
-                  'Entrar'
                 ) : (
-                  'Cadastrar'
+                  'Entrar'
                 )}
               </Button>
             </form>
-
-            <div className="mt-6 text-center">
-              <button
-                type="button"
-                className="text-sm text-white/60 hover:text-white transition-colors duration-200 font-medium"
-                onClick={() => {
-                  setIsLogin(!isLogin)
-                  setAuthError(null)
-                }}
-              >
-                {isLogin ? 'Não tem uma conta? Cadastre-se' : 'Já tem uma conta? Entre'}
-              </button>
-            </div>
           </div>
         </div>
 
