@@ -145,3 +145,12 @@ export async function reanalyzeCandidateEdge(candidateId: string) {
   if (data?.error) throw new Error(data.error)
   return data
 }
+
+export async function identifyVagaForCandidate(candidatoId: string, userId: string) {
+  const { data, error } = await supabase.functions.invoke('identify-vaga-from-cv', {
+    body: { candidato_id: candidatoId, user_id: userId },
+  })
+  if (error) throw error
+  if (data?.error) throw new Error(data.error)
+  return data as { vaga_id: string | null; confianca: string; justificativa: string }
+}

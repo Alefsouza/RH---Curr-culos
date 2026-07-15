@@ -8,10 +8,10 @@
     "manage-users": 19,
     "analisar-cv-criterios": 35,
     "whatsapp-webhook": 35,
-    "identify-vaga-from-cv": 9,
+    "identify-vaga-from-cv": 10,
     "gmail-poll-curriculos": 12,
     "enviar-mensagem-direta": 7,
     "sync-outlook-cvs": 1,
-    "reanalisar-candidato": 1
+    "reanalisar-candidato": 2
   }
 }

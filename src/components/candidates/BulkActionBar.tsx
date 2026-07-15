@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button'
-import { Trash2, Wand2, X, Loader2 } from 'lucide-react'
+import { Wand2, Trash2, X, Loader2 } from 'lucide-react'
 
 export function BulkActionBar({
   count,
@@ -12,43 +12,47 @@ export function BulkActionBar({
   onReanalyze: () => void
   onDelete: () => void
   onClear: () => void
-  isReanalyzing: boolean
+  isReanalyzing?: boolean
 }) {
   if (count === 0) return null
 
   return (
     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-fade-in-up">
-      <div className="flex items-center gap-3 bg-slate-900 text-white rounded-xl shadow-2xl px-5 py-3 border border-slate-700">
-        <span className="text-sm font-medium whitespace-nowrap">
-          {count} {count === 1 ? 'candidato selecionado' : 'candidatos selecionados'}
+      <div className="flex items-center gap-2 bg-slate-900 text-white rounded-full shadow-2xl px-4 py-2.5 border border-slate-700">
+        <span className="text-sm font-medium whitespace-nowrap px-2">
+          {count} candidato{count !== 1 ? 's' : ''} selecionado{count !== 1 ? 's' : ''}
         </span>
-        <div className="h-5 w-px bg-white/20" />
+        <div className="h-5 w-px bg-slate-700" />
         <Button
           size="sm"
-          variant="secondary"
           onClick={onReanalyze}
           disabled={isReanalyzing}
-          className="bg-white/10 hover:bg-white/20 text-white border-0"
+          className="bg-primary hover:bg-primary/90 text-white rounded-full h-8 gap-1.5"
         >
           {isReanalyzing ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (
-            <Wand2 className="mr-2 h-4 w-4" />
+            <Wand2 className="h-3.5 w-3.5" />
           )}
           Reanalisar com IA
         </Button>
-        <Button size="sm" variant="destructive" onClick={onDelete} disabled={isReanalyzing}>
-          <Trash2 className="mr-2 h-4 w-4" />
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={onDelete}
+          className="text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-full h-8 gap-1.5"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
           Excluir
         </Button>
-        <button
+        <Button
+          size="sm"
+          variant="ghost"
           onClick={onClear}
-          disabled={isReanalyzing}
-          className="text-sm text-white/70 hover:text-white flex items-center gap-1 ml-1 transition-colors disabled:opacity-50"
+          className="text-slate-400 hover:text-white hover:bg-slate-700 rounded-full h-8 w-8 p-0"
         >
           <X className="h-4 w-4" />
-          Limpar seleção
-        </button>
+        </Button>
       </div>
     </div>
   )

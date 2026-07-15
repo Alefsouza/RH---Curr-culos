@@ -7,12 +7,14 @@ import {
   updateAnaliseStatus,
   bulkDeleteCandidates,
   reanalyzeCandidateEdge,
+  identifyVagaForCandidate,
+  updateCandidateVaga,
 } from '@/services/candidates'
 import { fetchVagas } from '@/services/review'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Search, Users as UsersIcon, AlertCircle, Loader2 } from 'lucide-react'
+import { Search, Users as UsersIcon, AlertCircle } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { CandidateTable } from '@/components/candidates/CandidateTable'
 import { CandidateEditDialog } from '@/components/candidates/CandidateEditDialog'
@@ -182,54 +184,56 @@ export default function CandidatesPage() {
     }
   }
 
-  const handleBulkReanalyze = async () => {
+  const handleBulkReanalyze = () => {
     const selectedCandidates = filtered.filter((c) => selectedIds.has(c.id))
-    const valid = selectedCandidates.filter((c) => c.curriculo_url && c.vaga_id)
-    const invalid = selectedCandidates.filter((c) => !c.curriculo_url || !c.vaga_id)
+    const valid = selectedCandidates.filter((c) => c.curriculo_url)
+    const invalid = selectedCandidates.filter((c) => !c.curriculo_url)
 
     if (valid.length === 0) {
       toast({
         variant: 'destructive',
         title: 'Não foi possível reanalisar',
         description:
-          'Nenhum dos candidatos selecionados possui currículo anexado e vaga associada. Verifique os requisitos e tente novamente.',
+          'Nenhum dos candidatos selecionados possui currículo anexado. Verifique e tente novamente.',
       })
       return
     }
 
     if (invalid.length > 0) {
-      const nomesInvalidos = invalid.map((c) => c.nome).join(', ')
       toast({
-        title: 'Candidatos sem requisitos',
-        description: `${invalid.length} candidato(s) sem currículo ou vaga serão pulados: ${nomesInvalidos}.`,
+        title: 'Candidatos sem currículo',
+        description: `${invalid.length} candidato(s) sem currículo serão pulados.`,
       })
     }
 
+    toast({
+      title: 'Reanálise iniciada',
+      description: `Reanálise iniciada para ${valid.length} candidatos. Você pode continuar navegando.`,
+    })
+
+    setSelectedIds(new Set())
     setBulkReanalyzing(true)
-    try {
-      const results = await Promise.allSettled(valid.map((c) => reanalyzeCandidateEdge(c.id)))
-      const failed = results.filter((r) => r.status === 'rejected')
 
-      if (failed.length === 0) {
-        toast({
-          title: 'Reanálise concluída',
-          description: `${valid.length} candidato(s) reanalisado(s) com sucesso.`,
-        })
-      } else {
-        toast({
-          variant: 'destructive',
-          title: 'Reanálise parcial',
-          description: `${failed.length} de ${valid.length} candidatos falharam na reanálise.`,
-        })
-      }
-
-      setSelectedIds(new Set())
-      loadData()
-    } catch (err: any) {
-      toast({ variant: 'destructive', title: 'Erro na reanálise', description: err.message })
-    } finally {
-      setBulkReanalyzing(false)
-    }
+    Promise.allSettled(valid.map((c) => reanalyzeCandidateEdge(c.id)))
+      .then((results) => {
+        const failed = results.filter((r) => r.status === 'rejected')
+        if (failed.length === 0) {
+          toast({ title: 'Reanálise concluída com sucesso' })
+        } else {
+          toast({
+            variant: 'destructive',
+            title: 'Reanálise parcial',
+            description: `${failed.length} de ${valid.length} candidatos falharam na reanálise.`,
+          })
+        }
+        loadData()
+      })
+      .catch((err: any) => {
+        toast({ variant: 'destructive', title: 'Erro na reanálise', description: err.message })
+      })
+      .finally(() => {
+        setBulkReanalyzing(false)
+      })
   }
 
   if (loading) {
@@ -342,15 +346,6 @@ export default function CandidatesPage() {
         onClear={handleClearSelection}
         isReanalyzing={bulkReanalyzing}
       />
-
-      {bulkReanalyzing && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/20 backdrop-blur-sm">
-          <div className="flex flex-col items-center gap-3 bg-white rounded-xl shadow-2xl px-8 py-6">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="text-sm font-medium text-slate-700">Processando reanálises...</p>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

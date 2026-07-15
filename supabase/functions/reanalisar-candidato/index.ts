@@ -33,11 +33,48 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    if (!candidato.vaga_id) {
-      return new Response(JSON.stringify({ error: 'Candidato não possui vaga associada' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    let vagaId = candidato.vaga_id
+
+    // Automated Job Matching: if no vaga assigned, find best match using AI
+    if (!vagaId) {
+      const identifyRes = await fetch(`${supabaseUrl}/functions/v1/identify-vaga-from-cv`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${supabaseKey}` },
+        body: JSON.stringify({ candidato_id: candidato.id, user_id: candidato.user_id }),
       })
+
+      const identifyData = await identifyRes.json()
+
+      if (identifyData.error) {
+        return new Response(JSON.stringify({ error: identifyData.error }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (identifyData.vaga_id) {
+        const { error: updateError } = await supabase
+          .from('candidatos')
+          .update({ vaga_id: identifyData.vaga_id })
+          .eq('id', candidato.id)
+
+        if (updateError) {
+          return new Response(JSON.stringify({ error: 'Erro ao vincular vaga ao candidato' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+
+        vagaId = identifyData.vaga_id
+      } else {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            message: 'Nenhuma vaga compatível encontrada para o candidato',
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
+      }
     }
 
     const analyzeRes = await fetch(`${supabaseUrl}/functions/v1/analisar-cv-criterios`, {
@@ -45,7 +82,7 @@ Deno.serve(async (req: Request) => {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${supabaseKey}` },
       body: JSON.stringify({
         cv_id: candidato.id,
-        vaga_id: candidato.vaga_id,
+        vaga_id: vagaId,
         user_id: candidato.user_id,
       }),
     })
