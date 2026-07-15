@@ -115,9 +115,22 @@ export function KanbanCard({ candidate, isDragging, onDragStart, onDragEnd }: Ka
             <Mail className="mr-2 h-3.5 w-3.5" />
             <span className="truncate">{candidate.email}</span>
           </div>
-          <div className="flex items-center text-xs text-slate-500">
-            <Phone className="mr-2 h-3.5 w-3.5" />
-            <span>{candidate.phone}</span>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500">
+            <Phone className="h-3.5 w-3.5 shrink-0" />
+            <div className="flex flex-wrap gap-1">
+              {(candidate.phone || '')
+                .split(',')
+                .map((p) => p.trim())
+                .filter(Boolean)
+                .map((p, i) => (
+                  <span
+                    key={i}
+                    className="inline-flex items-center gap-1 rounded bg-slate-50 px-1.5 py-0.5 font-medium"
+                  >
+                    {p}
+                  </span>
+                ))}
+            </div>
           </div>
         </div>
 

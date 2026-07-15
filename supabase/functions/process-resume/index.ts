@@ -174,8 +174,14 @@ ${extractedText.substring(0, 15000)}`
         .split(',')
         .map((t: string) => t.trim())
         .filter(Boolean)
-      const normalizedParts = parts.map(normalizePhone).filter(Boolean)
-      finalTelefone = normalizedParts.length > 0 ? normalizedParts.join(',') : rawTelefone
+      const normalizedParts = parts
+        .map((t: string) => {
+          const n = normalizePhone(t)
+          return n && n.length >= 10 && n.length <= 11 ? n : null
+        })
+        .filter(Boolean)
+      const uniqueParts = Array.from(new Set(normalizedParts))
+      finalTelefone = uniqueParts.length > 0 ? uniqueParts.join(',') : rawTelefone
     }
     const finalNome = extractedData.nome || nome || 'Candidato Desconhecido'
 

@@ -166,11 +166,52 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    // 5. Verificação de 24 horas removida (permitindo múltiplos envios sem restrição de tempo conforme requisitos)
+    // 5. Verificação de número válido no WhatsApp (multi-número)
+    const checkWhatsAppNumber = async (
+      numWpp: string,
+      retries = 2,
+      backoff = 1500,
+    ): Promise<{ valid: boolean; jid: string | null }> => {
+      try {
+        const checkUrl = `${baseUrl}/chat/whatsappNumbers?instance=${instanceId}`
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 15000)
+        const res = await fetch(checkUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Connection: 'keep-alive',
+            apikey: uazapiToken,
+            Authorization: `Bearer ${uazapiToken}`,
+            token: uazapiToken,
+          },
+          body: JSON.stringify({ numbers: [numWpp] }),
+          signal: controller.signal,
+        })
+        clearTimeout(timeoutId)
+        if (!res.ok) {
+          if (res.status >= 500 && retries > 0) {
+            await new Promise((r) => setTimeout(r, backoff))
+            return checkWhatsAppNumber(numWpp, retries - 1, backoff * 2)
+          }
+          return { valid: true, jid: null }
+        }
+        const data = await res.json()
+        const entry = Array.isArray(data) ? data[0] : data?.data?.[0] || data?.result?.[0]
+        if (entry && (entry.exists === true || entry.isValid === true || entry.jid)) {
+          return { valid: true, jid: entry.jid || null }
+        }
+        return { valid: false, jid: null }
+      } catch (err: any) {
+        if (retries > 0) {
+          await new Promise((r) => setTimeout(r, backoff))
+          return checkWhatsAppNumber(numWpp, retries - 1, backoff * 2)
+        }
+        return { valid: true, jid: null }
+      }
+    }
 
     // 6. Enviando via UAZAPI
-    const uazapiUrl = Deno.env.get('UAZAPI_URL') || 'https://cvviasudeste.uazapi.com'
-    const uazapiToken = Deno.env.get('UAZAPI_TOKEN') || Deno.env.get('UAZAPI_KEY') || ''
 
     if (!uazapiToken) {
       return new Response(
@@ -325,12 +366,62 @@ Deno.serve(async (req: Request) => {
 
     let allSuccess = true
     const errors: string[] = []
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
 
     for (const phone of validPhones) {
       let isSuccess = false
       let errorMessage = null
       let externalId = null
       let responseData: any = null
+
+      let numWppCheck = phone
+      if (numWppCheck && !numWppCheck.startsWith('55')) {
+        numWppCheck = '55' + numWppCheck
+      }
+
+      // Idempotency: skip if a non-failed message was already sent recently for this candidate+number+etapa+template
+      const { data: existingMsg } = await supabase
+        .from('mensagens_whatsapp')
+        .select('id, status')
+        .eq('candidato_id', candidato.id)
+        .eq('numero_whatsapp', phone)
+        .eq('etapa_id', etapa_id)
+        .eq('template_id', template.id)
+        .eq('direcao', 'enviada')
+        .neq('status', 'falha')
+        .gte('criado_em', oneHourAgo)
+        .limit(1)
+        .maybeSingle()
+
+      if (existingMsg) {
+        console.log(`[enviar-whatsapp] Mensagem já enviada para ${phone} (idempotência). Pulando.`)
+        continue
+      }
+
+      // WhatsApp validation check
+      const validation = await checkWhatsAppNumber(numWppCheck)
+      if (!validation.valid) {
+        const { error: insertError } = await supabase.from('mensagens_whatsapp').insert({
+          candidato_id: candidato.id,
+          etapa_id: etapa_id,
+          template_id: template.id,
+          status: 'numero_invalido',
+          user_id: userId,
+          numero_whatsapp: phone,
+          enviado_em: null,
+          external_id: null,
+          uazapi_message_id: null,
+          conteudo: isChatbot ? perguntaTexto : mensagemTexto,
+          direcao: 'enviada',
+          tipo: isChatbot ? 'interativa' : 'texto',
+        } as any)
+        if (insertError) {
+          console.error('Erro ao registrar número inválido:', insertError.message)
+        }
+        errors.push(`Número ${phone} não é um WhatsApp válido.`)
+        allSuccess = false
+        continue
+      }
 
       try {
         responseData = await sendWhatsAppWithRetry(phone, mensagemTexto)
@@ -396,10 +487,14 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!allSuccess && errors.length > 0) {
+      const hasInvalidOnly = errors.every((e) => e.includes('não é um WhatsApp válido'))
       return new Response(
         JSON.stringify({
-          error: true,
-          message: 'Alguns envios falharam.',
+          error: !hasInvalidOnly,
+          warning: hasInvalidOnly,
+          message: hasInvalidOnly
+            ? 'Nenhum dos números é um WhatsApp válido.'
+            : 'Alguns envios falharam.',
           detalhe: errors.join(' | '),
         }),
         {
