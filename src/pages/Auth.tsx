@@ -54,7 +54,7 @@ export default function AuthPage() {
       <div
         className="absolute inset-0 bg-cover bg-center bg-no-repeat scale-105"
         style={{
-          backgroundImage: `url('https://img.usecurling.com/p/1920/1080?q=bus%20fleet&color=green')`,
+          backgroundImage: `url('https://wrnhfpncasqifaisvyaf.supabase.co/storage/v1/object/public/assets/6.jpeg')`,
         }}
       />
       <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/80" />
