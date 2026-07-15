@@ -38,7 +38,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { cn } from '@/lib/utils'
+import { cn, safeText } from '@/lib/utils'
 
 export default function CandidateDetails() {
   const { id } = useParams()
@@ -280,8 +280,9 @@ export default function CandidateDetails() {
     : []
   const skills = Array.isArray(extraidos.skills) ? extraidos.skills : []
   const formacao = Array.isArray(extraidos.formacao_academica) ? extraidos.formacao_academica : []
-  const endereco =
+  const enderecoRaw =
     extraidos.endereco || extraidos.location || extraidos.cidade || extraidos.estado || null
+  const endereco = enderecoRaw ? safeText(enderecoRaw) : null
 
   return (
     <div className="container mx-auto p-4 md:p-6 max-w-6xl space-y-6 animate-fade-in">
@@ -414,11 +415,11 @@ export default function CandidateDetails() {
               <CardContent className="pt-4">
                 {experiencia.length > 0 ? (
                   <ul className="space-y-4">
-                    {experiencia.map((exp: string, idx: number) => (
+                    {experiencia.map((exp: any, idx: number) => (
                       <li key={idx} className="flex gap-3 items-start">
                         <div className="mt-2 w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
                         <span className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
-                          {exp}
+                          {safeText(exp)}
                         </span>
                       </li>
                     ))}
@@ -444,10 +445,12 @@ export default function CandidateDetails() {
                 <CardContent className="pt-4">
                   {formacao.length > 0 ? (
                     <ul className="space-y-3">
-                      {formacao.map((form: string, idx: number) => (
+                      {formacao.map((form: any, idx: number) => (
                         <li key={idx} className="flex gap-3 items-start">
                           <div className="mt-2 w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
-                          <span className="text-sm text-slate-700 leading-relaxed">{form}</span>
+                          <span className="text-sm text-slate-700 leading-relaxed">
+                            {safeText(form)}
+                          </span>
                         </li>
                       ))}
                     </ul>
@@ -468,13 +471,13 @@ export default function CandidateDetails() {
                 <CardContent className="pt-4">
                   {skills.length > 0 ? (
                     <div className="flex flex-wrap gap-2">
-                      {skills.map((skill: string, idx: number) => (
+                      {skills.map((skill: any, idx: number) => (
                         <Badge
                           key={idx}
                           variant="secondary"
                           className="bg-slate-100 hover:bg-slate-200 text-slate-700 border-transparent px-3 py-1"
                         >
-                          {skill}
+                          {safeText(skill)}
                         </Badge>
                       ))}
                     </div>
@@ -528,7 +531,7 @@ export default function CandidateDetails() {
                   <CardContent className="text-sm space-y-4 pt-4">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-slate-700">Aderência calculada:</span>
-                      <Badge variant="outline">{a.detalhes?.aderencia || 'N/A'}</Badge>
+                      <Badge variant="outline">{safeText(a.detalhes?.aderencia) || 'N/A'}</Badge>
                     </div>
 
                     {a.detalhes?.score !== undefined && (
@@ -552,38 +555,42 @@ export default function CandidateDetails() {
                       </div>
                     )}
 
-                    {a.detalhes?.pontos_fortes && a.detalhes.pontos_fortes.length > 0 && (
-                      <div className="bg-green-50/50 p-3 rounded-md border border-green-100">
-                        <span className="font-semibold text-green-800 flex items-center gap-1.5 mb-2">
-                          <CheckCircle className="w-4 h-4" /> Pontos Fortes
-                        </span>
-                        <ul className="list-disc pl-5 space-y-1 text-slate-600">
-                          {a.detalhes.pontos_fortes.map((p: string, i: number) => (
-                            <li key={i}>{p}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
+                    {a.detalhes?.pontos_fortes &&
+                      Array.isArray(a.detalhes.pontos_fortes) &&
+                      a.detalhes.pontos_fortes.length > 0 && (
+                        <div className="bg-green-50/50 p-3 rounded-md border border-green-100">
+                          <span className="font-semibold text-green-800 flex items-center gap-1.5 mb-2">
+                            <CheckCircle className="w-4 h-4" /> Pontos Fortes
+                          </span>
+                          <ul className="list-disc pl-5 space-y-1 text-slate-600">
+                            {a.detalhes.pontos_fortes.map((p: any, i: number) => (
+                              <li key={i}>{safeText(p)}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
 
-                    {a.detalhes?.pontos_fracos && a.detalhes.pontos_fracos.length > 0 && (
-                      <div className="bg-red-50/50 p-3 rounded-md border border-red-100">
-                        <span className="font-semibold text-red-800 flex items-center gap-1.5 mb-2">
-                          <XCircle className="w-4 h-4" /> Pontos a Desenvolver
-                        </span>
-                        <ul className="list-disc pl-5 space-y-1 text-slate-600">
-                          {a.detalhes.pontos_fracos.map((p: string, i: number) => (
-                            <li key={i}>{p}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
+                    {a.detalhes?.pontos_fracos &&
+                      Array.isArray(a.detalhes.pontos_fracos) &&
+                      a.detalhes.pontos_fracos.length > 0 && (
+                        <div className="bg-red-50/50 p-3 rounded-md border border-red-100">
+                          <span className="font-semibold text-red-800 flex items-center gap-1.5 mb-2">
+                            <XCircle className="w-4 h-4" /> Pontos a Desenvolver
+                          </span>
+                          <ul className="list-disc pl-5 space-y-1 text-slate-600">
+                            {a.detalhes.pontos_fracos.map((p: any, i: number) => (
+                              <li key={i}>{safeText(p)}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
 
                     {a.detalhes?.motivo && (
                       <div className="bg-amber-50/50 p-3 rounded-md border border-amber-100 mt-4">
                         <span className="font-semibold text-amber-800 flex items-center gap-1.5 mb-1">
                           Motivo (Regra / Localização)
                         </span>
-                        <p className="text-slate-600 text-sm">{a.detalhes.motivo}</p>
+                        <p className="text-slate-600 text-sm">{safeText(a.detalhes.motivo)}</p>
                       </div>
                     )}
 
@@ -592,45 +599,49 @@ export default function CandidateDetails() {
                         <span className="font-semibold text-blue-800 flex items-center gap-1.5 mb-1">
                           Resumo da Análise
                         </span>
-                        <p className="text-slate-600 text-sm">{a.detalhes.summary}</p>
+                        <p className="text-slate-600 text-sm">{safeText(a.detalhes.summary)}</p>
                       </div>
                     )}
 
-                    {a.detalhes?.matched_criteria && a.detalhes.matched_criteria.length > 0 && (
-                      <div className="bg-green-50/50 p-3 rounded-md border border-green-100 mt-4">
-                        <span className="font-semibold text-green-800 flex items-center gap-1.5 mb-2">
-                          <CheckCircle className="w-4 h-4" /> Critérios Atendidos
-                        </span>
-                        <ul className="space-y-1.5 text-sm text-slate-600">
-                          {a.detalhes.matched_criteria.map((c: any, i: number) => (
-                            <li key={i} className="flex gap-2">
-                              <CheckCircle className="w-3.5 h-3.5 text-green-600 mt-0.5 shrink-0" />
-                              <span>
-                                <strong>{c.nome}:</strong> {c.evidencia}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
+                    {a.detalhes?.matched_criteria &&
+                      Array.isArray(a.detalhes.matched_criteria) &&
+                      a.detalhes.matched_criteria.length > 0 && (
+                        <div className="bg-green-50/50 p-3 rounded-md border border-green-100 mt-4">
+                          <span className="font-semibold text-green-800 flex items-center gap-1.5 mb-2">
+                            <CheckCircle className="w-4 h-4" /> Critérios Atendidos
+                          </span>
+                          <ul className="space-y-1.5 text-sm text-slate-600">
+                            {a.detalhes.matched_criteria.map((c: any, i: number) => (
+                              <li key={i} className="flex gap-2">
+                                <CheckCircle className="w-3.5 h-3.5 text-green-600 mt-0.5 shrink-0" />
+                                <span>
+                                  <strong>{safeText(c.nome)}:</strong> {safeText(c.evidencia)}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>{' '}
+                        </div>
+                      )}
 
-                    {a.detalhes?.unmatched_criteria && a.detalhes.unmatched_criteria.length > 0 && (
-                      <div className="bg-red-50/50 p-3 rounded-md border border-red-100 mt-4">
-                        <span className="font-semibold text-red-800 flex items-center gap-1.5 mb-2">
-                          <XCircle className="w-4 h-4" /> Critérios Não Atendidos
-                        </span>
-                        <ul className="space-y-1.5 text-sm text-slate-600">
-                          {a.detalhes.unmatched_criteria.map((c: any, i: number) => (
-                            <li key={i} className="flex gap-2">
-                              <XCircle className="w-3.5 h-3.5 text-red-600 mt-0.5 shrink-0" />
-                              <span>
-                                <strong>{c.nome}:</strong> {c.motivo}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
+                    {a.detalhes?.unmatched_criteria &&
+                      Array.isArray(a.detalhes.unmatched_criteria) &&
+                      a.detalhes.unmatched_criteria.length > 0 && (
+                        <div className="bg-red-50/50 p-3 rounded-md border border-red-100 mt-4">
+                          <span className="font-semibold text-red-800 flex items-center gap-1.5 mb-2">
+                            <XCircle className="w-4 h-4" /> Critérios Não Atendidos
+                          </span>
+                          <ul className="space-y-1.5 text-sm text-slate-600">
+                            {a.detalhes.unmatched_criteria.map((c: any, i: number) => (
+                              <li key={i} className="flex gap-2">
+                                <XCircle className="w-3.5 h-3.5 text-red-600 mt-0.5 shrink-0" />
+                                <span>
+                                  <strong>{safeText(c.nome)}:</strong> {safeText(c.motivo)}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>{' '}
+                        </div>
+                      )}
                   </CardContent>
                 </Card>
               ))}

@@ -245,10 +245,12 @@ export type Database = {
           candidato_id: string | null
           confianca_identificacao: string | null
           erro_detalhes: string | null
-          gmail_message_id: string
+          gmail_message_id: string | null
           gmail_thread_id: string | null
           id: string
           justificativa_ia: string | null
+          outlook_message_id: string | null
+          outlook_thread_id: string | null
           processado_em: string | null
           recebido_em: string | null
           remetente: string | null
@@ -263,10 +265,12 @@ export type Database = {
           candidato_id?: string | null
           confianca_identificacao?: string | null
           erro_detalhes?: string | null
-          gmail_message_id: string
+          gmail_message_id?: string | null
           gmail_thread_id?: string | null
           id?: string
           justificativa_ia?: string | null
+          outlook_message_id?: string | null
+          outlook_thread_id?: string | null
           processado_em?: string | null
           recebido_em?: string | null
           remetente?: string | null
@@ -281,10 +285,12 @@ export type Database = {
           candidato_id?: string | null
           confianca_identificacao?: string | null
           erro_detalhes?: string | null
-          gmail_message_id?: string
+          gmail_message_id?: string | null
           gmail_thread_id?: string | null
           id?: string
           justificativa_ia?: string | null
+          outlook_message_id?: string | null
+          outlook_thread_id?: string | null
           processado_em?: string | null
           recebido_em?: string | null
           remetente?: string | null
@@ -462,6 +468,48 @@ export type Database = {
             referencedColumns: ['id']
           },
         ]
+      }
+      sync_runs: {
+        Row: {
+          cvs_imported: number | null
+          cvs_skipped_duplicate: number | null
+          cvs_skipped_internal: number | null
+          cvs_skipped_no_match: number | null
+          emails_scanned: number | null
+          errors: Json | null
+          finished_at: string | null
+          id: string
+          last_synced_at: string | null
+          started_at: string
+          status: string
+        }
+        Insert: {
+          cvs_imported?: number | null
+          cvs_skipped_duplicate?: number | null
+          cvs_skipped_internal?: number | null
+          cvs_skipped_no_match?: number | null
+          emails_scanned?: number | null
+          errors?: Json | null
+          finished_at?: string | null
+          id?: string
+          last_synced_at?: string | null
+          started_at?: string
+          status?: string
+        }
+        Update: {
+          cvs_imported?: number | null
+          cvs_skipped_duplicate?: number | null
+          cvs_skipped_internal?: number | null
+          cvs_skipped_no_match?: number | null
+          emails_scanned?: number | null
+          errors?: Json | null
+          finished_at?: string | null
+          id?: string
+          last_synced_at?: string | null
+          started_at?: string
+          status?: string
+        }
+        Relationships: []
       }
       templates_mensagens: {
         Row: {
