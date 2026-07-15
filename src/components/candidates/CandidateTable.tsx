@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,20 +39,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-const statusColors: Record<string, string> = {
-  qualificado: 'bg-green-100 text-green-800 hover:bg-green-200',
-  nao_qualificado: 'bg-red-100 text-red-800 hover:bg-red-200',
-  revisar: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
-  pendente: 'bg-slate-100 text-slate-800 hover:bg-slate-200',
-}
-
-const statusLabels: Record<string, string> = {
-  qualificado: 'Qualificado',
-  nao_qualificado: 'Não Qualificado',
-  revisar: 'Revisar',
-  pendente: 'Pendente',
-}
-
 export function CandidateTable({
   candidates,
   vagas = [],
@@ -59,6 +46,9 @@ export function CandidateTable({
   onDelete,
   onToggleStatus,
   onRefresh,
+  selectedIds,
+  onToggleSelect,
+  onToggleSelectAll,
 }: {
   candidates: any[]
   vagas?: { id: string; titulo: string }[]
@@ -66,11 +56,22 @@ export function CandidateTable({
   onDelete: (id: string) => void
   onToggleStatus: (id: string, status: string | null, vagaId: string | null) => void
   onRefresh?: () => void
+  selectedIds?: Set<string>
+  onToggleSelect?: (id: string) => void
+  onToggleSelectAll?: () => void
 }) {
   const { user } = useAuth()
   const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set())
   const [reanalyzeCandidateModal, setReanalyzeCandidateModal] = useState<any | null>(null)
   const [selectedVagaId, setSelectedVagaId] = useState<string>('')
+
+  const allSelected = candidates.length > 0 && candidates.every((c) => selectedIds?.has(c.id))
+  const someSelected = candidates.some((c) => selectedIds?.has(c.id))
+  const headerChecked: boolean | 'indeterminate' = allSelected
+    ? true
+    : someSelected
+      ? 'indeterminate'
+      : false
 
   const handleReanalyze = async (candidate: any, overrideVagaId?: string) => {
     if (!candidate.curriculo_url) {
@@ -198,6 +199,13 @@ export function CandidateTable({
         <Table>
           <TableHeader className="bg-slate-50">
             <TableRow>
+              <TableHead className="w-[48px]">
+                <Checkbox
+                  checked={headerChecked}
+                  onCheckedChange={() => onToggleSelectAll?.()}
+                  aria-label="Selecionar todos"
+                />
+              </TableHead>
               <TableHead>Nome</TableHead>
               <TableHead>Vaga</TableHead>
               <TableHead>Etapa</TableHead>
@@ -209,6 +217,13 @@ export function CandidateTable({
           <TableBody>
             {candidates.map((c) => (
               <TableRow key={c.id} className="hover:bg-slate-50/50">
+                <TableCell>
+                  <Checkbox
+                    checked={selectedIds?.has(c.id) ?? false}
+                    onCheckedChange={() => onToggleSelect?.(c.id)}
+                    aria-label={`Selecionar ${c.nome}`}
+                  />
+                </TableCell>
                 <TableCell>
                   <div className="flex flex-col">
                     <span className="font-medium text-slate-900 flex items-center gap-2">
@@ -319,27 +334,34 @@ export function CandidateTable({
           <Card key={c.id} className="bg-white shadow-sm border-border">
             <CardContent className="p-4 space-y-3">
               <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="font-semibold text-slate-900 flex items-center gap-2">
-                    {c.nome}
-                    {analyzingIds.has(c.id) && (
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    checked={selectedIds?.has(c.id) ?? false}
+                    onCheckedChange={() => onToggleSelect?.(c.id)}
+                    aria-label={`Selecionar ${c.nome}`}
+                  />
+                  <div>
+                    <h3 className="font-semibold text-slate-900 flex items-center gap-2">
+                      {c.nome}
+                      {analyzingIds.has(c.id) && (
+                        <Badge
+                          variant="secondary"
+                          className="h-5 text-[10px] px-1.5 animate-pulse bg-blue-100 text-blue-800"
+                        >
+                          Processando...
+                        </Badge>
+                      )}
+                    </h3>
+                    <p className="text-xs text-slate-500">{c.email}</p>
+                    {c.duplicado_de && (
                       <Badge
                         variant="secondary"
-                        className="h-5 text-[10px] px-1.5 animate-pulse bg-blue-100 text-blue-800"
+                        className="mt-1 text-[10px] bg-amber-100 text-amber-800 border-amber-200"
                       >
-                        Processando...
+                        Duplicado
                       </Badge>
                     )}
-                  </h3>
-                  <p className="text-xs text-slate-500">{c.email}</p>
-                  {c.duplicado_de && (
-                    <Badge
-                      variant="secondary"
-                      className="mt-1 text-[10px] bg-amber-100 text-amber-800 border-amber-200"
-                    >
-                      Duplicado
-                    </Badge>
-                  )}
+                  </div>
                 </div>
                 <ActionMenu candidate={c} />
               </div>

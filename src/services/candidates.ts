@@ -131,3 +131,17 @@ export async function reanalyzeCandidate(cv_id: string, vaga_id: string, user_id
   if (data?.error) throw new Error(data.error)
   return data
 }
+
+export async function bulkDeleteCandidates(ids: string[]) {
+  const { error } = await supabase.from('candidatos').delete().in('id', ids)
+  if (error) throw error
+}
+
+export async function reanalyzeCandidateEdge(candidateId: string) {
+  const { data, error } = await supabase.functions.invoke('reanalisar-candidato', {
+    body: { candidate_id: candidateId },
+  })
+  if (error) throw error
+  if (data?.error) throw new Error(data.error)
+  return data
+}

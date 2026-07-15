@@ -5,16 +5,20 @@ import {
   deleteCandidate,
   updateCandidate,
   updateAnaliseStatus,
+  bulkDeleteCandidates,
+  reanalyzeCandidateEdge,
 } from '@/services/candidates'
 import { fetchVagas } from '@/services/review'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Search, Users as UsersIcon, AlertCircle } from 'lucide-react'
+import { Search, Users as UsersIcon, AlertCircle, Loader2 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { CandidateTable } from '@/components/candidates/CandidateTable'
 import { CandidateEditDialog } from '@/components/candidates/CandidateEditDialog'
 import { CandidateDeleteDialog } from '@/components/candidates/CandidateDeleteDialog'
+import { BulkActionBar } from '@/components/candidates/BulkActionBar'
+import { BulkDeleteDialog } from '@/components/candidates/BulkDeleteDialog'
 import {
   Select,
   SelectContent,
@@ -32,6 +36,9 @@ export default function CandidatesPage() {
   const [statusFilter, setStatusFilter] = useState('todos')
   const [editData, setEditData] = useState<any | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [showBulkDelete, setShowBulkDelete] = useState(false)
+  const [bulkReanalyzing, setBulkReanalyzing] = useState(false)
   const { toast } = useToast()
 
   const loadData = useCallback(async () => {
@@ -86,6 +93,36 @@ export default function CandidatesPage() {
     })
   }, [candidates, search, statusFilter])
 
+  const handleToggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }, [])
+
+  const handleToggleSelectAll = useCallback(() => {
+    setSelectedIds((prev) => {
+      const allSelected = filtered.length > 0 && filtered.every((c) => prev.has(c.id))
+      if (allSelected) {
+        const next = new Set(prev)
+        filtered.forEach((c) => next.delete(c.id))
+        return next
+      }
+      const next = new Set(prev)
+      filtered.forEach((c) => next.add(c.id))
+      return next
+    })
+  }, [filtered])
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedIds(new Set())
+  }, [])
+
   const handleToggleStatus = async (
     candidateId: string,
     currentStatus: string | null,
@@ -130,6 +167,71 @@ export default function CandidatesPage() {
     }
   }
 
+  const handleBulkDelete = async () => {
+    try {
+      await bulkDeleteCandidates(Array.from(selectedIds))
+      toast({
+        title: 'Candidatos excluídos com sucesso',
+        description: `${selectedIds.size} registro(s) removido(s).`,
+      })
+      setSelectedIds(new Set())
+      setShowBulkDelete(false)
+      loadData()
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Erro ao excluir', description: err.message })
+    }
+  }
+
+  const handleBulkReanalyze = async () => {
+    const selectedCandidates = filtered.filter((c) => selectedIds.has(c.id))
+    const valid = selectedCandidates.filter((c) => c.curriculo_url && c.vaga_id)
+    const invalid = selectedCandidates.filter((c) => !c.curriculo_url || !c.vaga_id)
+
+    if (valid.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Não foi possível reanalisar',
+        description:
+          'Nenhum dos candidatos selecionados possui currículo anexado e vaga associada. Verifique os requisitos e tente novamente.',
+      })
+      return
+    }
+
+    if (invalid.length > 0) {
+      const nomesInvalidos = invalid.map((c) => c.nome).join(', ')
+      toast({
+        title: 'Candidatos sem requisitos',
+        description: `${invalid.length} candidato(s) sem currículo ou vaga serão pulados: ${nomesInvalidos}.`,
+      })
+    }
+
+    setBulkReanalyzing(true)
+    try {
+      const results = await Promise.allSettled(valid.map((c) => reanalyzeCandidateEdge(c.id)))
+      const failed = results.filter((r) => r.status === 'rejected')
+
+      if (failed.length === 0) {
+        toast({
+          title: 'Reanálise concluída',
+          description: `${valid.length} candidato(s) reanalisado(s) com sucesso.`,
+        })
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Reanálise parcial',
+          description: `${failed.length} de ${valid.length} candidatos falharam na reanálise.`,
+        })
+      }
+
+      setSelectedIds(new Set())
+      loadData()
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Erro na reanálise', description: err.message })
+    } finally {
+      setBulkReanalyzing(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -156,7 +258,7 @@ export default function CandidatesPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Candidatos</h1>
@@ -208,6 +310,9 @@ export default function CandidatesPage() {
           onDelete={setDeleteId}
           onToggleStatus={handleToggleStatus}
           onRefresh={loadData}
+          selectedIds={selectedIds}
+          onToggleSelect={handleToggleSelect}
+          onToggleSelectAll={handleToggleSelectAll}
         />
       )}
 
@@ -222,6 +327,30 @@ export default function CandidatesPage() {
         onClose={() => setDeleteId(null)}
         onConfirm={handleDelete}
       />
+
+      <BulkDeleteDialog
+        isOpen={showBulkDelete}
+        count={selectedIds.size}
+        onClose={() => setShowBulkDelete(false)}
+        onConfirm={handleBulkDelete}
+      />
+
+      <BulkActionBar
+        count={selectedIds.size}
+        onReanalyze={handleBulkReanalyze}
+        onDelete={() => setShowBulkDelete(true)}
+        onClear={handleClearSelection}
+        isReanalyzing={bulkReanalyzing}
+      />
+
+      {bulkReanalyzing && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/20 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-3 bg-white rounded-xl shadow-2xl px-8 py-6">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-sm font-medium text-slate-700">Processando reanálises...</p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
