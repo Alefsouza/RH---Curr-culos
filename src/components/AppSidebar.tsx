@@ -48,11 +48,13 @@ export function AppSidebar() {
     <Sidebar className="border-r border-border bg-sidebar">
       <SidebarHeader className="h-16 flex items-center justify-center border-b border-border">
         <div className="flex items-center justify-center px-4 w-full">
-          <img
-            src="https://pagamentos.goskip.app/visual-edits/sem-nome-190-50-px-610b0304.png"
-            alt="Logo Via Sudeste"
-            className="h-9 w-auto max-w-[180px] object-contain"
-          />
+          <Link to="/dashboard" className="block cursor-pointer" aria-label="Ir para o Dashboard">
+            <img
+              src="https://pagamentos.goskip.app/visual-edits/sem-nome-190-50-px-610b0304.png"
+              alt="Logo Via Sudeste"
+              className="h-9 w-auto max-w-[180px] object-contain transition-transform duration-200 hover:scale-105"
+            />
+          </Link>
         </div>
       </SidebarHeader>
 
