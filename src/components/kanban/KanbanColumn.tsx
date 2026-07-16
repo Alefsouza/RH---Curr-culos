@@ -35,7 +35,6 @@ interface KanbanColumnProps {
   stage: Stage
   candidates: Candidate[]
   draggedCandidateId: string | null
-  recentlyDroppedId: string | null
   onDrop: (candidateId: string, stageId: string) => void
   onDragStart: (id: string) => void
   onDragEnd: () => void
@@ -45,7 +44,6 @@ export function KanbanColumn({
   stage,
   candidates,
   draggedCandidateId,
-  recentlyDroppedId,
   onDrop,
   onDragStart,
   onDragEnd,
@@ -231,7 +229,6 @@ export function KanbanColumn({
               key={candidate.id}
               candidate={candidate}
               isDragging={draggedCandidateId === candidate.id}
-              recentlyDropped={recentlyDroppedId === candidate.id}
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}
             />

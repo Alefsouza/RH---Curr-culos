@@ -1,5 +1,4 @@
-import { memo } from 'react'
-import type { DragEvent, MouseEvent } from 'react'
+import React from 'react'
 import { Candidate } from '@/types/kanban'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -22,7 +21,6 @@ import { cn } from '@/lib/utils'
 interface KanbanCardProps {
   candidate: Candidate
   isDragging: boolean
-  recentlyDropped: boolean
   onDragStart: (id: string) => void
   onDragEnd: () => void
 }
@@ -42,22 +40,17 @@ const sourceLabels: Record<string, string> = {
   manual_upload: 'Manual',
 }
 
-function KanbanCardBase({
-  candidate,
-  isDragging,
-  recentlyDropped,
-  onDragStart,
-  onDragEnd,
-}: KanbanCardProps) {
+export function KanbanCard({ candidate, isDragging, onDragStart, onDragEnd }: KanbanCardProps) {
   const { toast } = useToast()
 
-  const handleDragStart = (e: DragEvent) => {
+  const handleDragStart = (e: React.DragEvent) => {
     e.dataTransfer.setData('text/plain', candidate.id)
     e.dataTransfer.effectAllowed = 'move'
+    // Small delay to allow the drag image to be generated before we dim the original
     setTimeout(() => onDragStart(candidate.id), 0)
   }
 
-  const handleDelete = async (e: MouseEvent) => {
+  const handleDelete = async (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
     if (!confirm('Deseja excluir este currículo do Kanban?')) return
@@ -67,7 +60,7 @@ function KanbanCardBase({
       window.dispatchEvent(
         new CustomEvent('kanban:delete-candidate', { detail: { candidateId: candidate.id } }),
       )
-    } catch {
+    } catch (err) {
       toast({ variant: 'destructive', title: 'Erro ao excluir currículo. Tente novamente.' })
     }
   }
@@ -88,9 +81,10 @@ function KanbanCardBase({
       onDragStart={handleDragStart}
       onDragEnd={onDragEnd}
       className={cn(
-        'group relative cursor-grab active:cursor-grabbing border-border hover:border-primary/30 hover:shadow-elevation transition-[border-color,box-shadow] duration-200 bg-white',
-        isDragging && 'opacity-90 shadow-elevation',
-        recentlyDropped && 'animate-fade-in-up card-dropped-highlight',
+        'group relative cursor-grab active:cursor-grabbing border border-border bg-white opacity-100',
+        'transition-[box-shadow,border-color,opacity] duration-200 ease-out will-change-[box-shadow,border-color]',
+        'hover:border-primary/30 hover:shadow-elevation hover:opacity-95',
+        isDragging && 'opacity-90 shadow-elevation border-primary/40 ring-1 ring-primary/10',
       )}
     >
       <div
@@ -141,7 +135,7 @@ function KanbanCardBase({
                 {candidate.phone.split(',').filter(Boolean).length} números
               </span>
             )}
-          </div>
+          </div>{' '}
         </div>
 
         <div className="flex items-center justify-between pt-1">
@@ -167,22 +161,22 @@ function KanbanCardBase({
             )}
           </div>
           <div className="flex items-center gap-2">
-            {candidate.ultima_resposta_whatsapp && (
+            {(candidate as any).ultima_resposta_whatsapp && (
               <Badge
                 variant="outline"
                 className={cn(
                   'text-[10px] font-medium px-1 py-0 shadow-none border gap-0.5 flex items-center h-4',
-                  candidate.ultima_resposta_whatsapp === 'sim'
+                  (candidate as any).ultima_resposta_whatsapp === 'sim'
                     ? 'bg-green-50 text-green-700 border-green-200'
                     : 'bg-red-50 text-red-700 border-red-200',
                 )}
               >
-                {candidate.ultima_resposta_whatsapp === 'sim' ? (
+                {(candidate as any).ultima_resposta_whatsapp === 'sim' ? (
                   <CheckCircle className="w-2.5 h-2.5" />
                 ) : (
                   <XCircle className="w-2.5 h-2.5" />
                 )}
-                {candidate.ultima_resposta_whatsapp === 'sim' ? 'Sim' : 'Não'}
+                {(candidate as any).ultima_resposta_whatsapp === 'sim' ? 'Sim' : 'Não'}
               </Badge>
             )}
             <span className="text-[10px] text-slate-400">
@@ -197,5 +191,3 @@ function KanbanCardBase({
     </Card>
   )
 }
-
-export const KanbanCard = memo(KanbanCardBase)

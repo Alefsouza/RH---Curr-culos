@@ -127,11 +127,13 @@ Deno.serve(async (req: Request) => {
             })
             .eq('id', existing.id)
         else
-          await supabase.from('email_importacoes').insert({
-            ...importBase,
-            status: 'sem_anexo_valido',
-            processado_em: new Date().toISOString(),
-          })
+          await supabase
+            .from('email_importacoes')
+            .insert({
+              ...importBase,
+              status: 'sem_anexo_valido',
+              processado_em: new Date().toISOString(),
+            })
         continue
       }
 
