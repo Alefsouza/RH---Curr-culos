@@ -53,14 +53,12 @@ Deno.serve(async (req: Request) => {
       .from('candidatos')
       .select('*')
       .eq('id', cv_id)
-      .eq('user_id', user_id)
       .single()
 
     if (candidatoError || !candidato) {
       return new Response(
         JSON.stringify({
-          error:
-            'Currículo não encontrado ou você não tem permissão para acessá-lo. Verifique se o candidato existe e pertence à sua conta.',
+          error: 'Currículo não encontrado. Verifique se o candidato existe.',
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
@@ -70,14 +68,12 @@ Deno.serve(async (req: Request) => {
       .from('vagas')
       .select('*')
       .eq('id', vaga_id)
-      .eq('user_id', user_id)
       .single()
 
     if (vagaError || !vaga) {
       return new Response(
         JSON.stringify({
-          error:
-            'Vaga não encontrada ou você não tem permissão para acessá-la. Verifique se a vaga existe e pertence à sua conta.',
+          error: 'Vaga não encontrada. Verifique se a vaga existe.',
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
@@ -349,7 +345,7 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
         const { data: etapaNovos } = await supabaseAdmin
           .from('etapas')
           .select('id')
-          .eq('user_id', user_id)
+          .eq('user_id', candidato.user_id)
           .ilike('nome', 'Novos')
           .maybeSingle()
 
