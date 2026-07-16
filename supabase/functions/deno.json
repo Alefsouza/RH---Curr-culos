@@ -6,12 +6,12 @@
     "enviar-whatsapp": 62,
     "test-whatsapp": 53,
     "manage-users": 19,
-    "analisar-cv-criterios": 35,
+    "analisar-cv-criterios": 36,
     "whatsapp-webhook": 37,
     "identify-vaga-from-cv": 10,
     "gmail-poll-curriculos": 12,
     "enviar-mensagem-direta": 10,
     "sync-outlook-cvs": 1,
-    "reanalisar-candidato": 2
+    "reanalisar-candidato": 3
   }
 }

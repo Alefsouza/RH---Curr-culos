@@ -17,7 +17,17 @@ Deno.serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
     const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') || ''
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey)
+
+    const authHeader = req.headers.get('Authorization') || ''
+
+    const supabaseQuery =
+      authHeader && supabaseAnonKey
+        ? createClient(supabaseUrl, supabaseAnonKey, {
+            global: { headers: { Authorization: authHeader } },
+          })
+        : supabaseAdmin
 
     const bodyText = await req.text()
     let body
@@ -25,7 +35,7 @@ Deno.serve(async (req: Request) => {
       body = JSON.parse(bodyText)
     } catch (e) {
       return new Response(JSON.stringify({ error: 'Payload inválido. Formato JSON esperado.' }), {
-        status: 400,
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
@@ -35,14 +45,11 @@ Deno.serve(async (req: Request) => {
     if (!cv_id || !vaga_id || !user_id) {
       return new Response(
         JSON.stringify({ error: 'Os parâmetros cv_id, vaga_id e user_id são obrigatórios.' }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
     }
 
-    const { data: candidato, error: candidatoError } = await supabaseAdmin
+    const { data: candidato, error: candidatoError } = await supabaseQuery
       .from('candidatos')
       .select('*')
       .eq('id', cv_id)
@@ -50,13 +57,16 @@ Deno.serve(async (req: Request) => {
       .single()
 
     if (candidatoError || !candidato) {
-      return new Response(JSON.stringify({ error: 'Currículo não encontrado ou acesso negado.' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(
+        JSON.stringify({
+          error:
+            'Currículo não encontrado ou você não tem permissão para acessá-lo. Verifique se o candidato existe e pertence à sua conta.',
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
     }
 
-    const { data: vaga, error: vagaError } = await supabaseAdmin
+    const { data: vaga, error: vagaError } = await supabaseQuery
       .from('vagas')
       .select('*')
       .eq('id', vaga_id)
@@ -64,10 +74,13 @@ Deno.serve(async (req: Request) => {
       .single()
 
     if (vagaError || !vaga) {
-      return new Response(JSON.stringify({ error: 'Vaga não encontrada ou acesso negado.' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(
+        JSON.stringify({
+          error:
+            'Vaga não encontrada ou você não tem permissão para acessá-la. Verifique se a vaga existe e pertence à sua conta.',
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
     }
 
     const extracted =
@@ -118,7 +131,7 @@ Deno.serve(async (req: Request) => {
             error: 'Erro de configuração do servidor: Google Maps API Key ausente.',
           }),
           {
-            status: 500,
+            status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           },
         )
@@ -207,8 +220,8 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
       Deno.env.get('OPENIA_KEY') || Deno.env.get('OPENAI_API_KEY') || Deno.env.get('OPENAI_KEY')
     if (!openaiKey) {
       console.log('ERRO: OPENIA_KEY não configurada')
-      return new Response(JSON.stringify({ error: 'Chave OpenAI não configurada' }), {
-        status: 500,
+      return new Response(JSON.stringify({ error: 'Chave OpenAI não configurada no servidor.' }), {
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
@@ -253,7 +266,7 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
             'Serviço de análise temporariamente indisponível. Tente novamente em alguns instantes.',
         }),
         {
-          status: 503,
+          status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         },
       )
@@ -409,7 +422,10 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
   } catch (error: any) {
     console.error('Erro interno:', error)
     return new Response(
-      JSON.stringify({ error: 'Ocorreu um erro interno no servidor.', detalhes: error.message }),
+      JSON.stringify({
+        error: 'Ocorreu um erro interno no servidor.',
+        detalhes: error.message,
+      }),
       {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

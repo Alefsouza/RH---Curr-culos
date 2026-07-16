@@ -126,9 +126,10 @@ export function CandidateTable({
       toast.success('Análise concluída com sucesso!')
       if (onRefresh) onRefresh()
       else window.location.reload()
-    } catch (error) {
+    } catch (error: any) {
       console.error(error)
-      toast.error('Erro ao processar análise. Tente novamente.')
+      const errorMessage = error?.message || 'Erro ao processar análise. Tente novamente.'
+      toast.error(errorMessage)
     } finally {
       setAnalyzingIds((prev) => {
         const next = new Set(prev)
@@ -146,6 +147,37 @@ export function CandidateTable({
     if (reanalyzeCandidateModal) {
       handleReanalyze(reanalyzeCandidateModal, selectedVagaId)
       setReanalyzeCandidateModal(null)
+    }
+  }
+
+  const handleViewResume = async (candidate: any) => {
+    if (!candidate.curriculo_url) {
+      toast.error('Este candidato não possui currículo anexado.')
+      return
+    }
+
+    try {
+      new URL(candidate.curriculo_url)
+    } catch {
+      toast.error('O caminho do currículo é inválido.')
+      return
+    }
+
+    try {
+      const response = await fetch(candidate.curriculo_url, { method: 'HEAD' })
+      if (response.status === 404 || response.status === 400) {
+        toast.error(
+          'O arquivo do currículo não foi encontrado no servidor. Por favor, faça o upload novamente.',
+        )
+        return
+      }
+      if (!response.ok) {
+        toast.error('Não foi possível acessar o currículo no momento. Tente novamente.')
+        return
+      }
+      window.open(candidate.curriculo_url, '_blank', 'noopener,noreferrer')
+    } catch (error) {
+      window.open(candidate.curriculo_url, '_blank', 'noopener,noreferrer')
     }
   }
 
@@ -179,15 +211,11 @@ export function CandidateTable({
             </Link>
           </DropdownMenuItem>
           {candidate.curriculo_url && (
-            <DropdownMenuItem asChild>
-              <a
-                href={candidate.curriculo_url}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center cursor-pointer"
-              >
-                <FileText className="mr-2 h-4 w-4" /> Ver Currículo
-              </a>
+            <DropdownMenuItem
+              onClick={() => handleViewResume(candidate)}
+              className="flex items-center cursor-pointer"
+            >
+              <FileText className="mr-2 h-4 w-4" /> Ver Currículo
             </DropdownMenuItem>
           )}
           <DropdownMenuItem

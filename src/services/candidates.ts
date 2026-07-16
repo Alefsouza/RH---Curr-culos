@@ -127,10 +127,23 @@ export async function updateCandidateVaga(id: string, vagaId: string) {
 }
 
 export async function reanalyzeCandidate(cv_id: string, vaga_id: string, user_id: string) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+  const headers: Record<string, string> = {}
+  if (session?.access_token) {
+    headers['Authorization'] = `Bearer ${session.access_token}`
+  }
+
   const { data, error } = await supabase.functions.invoke('analisar-cv-criterios', {
     body: { cv_id, vaga_id, user_id },
+    headers,
   })
-  if (error) throw error
+  if (error) {
+    throw new Error(
+      error.message || 'Erro de comunicação com o servidor de análise. Tente novamente.',
+    )
+  }
   if (data?.error) throw new Error(data.error)
   return data
 }

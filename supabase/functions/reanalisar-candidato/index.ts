@@ -10,8 +10,8 @@ Deno.serve(async (req: Request) => {
     const { candidate_id } = body
 
     if (!candidate_id) {
-      return new Response(JSON.stringify({ error: 'candidate_id é obrigatório' }), {
-        status: 400,
+      return new Response(JSON.stringify({ error: 'candidate_id é obrigatório.' }), {
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
@@ -27,15 +27,14 @@ Deno.serve(async (req: Request) => {
       .single()
 
     if (error || !candidato) {
-      return new Response(JSON.stringify({ error: 'Candidato não encontrado' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(
+        JSON.stringify({ error: 'Candidato não encontrado. Verifique o ID e tente novamente.' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
     }
 
     let vagaId = candidato.vaga_id
 
-    // Automated Job Matching: if no vaga assigned, find best match using AI
     if (!vagaId) {
       const identifyRes = await fetch(`${supabaseUrl}/functions/v1/identify-vaga-from-cv`, {
         method: 'POST',
@@ -47,7 +46,7 @@ Deno.serve(async (req: Request) => {
 
       if (identifyData.error) {
         return new Response(JSON.stringify({ error: identifyData.error }), {
-          status: 500,
+          status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
       }
@@ -59,8 +58,8 @@ Deno.serve(async (req: Request) => {
           .eq('id', candidato.id)
 
         if (updateError) {
-          return new Response(JSON.stringify({ error: 'Erro ao vincular vaga ao candidato' }), {
-            status: 500,
+          return new Response(JSON.stringify({ error: 'Erro ao vincular vaga ao candidato.' }), {
+            status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           })
         }
@@ -69,10 +68,9 @@ Deno.serve(async (req: Request) => {
       } else {
         return new Response(
           JSON.stringify({
-            success: false,
-            message: 'Nenhuma vaga compatível encontrada para o candidato',
+            error: 'Nenhuma vaga compatível encontrada para o candidato.',
           }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         )
       }
     }
@@ -91,7 +89,7 @@ Deno.serve(async (req: Request) => {
 
     if (analyzeData.error) {
       return new Response(JSON.stringify({ error: analyzeData.error }), {
-        status: 500,
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
@@ -100,7 +98,7 @@ Deno.serve(async (req: Request) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: error.message || 'Erro interno no servidor.' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
