@@ -14,7 +14,7 @@ import { fetchVagas } from '@/services/review'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Search, Users as UsersIcon, AlertCircle } from 'lucide-react'
+import { Search, Users as UsersIcon, AlertCircle, UploadCloud } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { CandidateTable } from '@/components/candidates/CandidateTable'
 import { CandidateEditDialog } from '@/components/candidates/CandidateEditDialog'
@@ -29,6 +29,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { MassImportDialog } from '@/components/candidates/MassImportDialog'
+import { useAuth } from '@/hooks/use-auth'
 
 export default function CandidatesPage() {
   const [candidates, setCandidates] = useState<any[]>([])
@@ -46,7 +48,9 @@ export default function CandidatesPage() {
     candidateId: string
     userId: string
   } | null>(null)
+  const [showMassImport, setShowMassImport] = useState(false)
   const { toast } = useToast()
+  const { user } = useAuth()
 
   const loadData = useCallback(async () => {
     try {
@@ -305,6 +309,10 @@ export default function CandidatesPage() {
           </p>
         </div>
         <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+          <Button onClick={() => setShowMassImport(true)} className="h-11 gap-2">
+            <UploadCloud className="h-4 w-4" />
+            Importar Currículos
+          </Button>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-full sm:w-[180px] h-11">
               <SelectValue placeholder="Filtrar por Status" />
@@ -387,6 +395,13 @@ export default function CandidatesPage() {
         vagas={vagas}
         onClose={() => setPendingQualify(null)}
         onConfirm={handleConfirmVaga}
+      />
+
+      <MassImportDialog
+        isOpen={showMassImport}
+        onClose={() => setShowMassImport(false)}
+        onComplete={loadData}
+        userId={user?.id || ''}
       />
     </div>
   )
