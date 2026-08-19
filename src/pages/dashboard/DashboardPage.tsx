@@ -204,6 +204,25 @@ export default function DashboardPage() {
     return true
   })
 
+  // ---- Dados para os gráficos: candidatos brutos, filtrados APENAS por data ----
+  // A seleção de vaga/etapa (vinda dos próprios gráficos ou dos dropdowns) controla
+  // unicamente a COR das barras (azul forte = selecionado, cinza claro = demais),
+  // nunca os dados. Assim, ao clicar numa barra, as demais permanecem visíveis com
+  // seus valores reais em vez de caírem para zero.
+  const chartCandidatos = data.candidatos.filter((c: any) => {
+    if (filters.startDate && c.criado_em) {
+      if (isBefore(parseISO(c.criado_em), startOfDay(parseISO(filters.startDate)))) return false
+    }
+    if (filters.endDate && c.criado_em) {
+      if (isAfter(parseISO(c.criado_em), endOfDay(parseISO(filters.endDate)))) return false
+    }
+    return true
+  })
+  const chartCandidatoIds = new Set(chartCandidatos.map((c: any) => c.id))
+  const chartCandidatoEtapas = data.candidatoEtapas.filter((ce: any) =>
+    chartCandidatoIds.has(ce.candidato_id),
+  )
+
   const handlePrint = () => {
     window.print()
   }

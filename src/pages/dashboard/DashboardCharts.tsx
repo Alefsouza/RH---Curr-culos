@@ -44,6 +44,12 @@ function InteractionHint() {
   )
 }
 
+/**
+ * Os gráficos recebem candidatos brutos (filtrados apenas por data, NUNCA por
+ * vaga/etapa). A seleção de vaga/etapa controla APENAS a cor das barras/pontos:
+ * azul forte para o(s) selecionado(s), cinza claro para as demais — nunca os dados.
+ * Com isso, ao clicar numa barra, as demais continuam visíveis com seus valores reais.
+ */
 export function DashboardCharts({
   candidatos,
   etapas,
