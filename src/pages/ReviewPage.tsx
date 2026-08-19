@@ -28,6 +28,52 @@ import { format } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 
+function formatExperiencia(exp: any): string {
+  if (typeof exp === 'string') return exp
+  if (exp && typeof exp === 'object') {
+    const cargo = exp.cargo || exp.titulo || exp.funcao || ''
+    const empresa = exp.empresa || exp.empresa_nome || exp.companhia || ''
+    const periodo = exp.periodo || exp.data || exp.periodo_trabalho || ''
+    const parts = [cargo, empresa, periodo].filter(Boolean)
+    return parts.length > 0 ? parts.join(' — ') : JSON.stringify(exp)
+  }
+  return String(exp ?? '')
+}
+
+function formatFormacao(form: any): string {
+  if (typeof form === 'string') return form
+  if (form && typeof form === 'object') {
+    if (form.nivel && form.status) {
+      const nivel = String(form.nivel)
+      const status = String(form.status).toLowerCase().trim()
+      if (status === 'concluído' || status === 'concluido') {
+        return `${nivel} Completo`
+      }
+      if (status === 'incompleto') {
+        return `${nivel} Incompleto`
+      }
+      if (status === 'cursando') {
+        return `Cursando ${nivel}`
+      }
+      return `${nivel} — ${status}`
+    }
+    const curso = form.curso || form.titulo || form.graduacao || ''
+    const instituicao = form.instituicao || form.universidade || form.escola || ''
+    const periodo = form.periodo || form.ano || form.data || ''
+    const parts = [curso, instituicao, periodo].filter(Boolean)
+    return parts.length > 0 ? parts.join(' — ') : 'Não informado'
+  }
+  return 'Não informado'
+}
+
+function normalizeFormacoes(dados: any): any[] {
+  if (!dados || typeof dados !== 'object') return []
+  const raw = dados.formacao_academica
+  if (Array.isArray(raw)) return raw
+  if (raw && typeof raw === 'object') return [raw]
+  if (typeof raw === 'string' && raw.trim()) return [raw]
+  return []
+}
 function ReviewDetail({ analise, etapas, onConfirm, onCancel, isSubmitting }: any) {
   const [decision, setDecision] = useState<string>('')
   const [notes, setNotes] = useState('')
@@ -77,8 +123,8 @@ function ReviewDetail({ analise, etapas, onConfirm, onCancel, isSubmitting }: an
             <ul className="list-disc pl-5 text-sm space-y-2 text-muted-foreground">
               {Array.isArray(dados.experiencia_profissional) &&
               dados.experiencia_profissional.length > 0 ? (
-                dados.experiencia_profissional.map((exp: string, i: number) => (
-                  <li key={i}>{exp}</li>
+                dados.experiencia_profissional.map((exp: any, i: number) => (
+                  <li key={i}>{formatExperiencia(exp)}</li>
                 ))
               ) : (
                 <li>Não informada</li>
@@ -91,11 +137,12 @@ function ReviewDetail({ analise, etapas, onConfirm, onCancel, isSubmitting }: an
               <GraduationCap className="h-4 w-4" /> Formação
             </h4>
             <ul className="list-disc pl-5 text-sm space-y-2 text-muted-foreground">
-              {Array.isArray(dados.formacao_academica) && dados.formacao_academica.length > 0 ? (
-                dados.formacao_academica.map((form: string, i: number) => <li key={i}>{form}</li>)
-              ) : (
-                <li>Não informada</li>
-              )}
+              {(() => {
+                const formacoes = normalizeFormacoes(dados)
+                return formacoes.length > 0
+                  ? formacoes.map((form: any, i: number) => <li key={i}>{formatFormacao(form)}</li>)
+                  : [<li key="empty">Não informada</li>]
+              })()}
             </ul>
           </div>
 
