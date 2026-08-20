@@ -48,21 +48,37 @@ export async function getPendingReviews(filters?: {
 }
 
 export async function fetchVagas() {
-  const { data, error } = await supabase
-    .from('vagas')
-    .select('id, titulo')
-    .order('criado_em', { ascending: false })
-  if (error) throw error
-  return data
+  try {
+    const { data, error } = await supabase
+      .from('vagas')
+      .select('id, titulo')
+      .order('criado_em', { ascending: false })
+    if (error) {
+      console.error('Erro ao buscar vagas:', error)
+      return []
+    }
+    return data || []
+  } catch (error) {
+    console.error('Falha de rede ao buscar vagas:', error)
+    return []
+  }
 }
 
 export async function fetchEtapas() {
-  const { data, error } = await supabase
-    .from('etapas')
-    .select('id, nome, cor')
-    .order('ordem', { ascending: true })
-  if (error) throw error
-  return data
+  try {
+    const { data, error } = await supabase
+      .from('etapas')
+      .select('id, nome, cor')
+      .order('ordem', { ascending: true })
+    if (error) {
+      console.error('Erro ao buscar etapas:', error)
+      return []
+    }
+    return data || []
+  } catch (error) {
+    console.error('Falha de rede ao buscar etapas:', error)
+    return []
+  }
 }
 
 export async function updateReview(

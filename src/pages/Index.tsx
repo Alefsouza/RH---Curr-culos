@@ -44,9 +44,7 @@ export default function Index() {
   const { toast } = useToast()
 
   useEffect(() => {
-    fetchVagas()
-      .then((data) => setVagas(data || []))
-      .catch((err) => console.error('Erro ao buscar vagas:', err))
+    fetchVagas().then((data) => setVagas(data || []))
   }, [])
 
   const handleCreateStage = async () => {
