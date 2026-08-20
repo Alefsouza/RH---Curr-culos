@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { Candidate, Stage } from '@/types/kanban'
 import { KanbanCard } from '@/components/kanban/KanbanCard'
 import { Button } from '@/components/ui/button'
-import { MoreHorizontal, Plus } from 'lucide-react'
+import { ArrowRight, Loader2, MoreHorizontal, Plus } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,6 +38,7 @@ interface KanbanColumnProps {
   onDrop: (candidateId: string, stageId: string) => void
   onDragStart: (id: string) => void
   onDragEnd: () => void
+  nextStage?: Stage | null
 }
 
 export function KanbanColumn({
@@ -47,6 +48,7 @@ export function KanbanColumn({
   onDrop,
   onDragStart,
   onDragEnd,
+  nextStage,
 }: KanbanColumnProps) {
   const [isDragOver, setIsDragOver] = useState(false)
   const [isAlertOpen, setIsAlertOpen] = useState(false)
@@ -54,6 +56,10 @@ export function KanbanColumn({
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [newStageName, setNewStageName] = useState(stage.name)
   const [isSaving, setIsSaving] = useState(false)
+  const [isMovingAll, setIsMovingAll] = useState(false)
+  const [movingProgress, setMovingProgress] = useState<{ current: number; total: number } | null>(
+    null,
+  )
   const { toast } = useToast()
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -181,37 +187,99 @@ export function KanbanColumn({
     }
   }
 
+  const handleMoveAll = async () => {
+    if (!nextStage || candidates.length === 0 || isMovingAll) return
+
+    const total = candidates.length
+    setIsMovingAll(true)
+    setMovingProgress({ current: 0, total })
+
+    try {
+      for (let i = 0; i < candidates.length; i++) {
+        const candidate = candidates[i]
+        setMovingProgress({ current: i + 1, total })
+        await onDrop(candidate.id, nextStage.id)
+      }
+
+      toast({
+        title: `Sucesso!`,
+        description: `${total} candidato(s) movido(s) para "${nextStage.name}".`,
+      })
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao mover candidatos',
+        description: err?.message || 'Ocorreu um erro ao transferir todos os candidatos.',
+      })
+    } finally {
+      setIsMovingAll(false)
+      setMovingProgress(null)
+    }
+  }
+
   return (
     <>
       <div className="flex flex-col flex-shrink-0 w-full md:w-[320px] bg-slate-50/50 rounded-xl border border-slate-200/60 shadow-sm overflow-hidden h-full max-h-full">
-        <div className="flex items-center justify-between p-4 border-b border-slate-200/60 bg-white/50 backdrop-blur-sm">
-          <div className="flex items-center gap-2">
-            <div className={cn('w-2.5 h-2.5 rounded-full', stage.color)} />
-            <h3 className="font-semibold text-slate-700 text-sm">{stage.name}</h3>
-            <span className="flex items-center justify-center bg-slate-100 text-slate-600 text-xs font-medium rounded-full h-5 px-2 ml-1">
-              {candidates.length}
-            </span>
+        <div className="flex flex-col border-b border-slate-200/60 bg-white/50 backdrop-blur-sm">
+          <div className="flex items-center justify-between p-3 pb-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className={cn('w-2.5 h-2.5 rounded-full shrink-0', stage.color)} />
+              <h3 className="font-semibold text-slate-700 text-sm truncate" title={stage.name}>
+                {stage.name}
+              </h3>
+              <span className="flex items-center justify-center bg-slate-100 text-slate-600 text-xs font-medium rounded-full h-5 px-2 shrink-0">
+                {candidates.length}
+              </span>
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-slate-400 hover:text-slate-600 shrink-0"
+                >
+                  <MoreHorizontal size={16} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuItem onClick={handleEditClick}>Editar Etapa</DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={handleDeleteClick}
+                  className="text-red-600 focus:bg-red-50 focus:text-red-700"
+                >
+                  Deletar Etapa
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+
+          {nextStage && (
+            <div className="px-3 pb-2.5 pt-0.5">
               <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-slate-400 hover:text-slate-600"
+                variant="outline"
+                size="sm"
+                onClick={handleMoveAll}
+                disabled={candidates.length === 0 || isMovingAll}
+                className="w-full h-8 text-xs font-medium text-slate-600 hover:text-primary hover:border-primary/40 bg-white shadow-none transition-all flex items-center justify-center gap-1.5"
+                title={`Mover todos os ${candidates.length} candidatos visíveis para ${nextStage.name}`}
               >
-                <MoreHorizontal size={16} />
+                {isMovingAll ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                    <span>
+                      Movendo {movingProgress?.current || 0}/
+                      {movingProgress?.total || candidates.length}...
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span>Mover todos</span>
+                    <ArrowRight className="h-3.5 w-3.5 text-slate-400" />
+                  </>
+                )}
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40">
-              <DropdownMenuItem onClick={handleEditClick}>Editar Etapa</DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={handleDeleteClick}
-                className="text-red-600 focus:bg-red-50 focus:text-red-700"
-              >
-                Deletar Etapa
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            </div>
+          )}
         </div>
 
         <div

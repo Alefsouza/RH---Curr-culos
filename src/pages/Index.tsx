@@ -126,7 +126,7 @@ export default function Index() {
   }, [candidates, search, selectedVaga, vagas, startDate, endDate])
 
   return (
-    <div className="flex flex-col h-full space-y-6 p-4 md:p-8">
+    <div className="flex flex-col h-full space-y-6 -m-4 md:-m-6 p-4 md:p-6 min-h-0">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Kanban</h1>
@@ -210,18 +210,20 @@ export default function Index() {
       </div>
 
       {loading ? (
-        <div className="flex-1 flex items-center justify-center h-[calc(100vh-14rem)]">
+        <div className="flex-1 flex items-center justify-center min-h-[300px]">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
         </div>
       ) : (
-        <KanbanBoard
-          stages={stages}
-          candidates={filteredCandidates}
-          draggedCandidateId={draggedCandidateId}
-          onDropCandidate={moveCandidate}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-        />
+        <div className="flex-1 min-h-0 flex flex-col">
+          <KanbanBoard
+            stages={stages}
+            candidates={filteredCandidates}
+            draggedCandidateId={draggedCandidateId}
+            onDropCandidate={moveCandidate}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+          />
+        </div>
       )}
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
