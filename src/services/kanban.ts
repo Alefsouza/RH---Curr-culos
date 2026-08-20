@@ -64,7 +64,9 @@ export async function fetchCandidates() {
         source: d.fonte || 'Site',
         stageId: d.etapa_id || '',
         job: d.vagas ? (Array.isArray(d.vagas) ? d.vagas[0]?.titulo : d.vagas.titulo) : 'Sem Vaga',
+        vagaId: (d as any).vaga_id || null,
         appliedAt: d.criado_em,
+        criado_em: d.criado_em,
         analysisResult: latestIa?.resultado || null,
         analysisDetails: latestIa?.detalhes || null,
       }

@@ -6,7 +6,9 @@ export interface Candidate {
   source: string
   stageId: string
   job: string
+  vagaId?: string | null
   appliedAt: string
+  criado_em?: string
   analysisResult?: string | null
   analysisDetails?: any
   ultima_resposta_whatsapp?: string | null
