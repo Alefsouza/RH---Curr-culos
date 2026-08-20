@@ -17,6 +17,7 @@ import {
   LayoutDashboard,
   Users,
   Briefcase,
+  BriefcaseBusiness,
   Plus,
   MessageSquare,
   ClipboardCheck,
@@ -48,13 +49,20 @@ export function AppSidebar() {
     <Sidebar className="border-r border-border bg-sidebar">
       <SidebarHeader className="h-16 flex items-center justify-center border-b border-border">
         <div className="flex items-center justify-center px-4 w-full">
-          <Link to="/dashboard" className="block cursor-pointer" aria-label="Ir para o Dashboard">
-            <img
-              src="https://wrnhfpncasqifaisvyaf.supabase.co/storage/v1/object/public/assets/logo_branco_transparente_nitido-80a6a-BIUCr1YD.png"
-              alt="Logo Via Sudeste"
-              crossOrigin="anonymous"
-              className="h-9 w-auto max-w-[180px] object-contain transition-transform duration-200 hover:scale-105 brightness-0 dark:invert"
-            />
+          <Link
+            to="/dashboard"
+            className="flex items-center gap-2.5 cursor-pointer font-bold text-foreground hover:opacity-90 transition-opacity"
+            aria-label="Ir para o Dashboard"
+          >
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+              <BriefcaseBusiness className="h-5 w-5" />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-base font-bold leading-none tracking-tight">Via Sudeste</span>
+              <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mt-0.5">
+                Currículos RH
+              </span>
+            </div>
           </Link>
         </div>
       </SidebarHeader>
