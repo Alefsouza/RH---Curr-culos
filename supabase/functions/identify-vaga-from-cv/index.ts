@@ -22,8 +22,8 @@ Deno.serve(async (req: Request) => {
 
     const { candidato_id, user_id } = body
 
-    if (!candidato_id || !user_id) {
-      return new Response(JSON.stringify({ error: 'Faltando candidato_id ou user_id' }), {
+    if (!candidato_id) {
+      return new Response(JSON.stringify({ error: 'Faltando candidato_id' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -43,13 +43,24 @@ Deno.serve(async (req: Request) => {
       throw new Error('Candidato não encontrado no banco de dados.')
     }
 
-    const { data: vagas, error: vagasError } = await supabase
+    // Busca todas as vagas disponíveis no sistema (sem restrição por user_id)
+    let vagasQuery = supabase
       .from('vagas')
       .select('id, titulo, descricao, criterios_qualificacao')
-      .eq('user_id', user_id)
+      .order('criado_em', { ascending: false })
+
+    let { data: vagas, error: vagasError } = await vagasQuery
+
+    // Se por algum motivo não houver vagas ou houver filtro opcional, fallback seguro
+    if (!vagas || vagas.length === 0) {
+      const { data: allVagas } = await supabase
+        .from('vagas')
+        .select('id, titulo, descricao, criterios_qualificacao')
+      vagas = allVagas || []
+    }
 
     if (vagasError) {
-      throw new Error('Erro ao buscar as vagas do usuário.')
+      throw new Error('Erro ao buscar as vagas do sistema.')
     }
 
     if (!vagas || vagas.length === 0) {

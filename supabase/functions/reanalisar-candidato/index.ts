@@ -33,13 +33,24 @@ Deno.serve(async (req: Request) => {
       )
     }
 
+    let effectiveUserId = candidato.user_id
+    if (!effectiveUserId) {
+      const { data: adminUser } = await supabase
+        .from('usuarios')
+        .select('id')
+        .order('criado_em', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      effectiveUserId = adminUser?.id || ''
+    }
+
     let vagaId = candidato.vaga_id
 
     if (!vagaId) {
       const identifyRes = await fetch(`${supabaseUrl}/functions/v1/identify-vaga-from-cv`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${supabaseKey}` },
-        body: JSON.stringify({ candidato_id: candidato.id, user_id: candidato.user_id }),
+        body: JSON.stringify({ candidato_id: candidato.id, user_id: effectiveUserId }),
       })
 
       const identifyData = await identifyRes.json()
@@ -81,7 +92,7 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({
         cv_id: candidato.id,
         vaga_id: vagaId,
-        user_id: candidato.user_id,
+        user_id: effectiveUserId,
       }),
     })
 

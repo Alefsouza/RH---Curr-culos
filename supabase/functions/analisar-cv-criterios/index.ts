@@ -17,17 +17,7 @@ Deno.serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
     const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') || ''
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey)
-
-    const authHeader = req.headers.get('Authorization') || ''
-
-    const supabaseQuery =
-      authHeader && supabaseAnonKey
-        ? createClient(supabaseUrl, supabaseAnonKey, {
-            global: { headers: { Authorization: authHeader } },
-          })
-        : supabaseAdmin
 
     const bodyText = await req.text()
     let body
@@ -42,14 +32,14 @@ Deno.serve(async (req: Request) => {
 
     const { cv_id, vaga_id, user_id } = body
 
-    if (!cv_id || !vaga_id || !user_id) {
+    if (!cv_id || !vaga_id) {
       return new Response(
-        JSON.stringify({ error: 'Os parâmetros cv_id, vaga_id e user_id são obrigatórios.' }),
+        JSON.stringify({ error: 'Os parâmetros cv_id e vaga_id são obrigatórios.' }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
     }
 
-    const { data: candidato, error: candidatoError } = await supabaseQuery
+    const { data: candidato, error: candidatoError } = await supabaseAdmin
       .from('candidatos')
       .select('*')
       .eq('id', cv_id)
@@ -64,7 +54,9 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    const { data: vaga, error: vagaError } = await supabaseQuery
+    const effectiveUserId = user_id || candidato.user_id
+
+    const { data: vaga, error: vagaError } = await supabaseAdmin
       .from('vagas')
       .select('*')
       .eq('id', vaga_id)
@@ -314,7 +306,7 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
           vaga_id: vaga_id,
           resultado: statusFinal,
           detalhes: resultJson.detalhes || {},
-          user_id: user_id,
+          user_id: effectiveUserId || candidato.user_id,
         })
         .select()
         .single()
@@ -363,7 +355,7 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
             await supabaseAdmin.from('candidato_etapa').insert({
               candidato_id: cv_id,
               etapa_id: etapaNovos.id,
-              usuario_id: user_id,
+              usuario_id: effectiveUserId || candidato.user_id,
             })
           }
         }
