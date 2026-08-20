@@ -20,6 +20,8 @@ import WhatsappPage from './pages/WhatsappPage'
 import SincronizacaoPage from './pages/SincronizacaoPage'
 import ConfiguracoesPage from './pages/ConfiguracoesPage'
 import { AuthProvider, useAuth } from '@/hooks/use-auth'
+import { BulkReanalysisProvider } from '@/contexts/BulkReanalysisContext'
+import { BulkReanalysisBar } from '@/components/candidates/BulkReanalysisBar'
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth()
@@ -31,36 +33,39 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 const App = () => (
   <AuthProvider>
     <BrowserRouter>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <Routes>
-          <Route path="/auth" element={<AuthPage />} />
-          <Route path="/candidatar/:userId" element={<ApplyPage />} />
-          <Route
-            element={
-              <ProtectedRoute>
-                <Layout />
-              </ProtectedRoute>
-            }
-          >
-            <Route path="/" element={<Index />} />
-            <Route path="/vagas" element={<JobsPage />} />
-            <Route path="/vaga/:id" element={<VagaDetalhes />} />
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/templates" element={<TemplatesPage />} />
-            <Route path="/candidatos" element={<CandidatesPage />} />
-            <Route path="/usuarios" element={<UsersPage />} />
-            <Route path="/revisao" element={<ReviewPage />} />
-            <Route path="/candidato/:id" element={<CandidateDetails />} />
-            <Route path="/whatsapp" element={<WhatsappPage />} />
-            <Route path="/sincronizacao" element={<SincronizacaoPage />} />
-            <Route path="/configuracoes" element={<ConfiguracoesPage />} />
-            <Route path="/perfil" element={<ProfilePage />} />
-          </Route>
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </TooltipProvider>
+      <BulkReanalysisProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BulkReanalysisBar />
+          <Routes>
+            <Route path="/auth" element={<AuthPage />} />
+            <Route path="/candidatar/:userId" element={<ApplyPage />} />
+            <Route
+              element={
+                <ProtectedRoute>
+                  <Layout />
+                </ProtectedRoute>
+              }
+            >
+              <Route path="/" element={<Index />} />
+              <Route path="/vagas" element={<JobsPage />} />
+              <Route path="/vaga/:id" element={<VagaDetalhes />} />
+              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/templates" element={<TemplatesPage />} />
+              <Route path="/candidatos" element={<CandidatesPage />} />
+              <Route path="/usuarios" element={<UsersPage />} />
+              <Route path="/revisao" element={<ReviewPage />} />
+              <Route path="/candidato/:id" element={<CandidateDetails />} />
+              <Route path="/whatsapp" element={<WhatsappPage />} />
+              <Route path="/sincronizacao" element={<SincronizacaoPage />} />
+              <Route path="/configuracoes" element={<ConfiguracoesPage />} />
+              <Route path="/perfil" element={<ProfilePage />} />
+            </Route>
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </TooltipProvider>
+      </BulkReanalysisProvider>
     </BrowserRouter>
   </AuthProvider>
 )
