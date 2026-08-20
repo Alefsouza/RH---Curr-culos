@@ -13,7 +13,7 @@ import { fetchVagas } from '@/services/review'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Search, Users as UsersIcon, AlertCircle, UploadCloud } from 'lucide-react'
+import { Search, Users as UsersIcon, AlertCircle, X } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { CandidateTable } from '@/components/candidates/CandidateTable'
 import { CandidateEditDialog } from '@/components/candidates/CandidateEditDialog'
@@ -28,8 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { MassImportDialog } from '@/components/candidates/MassImportDialog'
-import { useAuth } from '@/hooks/use-auth'
+import { startOfDay, endOfDay, isAfter, isBefore, parseISO } from 'date-fns'
 import { useBulkReanalysis } from '@/contexts/BulkReanalysisContext'
 
 export default function CandidatesPage() {
@@ -39,6 +38,8 @@ export default function CandidatesPage() {
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('todos')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
   const [editData, setEditData] = useState<any | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -47,9 +48,7 @@ export default function CandidatesPage() {
     candidateId: string
     userId: string
   } | null>(null)
-  const [showMassImport, setShowMassImport] = useState(false)
   const { toast } = useToast()
-  const { user } = useAuth()
   const { startReanalysis, isProcessing: isReanalyzing } = useBulkReanalysis()
 
   const loadData = useCallback(async () => {
@@ -102,9 +101,21 @@ export default function CandidatesPage() {
         matchStatus = !c.etapa_id
       }
 
-      return matchSearch && matchStatus
+      let matchDate = true
+      if (startDate && c.criado_em) {
+        if (isBefore(parseISO(c.criado_em), startOfDay(parseISO(startDate)))) {
+          matchDate = false
+        }
+      }
+      if (endDate && c.criado_em) {
+        if (isAfter(parseISO(c.criado_em), endOfDay(parseISO(endDate)))) {
+          matchDate = false
+        }
+      }
+
+      return matchSearch && matchStatus && matchDate
     })
-  }, [candidates, search, statusFilter])
+  }, [candidates, search, statusFilter, startDate, endDate])
 
   const handleToggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -263,41 +274,81 @@ export default function CandidatesPage() {
     )
   }
 
+  const hasActiveFilters = search || statusFilter !== 'todos' || startDate || endDate
+  const handleClearFilters = () => {
+    setSearch('')
+    setStatusFilter('todos')
+    setStartDate('')
+    setEndDate('')
+  }
+
   return (
     <div className="space-y-6 pb-24">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Candidatos</h1>
           <p className="text-sm text-slate-500 mt-1">
             Gerencie todos os talentos cadastrados no processo seletivo.
           </p>
         </div>
-        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-          <Button onClick={() => setShowMassImport(true)} className="h-11 gap-2">
-            <UploadCloud className="h-4 w-4" />
-            Importar Currículos
-          </Button>
+        <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+          <div className="relative flex-1 sm:flex-none sm:w-[240px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <Input
+              placeholder="Buscar por nome, e-mail ou vaga..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 h-11 focus-visible:ring-primary bg-white"
+            />
+          </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-full sm:w-[180px] h-11">
+            <SelectTrigger className="w-full sm:w-[170px] h-11 bg-white">
               <SelectValue placeholder="Filtrar por Status" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="todos">Todos</SelectItem>
+              <SelectItem value="todos">Todos os status</SelectItem>
               <SelectItem value="qualificado">Qualificados</SelectItem>
               <SelectItem value="nao_qualificado">Não Qualificados</SelectItem>
               <SelectItem value="revisar">Para Revisão</SelectItem>
               <SelectItem value="sem_etapa">Sem Etapa</SelectItem>
             </SelectContent>
           </Select>
-          <div className="relative w-full sm:w-[280px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <Input
-              placeholder="Buscar por nome, e-mail ou vaga..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 h-11 focus-visible:ring-primary"
-            />
+          <div className="flex items-center gap-1.5 w-full sm:w-auto">
+            <div className="flex flex-col flex-1 sm:w-[145px]">
+              <Input
+                type="date"
+                title="Data Inicial"
+                aria-label="Data Inicial"
+                placeholder="Data Inicial"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="h-11 bg-white text-xs sm:text-sm text-slate-700"
+              />
+            </div>
+            <span className="text-slate-400 text-xs sm:text-sm font-medium">até</span>
+            <div className="flex flex-col flex-1 sm:w-[145px]">
+              <Input
+                type="date"
+                title="Data Final"
+                aria-label="Data Final"
+                placeholder="Data Final"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="h-11 bg-white text-xs sm:text-sm text-slate-700"
+              />
+            </div>
           </div>
+          {hasActiveFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleClearFilters}
+              className="h-11 text-xs text-slate-500 hover:text-slate-700 gap-1 px-2.5"
+            >
+              <X className="h-3.5 w-3.5" />
+              Limpar
+            </Button>
+          )}
         </div>
       </div>
 
@@ -359,13 +410,6 @@ export default function CandidatesPage() {
         vagas={vagas}
         onClose={() => setPendingQualify(null)}
         onConfirm={handleConfirmVaga}
-      />
-
-      <MassImportDialog
-        isOpen={showMassImport}
-        onClose={() => setShowMassImport(false)}
-        onComplete={loadData}
-        userId={user?.id || ''}
       />
     </div>
   )
