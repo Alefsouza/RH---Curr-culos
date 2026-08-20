@@ -40,6 +40,7 @@ export default function CandidatesPage() {
   const [statusFilter, setStatusFilter] = useState('todos')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [dateSortOrder, setDateSortOrder] = useState<'desc' | 'asc' | null>(null)
   const [editData, setEditData] = useState<any | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -84,7 +85,7 @@ export default function CandidatesPage() {
   }, [loadData])
 
   const filtered = useMemo(() => {
-    return candidates.filter((c) => {
+    const list = candidates.filter((c) => {
       const matchSearch =
         c.nome.toLowerCase().includes(search.toLowerCase()) ||
         c.email.toLowerCase().includes(search.toLowerCase()) ||
@@ -115,7 +116,30 @@ export default function CandidatesPage() {
 
       return matchSearch && matchStatus && matchDate
     })
-  }, [candidates, search, statusFilter, startDate, endDate])
+
+    if (!dateSortOrder) {
+      return list
+    }
+
+    return [...list].sort((a, b) => {
+      const timeA = a.criado_em ? new Date(a.criado_em).getTime() : 0
+      const timeB = b.criado_em ? new Date(b.criado_em).getTime() : 0
+
+      if (dateSortOrder === 'desc') {
+        return timeB - timeA
+      } else {
+        return timeA - timeB
+      }
+    })
+  }, [candidates, search, statusFilter, startDate, endDate, dateSortOrder])
+
+  const handleToggleDateSort = useCallback(() => {
+    setDateSortOrder((current) => {
+      if (current === null) return 'desc'
+      if (current === 'desc') return 'asc'
+      return null
+    })
+  }, [])
 
   const handleToggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -274,12 +298,14 @@ export default function CandidatesPage() {
     )
   }
 
-  const hasActiveFilters = search || statusFilter !== 'todos' || startDate || endDate
+  const hasActiveFilters =
+    search || statusFilter !== 'todos' || startDate || endDate || dateSortOrder !== null
   const handleClearFilters = () => {
     setSearch('')
     setStatusFilter('todos')
     setStartDate('')
     setEndDate('')
+    setDateSortOrder(null)
   }
 
   return (
@@ -383,6 +409,8 @@ export default function CandidatesPage() {
           selectedIds={selectedIds}
           onToggleSelect={handleToggleSelect}
           onToggleSelectAll={handleToggleSelectAll}
+          dateSortOrder={dateSortOrder}
+          onToggleDateSort={handleToggleDateSort}
         />
       )}
 

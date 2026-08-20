@@ -16,7 +16,17 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreVertical, Trash2, Edit, FileText, ExternalLink, Wand2, Loader2 } from 'lucide-react'
+import {
+  MoreVertical,
+  Trash2,
+  Edit,
+  FileText,
+  ExternalLink,
+  Wand2,
+  Loader2,
+  ArrowUp,
+  ArrowDown,
+} from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { useState } from 'react'
@@ -77,6 +87,8 @@ export function CandidateTable({
   selectedIds,
   onToggleSelect,
   onToggleSelectAll,
+  dateSortOrder,
+  onToggleDateSort,
 }: {
   candidates: any[]
   vagas?: { id: string; titulo: string }[]
@@ -87,6 +99,8 @@ export function CandidateTable({
   selectedIds?: Set<string>
   onToggleSelect?: (id: string) => void
   onToggleSelectAll?: () => void
+  dateSortOrder?: 'desc' | 'asc' | null
+  onToggleDateSort?: () => void
 }) {
   const { user } = useAuth()
   const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set())
@@ -266,7 +280,28 @@ export function CandidateTable({
               <TableHead>Vaga</TableHead>
               <TableHead>Etapa</TableHead>
               <TableHead>Qualificado</TableHead>
-              <TableHead>Data</TableHead>
+              <TableHead>
+                <button
+                  type="button"
+                  onClick={onToggleDateSort}
+                  className="inline-flex items-center gap-1.5 font-medium text-slate-700 hover:text-slate-900 transition-colors cursor-pointer select-none -ml-1 px-1 py-0.5 rounded hover:bg-slate-200/60"
+                  title="Clique para ordenar por data"
+                >
+                  <span>Data</span>
+                  {dateSortOrder === 'asc' && (
+                    <ArrowUp
+                      className="h-3.5 w-3.5 text-primary stroke-[2.5]"
+                      aria-label="Ordenação crescente"
+                    />
+                  )}
+                  {dateSortOrder === 'desc' && (
+                    <ArrowDown
+                      className="h-3.5 w-3.5 text-primary stroke-[2.5]"
+                      aria-label="Ordenação decrescente"
+                    />
+                  )}
+                </button>
+              </TableHead>
               <TableHead className="w-[80px]"></TableHead>
             </TableRow>
           </TableHeader>
