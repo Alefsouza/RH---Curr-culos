@@ -44,7 +44,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Busca todas as vagas disponíveis no sistema (sem restrição por user_id)
-    let vagasQuery = supabase
+    const vagasQuery = supabase
       .from('vagas')
       .select('id, titulo, descricao, criterios_qualificacao')
       .order('criado_em', { ascending: false })
