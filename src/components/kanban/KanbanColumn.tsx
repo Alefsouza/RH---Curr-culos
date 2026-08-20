@@ -219,8 +219,8 @@ export function KanbanColumn({
 
   return (
     <>
-      <div className="flex flex-col flex-shrink-0 w-full md:w-[320px] bg-slate-50/50 rounded-xl border border-slate-200/60 shadow-sm overflow-hidden h-full max-h-full">
-        <div className="flex flex-col border-b border-slate-200/60 bg-white/50 backdrop-blur-sm">
+      <div className="flex flex-col flex-shrink-0 w-full md:w-[320px] bg-slate-50/50 rounded-xl border border-primary/40 shadow-sm overflow-hidden h-full max-h-full">
+        <div className="flex flex-col border-b border-primary/20 bg-white/50 backdrop-blur-sm">
           <div className="flex items-center justify-between p-3 pb-2">
             <div className="flex items-center gap-2 min-w-0">
               <div className={cn('w-2.5 h-2.5 rounded-full shrink-0', stage.color)} />
