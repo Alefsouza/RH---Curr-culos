@@ -50,9 +50,10 @@ export function AppSidebar() {
         <div className="flex items-center justify-center px-4 w-full">
           <Link to="/dashboard" className="block cursor-pointer" aria-label="Ir para o Dashboard">
             <img
-              src="https://pagamentos.goskip.app/visual-edits/sem-nome-190-50-px-610b0304.png"
+              src="https://wrnhfpncasqifaisvyaf.supabase.co/storage/v1/object/public/assets/logo_branco_transparente_nitido-80a6a-BIUCr1YD.png"
               alt="Logo Via Sudeste"
-              className="h-9 w-auto max-w-[180px] object-contain transition-transform duration-200 hover:scale-105"
+              crossOrigin="anonymous"
+              className="h-9 w-auto max-w-[180px] object-contain transition-transform duration-200 hover:scale-105 brightness-0 dark:invert"
             />
           </Link>
         </div>

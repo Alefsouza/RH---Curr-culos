@@ -198,7 +198,7 @@ export function DashboardCharts({
                 tick={{ fill: 'currentColor' }}
               />
               <ChartTooltip
-                content={<ChartTooltipContent />}
+                content={<ChartTooltipContent hideIndicator />}
                 cursor={{ fill: 'hsl(var(--muted) / 0.4)' }}
               />
               <Bar
@@ -319,7 +319,7 @@ export function DashboardCharts({
                 width={32}
               />
               <ChartTooltip
-                content={<ChartTooltipContent />}
+                content={<ChartTooltipContent hideIndicator />}
                 cursor={{ fill: 'hsl(var(--muted) / 0.4)' }}
               />
               <Bar

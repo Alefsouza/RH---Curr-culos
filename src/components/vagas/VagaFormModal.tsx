@@ -36,8 +36,8 @@ const formSchema = z.object({
   titulo: z.string().min(1, 'Título é obrigatório'),
   descricao: z.string().optional(),
   texto_livre: z.string().optional(),
-  localizacoes: z.array(locationSchema).default([]),
-  raio_km: z.coerce.number().min(0).default(10),
+  localizacoes: z.array(locationSchema),
+  raio_km: z.number().min(0),
 })
 
 type FormValues = z.infer<typeof formSchema>
@@ -273,7 +273,15 @@ export function VagaFormModal({ isOpen, onClose, vaga, onSaved }: VagaFormModalP
                   <FormItem className="pt-2">
                     <FormLabel>Raio de Aceitação (km)</FormLabel>
                     <FormControl>
-                      <Input type="number" min="0" {...field} />
+                      <Input
+                        type="number"
+                        min="0"
+                        {...field}
+                        value={field.value ?? 0}
+                        onChange={(e) =>
+                          field.onChange(e.target.value === '' ? 0 : Number(e.target.value))
+                        }
+                      />
                     </FormControl>
                     <FormDescription>
                       Distância máxima aceitável em torno das localizações acima.

@@ -7,7 +7,11 @@ export type Analises = Database['public']['Tables']['analises']['Row']
 
 export interface AnalisesComCandidato extends Analises {
   candidato: Candidato | null
+  status?: string
+  cv_id?: string
 }
+
+export type AnaliseCVComCandidato = AnalisesComCandidato
 
 export const vagaDetalhesService = {
   async getVaga(id: string): Promise<Vaga> {

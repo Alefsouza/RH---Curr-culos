@@ -415,10 +415,9 @@ export default function WhatsappPage() {
                       <div className="flex items-center gap-2">
                         <h2 className="font-semibold text-sm sm:text-base flex items-center gap-1.5 truncate">
                           {selectedCandidate.isUnlinked && (
-                            <AlertCircle
-                              className="w-4 h-4 text-amber-300 shrink-0"
-                              title="Contato não vinculado"
-                            />
+                            <span title="Contato não vinculado" className="inline-flex">
+                              <AlertCircle className="w-4 h-4 text-amber-300 shrink-0" />
+                            </span>
                           )}
                           <span className="truncate">{selectedCandidate.nome}</span>
                         </h2>
