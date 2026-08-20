@@ -5,6 +5,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   CheckCircle2,
   XCircle,
+  Ban,
   Loader2,
   Sparkles,
   AlertTriangle,
@@ -17,6 +18,7 @@ import { cn } from '@/lib/utils'
 export function BulkReanalysisBar() {
   const {
     isProcessing,
+    isCancelling,
     isMinimized,
     isExpanded,
     progress,
@@ -32,8 +34,16 @@ export function BulkReanalysisBar() {
     return null
   }
 
-  const { total, processed, successCount, errorCount, currentBatch, totalBatches, percent } =
-    progress
+  const {
+    total,
+    processed,
+    successCount,
+    errorCount,
+    cancelledCount,
+    currentBatch,
+    totalBatches,
+    percent,
+  } = progress
 
   return (
     <>
@@ -68,11 +78,26 @@ export function BulkReanalysisBar() {
                   <Button
                     size="sm"
                     variant="outline"
+                    disabled={isCancelling}
                     onClick={cancelReanalysis}
-                    className="h-8 text-xs text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                    className={cn(
+                      'h-8 text-xs transition-colors',
+                      isCancelling
+                        ? 'text-amber-600 border-amber-300 bg-amber-50 cursor-not-allowed opacity-90'
+                        : 'text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700',
+                    )}
                   >
-                    <X className="h-3.5 w-3.5 mr-1" />
-                    Cancelar
+                    {isCancelling ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin text-amber-600" />
+                        Cancelando...
+                      </>
+                    ) : (
+                      <>
+                        <X className="h-3.5 w-3.5 mr-1" />
+                        Cancelar
+                      </>
+                    )}
                   </Button>
                 )}
                 <Button
@@ -90,7 +115,14 @@ export function BulkReanalysisBar() {
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2.5">
               <div className="flex items-center justify-between text-xs sm:text-sm">
                 <span className="font-semibold text-slate-800 flex items-center gap-2">
-                  {isProcessing ? (
+                  {isCancelling ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin text-amber-500" />
+                      <span className="text-amber-700 font-medium">
+                        Interrompendo e cancelando...
+                      </span>
+                    </>
+                  ) : isProcessing ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin text-primary" />
                       Processando lote {currentBatch} de {totalBatches}...
@@ -106,7 +138,12 @@ export function BulkReanalysisBar() {
 
               <Progress value={percent} className="h-2.5 w-full bg-slate-200" />
 
-              <div className="grid grid-cols-3 gap-2 pt-1 text-center">
+              <div
+                className={cn(
+                  'grid gap-2 pt-1 text-center',
+                  (cancelledCount || 0) > 0 ? 'grid-cols-4' : 'grid-cols-3',
+                )}
+              >
                 <div className="bg-white rounded-lg p-2 border border-slate-100 shadow-xs">
                   <span className="block text-[11px] text-slate-500">Concluídos</span>
                   <span className="text-sm font-bold text-slate-800">{processed}</span>
@@ -119,6 +156,12 @@ export function BulkReanalysisBar() {
                   <span className="block text-[11px] text-red-600 font-medium">Falhas</span>
                   <span className="text-sm font-bold text-red-600">{errorCount}</span>
                 </div>
+                {(cancelledCount || 0) > 0 && (
+                  <div className="bg-white rounded-lg p-2 border border-amber-100 shadow-xs">
+                    <span className="block text-[11px] text-amber-600 font-medium">Cancelados</span>
+                    <span className="text-sm font-bold text-amber-600">{cancelledCount}</span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -126,11 +169,15 @@ export function BulkReanalysisBar() {
             <div className="space-y-1.5 flex-1 min-h-0 flex flex-col">
               <div className="flex items-center justify-between text-xs font-semibold text-slate-600 uppercase tracking-wider">
                 <span>Status dos candidatos ({total})</span>
-                {isProcessing && (
+                {isCancelling ? (
+                  <span className="text-[11px] text-amber-600 font-medium lowercase">
+                    interrompendo execução...
+                  </span>
+                ) : isProcessing ? (
                   <span className="text-[11px] text-slate-400 font-normal lowercase">
                     aguardando Edge Functions...
                   </span>
-                )}
+                ) : null}
               </div>
 
               <ScrollArea className="flex-1 max-h-[220px] rounded-xl border border-slate-200 bg-white shadow-inner p-1">
@@ -145,6 +192,8 @@ export function BulkReanalysisBar() {
                         item.status === 'success' &&
                           'bg-emerald-50/50 border-emerald-200 text-slate-900',
                         item.status === 'error' && 'bg-red-50/50 border-red-200 text-slate-900',
+                        item.status === 'cancelled' &&
+                          'bg-amber-50/50 border-amber-200 text-slate-700',
                         item.status === 'pending' &&
                           'bg-slate-50/60 border-slate-100 text-slate-500',
                       )}
@@ -160,9 +209,14 @@ export function BulkReanalysisBar() {
                               {item.vaga}
                             </p>
                           )}
-                          {item.error && (
+                          {item.error && item.status === 'error' && (
                             <p className="text-[10px] sm:text-[11px] text-red-600 truncate mt-0.5">
                               {item.error}
+                            </p>
+                          )}
+                          {item.status === 'cancelled' && (
+                            <p className="text-[10px] sm:text-[11px] text-amber-600 truncate mt-0.5">
+                              Cancelado
                             </p>
                           )}
                         </div>
@@ -195,6 +249,13 @@ export function BulkReanalysisBar() {
                             Falha
                           </span>
                         )}
+
+                        {item.status === 'cancelled' && (
+                          <span className="inline-flex items-center gap-1 text-[10px] text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full font-medium">
+                            <Ban className="h-3 w-3 text-amber-600" />
+                            Cancelado
+                          </span>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -212,9 +273,11 @@ export function BulkReanalysisBar() {
             {/* Rodapé do popover */}
             <div className="flex items-center justify-between border-t pt-3">
               <span className="text-[11px] text-slate-500">
-                {isProcessing
-                  ? 'Você pode navegar por outras páginas durante a reanálise.'
-                  : 'Reanálise finalizada.'}
+                {isCancelling
+                  ? 'Cancelamento solicitado. Interrompendo chamadas em andamento...'
+                  : isProcessing
+                    ? 'Você pode navegar por outras páginas durante a reanálise.'
+                    : 'Reanálise finalizada.'}
               </span>
               <div className="flex items-center gap-2">
                 {!isProcessing && (
@@ -236,7 +299,12 @@ export function BulkReanalysisBar() {
         {/* Barra de progresso ultrafina (2.5px) no topo */}
         <div className="h-[3px] w-full bg-slate-800 overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-blue-500 via-primary to-emerald-400 transition-all duration-300 ease-out"
+            className={cn(
+              'h-full transition-all duration-300 ease-out',
+              isCancelling
+                ? 'bg-amber-400'
+                : 'bg-gradient-to-r from-blue-500 via-primary to-emerald-400',
+            )}
             style={{ width: `${percent}%` }}
           />
         </div>
@@ -257,7 +325,9 @@ export function BulkReanalysisBar() {
         >
           {/* Lado esquerdo / Centro: Indicador em tempo real */}
           <div className="flex items-center gap-2.5 sm:gap-3 text-xs sm:text-sm truncate">
-            {isProcessing ? (
+            {isCancelling ? (
+              <Loader2 className="h-4 w-4 animate-spin text-amber-400 shrink-0" />
+            ) : isProcessing ? (
               <Loader2 className="h-4 w-4 animate-spin text-blue-400 shrink-0" />
             ) : errorCount > 0 ? (
               <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
@@ -266,18 +336,26 @@ export function BulkReanalysisBar() {
             )}
 
             <div className="flex items-center gap-1.5 sm:gap-2 font-medium truncate">
-              <span className="font-semibold text-white tracking-wide">
-                {processed}/{total}
-              </span>
-              <span className="text-slate-500">•</span>
-              <span className="text-slate-300">
-                Lote {currentBatch}/{totalBatches}
-              </span>
-              <span className="text-slate-500">•</span>
-              <span>{isProcessing ? '⏳' : '✅'}</span>
-              <span className="hidden md:inline text-xs text-slate-400 ml-2">
-                ({percent}% concluído)
-              </span>
+              {isCancelling ? (
+                <span className="text-amber-400 font-semibold flex items-center gap-1.5">
+                  Cancelando reanálise...
+                </span>
+              ) : (
+                <>
+                  <span className="font-semibold text-white tracking-wide">
+                    {processed}/{total}
+                  </span>
+                  <span className="text-slate-500">•</span>
+                  <span className="text-slate-300">
+                    Lote {currentBatch}/{totalBatches}
+                  </span>
+                  <span className="text-slate-500">•</span>
+                  <span>{isProcessing ? '⏳' : '✅'}</span>
+                  <span className="hidden md:inline text-xs text-slate-400 ml-2">
+                    ({percent}% concluído)
+                  </span>
+                </>
+              )}
             </div>
           </div>
 
@@ -290,11 +368,26 @@ export function BulkReanalysisBar() {
               <Button
                 size="sm"
                 variant="ghost"
+                disabled={isCancelling}
                 onClick={cancelReanalysis}
-                className="h-7 text-xs text-red-300 hover:text-red-200 hover:bg-red-900/30 px-2 sm:px-2.5 rounded font-medium"
+                className={cn(
+                  'h-7 text-xs px-2 sm:px-2.5 rounded font-medium transition-colors',
+                  isCancelling
+                    ? 'text-amber-400 hover:text-amber-300 bg-amber-950/40 cursor-not-allowed opacity-90'
+                    : 'text-red-300 hover:text-red-200 hover:bg-red-900/30',
+                )}
               >
-                <X className="h-3.5 w-3.5 mr-1" />
-                <span>✕ Cancelar</span>
+                {isCancelling ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin text-amber-400" />
+                    <span>Cancelando...</span>
+                  </>
+                ) : (
+                  <>
+                    <X className="h-3.5 w-3.5 mr-1" />
+                    <span>✕ Cancelar</span>
+                  </>
+                )}
               </Button>
             ) : (
               <Button

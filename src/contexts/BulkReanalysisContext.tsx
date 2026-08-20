@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useRef, useCallback } from 
 import { reanalyzeCandidateEdge } from '@/services/candidates'
 import { useToast } from '@/hooks/use-toast'
 
-export type CandidateProcessStatus = 'pending' | 'processing' | 'success' | 'error'
+export type CandidateProcessStatus = 'pending' | 'processing' | 'success' | 'error' | 'cancelled'
 
 export interface BulkCandidateItem {
   id: string
@@ -18,6 +18,7 @@ export interface BulkReanalysisProgress {
   processed: number
   successCount: number
   errorCount: number
+  cancelledCount: number
   currentBatch: number
   totalBatches: number
   percent: number
@@ -32,6 +33,7 @@ export interface CandidateToReanalyze {
 
 interface BulkReanalysisContextType {
   isProcessing: boolean
+  isCancelling: boolean
   isMinimized: boolean
   isExpanded: boolean
   progress: BulkReanalysisProgress
@@ -49,24 +51,59 @@ const BATCH_SIZE = 5
 const MAX_RETRIES = 2
 const RETRY_BASE_DELAY = 1000 // 1s exponential backoff
 
-async function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+class CancellationError extends Error {
+  constructor(message = 'Cancelado pelo usuário') {
+    super(message)
+    this.name = 'CancellationError'
+  }
 }
 
-async function processWithRetry(candidateId: string, maxRetries = MAX_RETRIES): Promise<any> {
+/**
+ * Espera `ms` milissegundos verificando periodicamente (a cada 50ms) se o cancelamento foi solicitado.
+ * Se cancelado durante o delay, resolve imediatamente ou lança para abortar o delay.
+ */
+async function interruptibleSleep(ms: number, isCancelled: () => boolean): Promise<boolean> {
+  const step = 50
+  let elapsed = 0
+  while (elapsed < ms) {
+    if (isCancelled()) {
+      return false // foi interrompido/cancelado
+    }
+    const chunk = Math.min(step, ms - elapsed)
+    await new Promise((resolve) => setTimeout(resolve, chunk))
+    elapsed += chunk
+  }
+  return !isCancelled()
+}
+
+async function processWithRetry(
+  candidateId: string,
+  isCancelled: () => boolean,
+  maxRetries = MAX_RETRIES,
+): Promise<any> {
   let attempt = 0
   let lastError: any = null
 
   while (attempt <= maxRetries) {
+    if (isCancelled()) {
+      throw new CancellationError()
+    }
+
     try {
       const res = await reanalyzeCandidateEdge(candidateId)
       return res
     } catch (err: any) {
+      if (isCancelled()) {
+        throw new CancellationError()
+      }
       lastError = err
       attempt++
       if (attempt <= maxRetries) {
         const delay = RETRY_BASE_DELAY * Math.pow(2, attempt - 1)
-        await sleep(delay)
+        const completed = await interruptibleSleep(delay, isCancelled)
+        if (!completed || isCancelled()) {
+          throw new CancellationError()
+        }
       }
     }
   }
@@ -76,6 +113,7 @@ async function processWithRetry(candidateId: string, maxRetries = MAX_RETRIES): 
 
 export function BulkReanalysisProvider({ children }: { children: React.ReactNode }) {
   const [isProcessing, setIsProcessing] = useState(false)
+  const [isCancelling, setIsCancelling] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false)
   const [isMinimized, setIsMinimized] = useState(false)
   const [statuses, setStatuses] = useState<BulkCandidateItem[]>([])
@@ -96,6 +134,7 @@ export function BulkReanalysisProvider({ children }: { children: React.ReactNode
   const cancelReanalysis = useCallback(() => {
     if (!isRunningRef.current) return
     cancelRequestedRef.current = true
+    setIsCancelling(true)
   }, [])
 
   const toggleExpanded = useCallback(() => {
@@ -143,6 +182,7 @@ export function BulkReanalysisProvider({ children }: { children: React.ReactNode
 
       setStatuses(initialItems)
       setIsProcessing(true)
+      setIsCancelling(false)
       setIsMinimized(false)
       setIsExpanded(false)
       cancelRequestedRef.current = false
@@ -159,6 +199,8 @@ export function BulkReanalysisProvider({ children }: { children: React.ReactNode
       let totalSuccess = 0
       let totalErrors = 0
       let wasCancelled = false
+
+      const checkCancelled = () => cancelRequestedRef.current
 
       for (let bIndex = 0; bIndex < batches.length; bIndex++) {
         // Verificar se cancelamento foi solicitado antes de iniciar o lote
@@ -177,11 +219,26 @@ export function BulkReanalysisProvider({ children }: { children: React.ReactNode
           ),
         )
 
-        // Processa as chamadas do lote atual em paralelo com retry
+        // Processa as chamadas do lote atual em paralelo com retry e interrupção imediata
         await Promise.allSettled(
           batch.map(async (candidate) => {
+            if (cancelRequestedRef.current) {
+              setStatuses((prev) =>
+                prev.map((item) =>
+                  item.id === candidate.id
+                    ? {
+                        ...item,
+                        status: 'cancelled',
+                        error: 'Cancelado pelo usuário',
+                      }
+                    : item,
+                ),
+              )
+              return
+            }
+
             try {
-              const res = await processWithRetry(candidate.id)
+              const res = await processWithRetry(candidate.id, checkCancelled)
               const analiseResultado =
                 res?.data?.data?.analise?.resultado ||
                 res?.data?.analise?.resultado ||
@@ -201,6 +258,21 @@ export function BulkReanalysisProvider({ children }: { children: React.ReactNode
               )
               totalSuccess++
             } catch (err: any) {
+              if (err instanceof CancellationError || cancelRequestedRef.current) {
+                setStatuses((prev) =>
+                  prev.map((item) =>
+                    item.id === candidate.id
+                      ? {
+                          ...item,
+                          status: 'cancelled',
+                          error: 'Cancelado pelo usuário',
+                        }
+                      : item,
+                  ),
+                )
+                return
+              }
+
               const errorMsg =
                 err?.message || err?.details || 'Erro ao processar análise do candidato.'
 
@@ -227,18 +299,28 @@ export function BulkReanalysisProvider({ children }: { children: React.ReactNode
         }
       }
 
+      if (cancelRequestedRef.current) {
+        wasCancelled = true
+        // Marcar candidatos restantes como 'cancelled'
+        setStatuses((prev) =>
+          prev.map((item) =>
+            item.status === 'pending' || item.status === 'processing'
+              ? { ...item, status: 'cancelled', error: 'Cancelado pelo usuário' }
+              : item,
+          ),
+        )
+      }
+
       isRunningRef.current = false
       setIsProcessing(false)
+      setIsCancelling(false)
 
       if (wasCancelled) {
         toast({
           variant: 'default',
           title: 'Processamento cancelado',
-          description: `Processamento cancelado. ${totalSuccess} processados com sucesso, ${totalErrors} falhas.`,
+          description: `Processamento cancelado. ${totalSuccess} processados com sucesso, ${totalErrors} falha(s).`,
         })
-        // Recolhe e oculta a barra após cancelamento
-        setIsMinimized(true)
-        setIsExpanded(false)
       } else {
         if (totalErrors === 0) {
           toast({
@@ -260,7 +342,8 @@ export function BulkReanalysisProvider({ children }: { children: React.ReactNode
   const total = statuses.length
   const successCount = statuses.filter((i) => i.status === 'success').length
   const errorCount = statuses.filter((i) => i.status === 'error').length
-  const processed = successCount + errorCount
+  const cancelledCount = statuses.filter((i) => i.status === 'cancelled').length
+  const processed = successCount + errorCount + cancelledCount
   const percent = total > 0 ? Math.round((processed / total) * 100) : 0
 
   const progress: BulkReanalysisProgress = {
@@ -268,6 +351,7 @@ export function BulkReanalysisProvider({ children }: { children: React.ReactNode
     processed,
     successCount,
     errorCount,
+    cancelledCount,
     currentBatch,
     totalBatches,
     percent,
@@ -277,6 +361,7 @@ export function BulkReanalysisProvider({ children }: { children: React.ReactNode
     <BulkReanalysisContext.Provider
       value={{
         isProcessing,
+        isCancelling,
         isMinimized,
         isExpanded,
         progress,
