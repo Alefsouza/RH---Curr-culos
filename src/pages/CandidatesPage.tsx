@@ -284,71 +284,79 @@ export default function CandidatesPage() {
 
   return (
     <div className="space-y-6 pb-24">
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Candidatos</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Gerencie todos os talentos cadastrados no processo seletivo.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-          <div className="relative flex-1 sm:flex-none sm:w-[240px]">
+      {/* Cabeçalho: Título e descrição */}
+      <div className="flex flex-col gap-1">
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Candidatos</h1>
+        <p className="text-sm text-slate-500">
+          Gerencie todos os talentos cadastrados no processo seletivo.
+        </p>
+      </div>
+
+      {/* Barra de filtros */}
+      <div className="bg-slate-50/80 border border-slate-200/80 rounded-xl p-4 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center gap-3">
+          <div className="relative flex-1 min-w-[220px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <Input
               placeholder="Buscar por nome, e-mail ou vaga..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 h-11 focus-visible:ring-primary bg-white"
+              className="pl-9 h-11 focus-visible:ring-primary bg-white shadow-none"
             />
           </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-full sm:w-[170px] h-11 bg-white">
-              <SelectValue placeholder="Filtrar por Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todos">Todos os status</SelectItem>
-              <SelectItem value="qualificado">Qualificados</SelectItem>
-              <SelectItem value="nao_qualificado">Não Qualificados</SelectItem>
-              <SelectItem value="revisar">Para Revisão</SelectItem>
-              <SelectItem value="sem_etapa">Sem Etapa</SelectItem>
-            </SelectContent>
-          </Select>
-          <div className="flex items-center gap-1.5 w-full sm:w-auto">
-            <div className="flex flex-col flex-1 sm:w-[145px]">
-              <Input
-                type="date"
-                title="Data Inicial"
-                aria-label="Data Inicial"
-                placeholder="Data Inicial"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="h-11 bg-white text-xs sm:text-sm text-slate-700"
-              />
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-full sm:w-[170px] h-11 bg-white shadow-none">
+                <SelectValue placeholder="Filtrar por Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos os status</SelectItem>
+                <SelectItem value="qualificado">Qualificados</SelectItem>
+                <SelectItem value="nao_qualificado">Não Qualificados</SelectItem>
+                <SelectItem value="revisar">Para Revisão</SelectItem>
+                <SelectItem value="sem_etapa">Sem Etapa</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="flex flex-col flex-1 sm:w-[145px]">
+                <Input
+                  type="date"
+                  title="Data Inicial"
+                  aria-label="Data Inicial"
+                  placeholder="Data Inicial"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="h-11 bg-white text-xs sm:text-sm text-slate-700 shadow-none"
+                />
+              </div>
+              <span className="text-slate-400 text-xs sm:text-sm font-medium">até</span>
+              <div className="flex flex-col flex-1 sm:w-[145px]">
+                <Input
+                  type="date"
+                  title="Data Final"
+                  aria-label="Data Final"
+                  placeholder="Data Final"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="h-11 bg-white text-xs sm:text-sm text-slate-700 shadow-none"
+                />
+              </div>
             </div>
-            <span className="text-slate-400 text-xs sm:text-sm font-medium">até</span>
-            <div className="flex flex-col flex-1 sm:w-[145px]">
-              <Input
-                type="date"
-                title="Data Final"
-                aria-label="Data Final"
-                placeholder="Data Final"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="h-11 bg-white text-xs sm:text-sm text-slate-700"
-              />
-            </div>
+
+            {hasActiveFilters && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleClearFilters}
+                className="h-11 text-xs text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 gap-1.5 px-3 border-slate-200"
+              >
+                <X className="h-3.5 w-3.5" />
+                Limpar filtros
+              </Button>
+            )}
           </div>
-          {hasActiveFilters && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleClearFilters}
-              className="h-11 text-xs text-slate-500 hover:text-slate-700 gap-1 px-2.5"
-            >
-              <X className="h-3.5 w-3.5" />
-              Limpar
-            </Button>
-          )}
         </div>
       </div>
 
