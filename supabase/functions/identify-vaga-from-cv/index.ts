@@ -81,6 +81,54 @@ Deno.serve(async (req: Request) => {
 
     const openai = new OpenAI({ apiKey: openaiKey })
 
+    const isRetryableError = (error: any) => {
+      const status = error?.status || error?.statusCode || error?.response?.status
+      if (status === 429) return true
+      if (typeof status === 'number' && status >= 500 && status < 600) return true
+      const msg = String(error?.message || '').toLowerCase()
+      if (
+        msg.includes('rate limit') ||
+        msg.includes('429') ||
+        msg.includes('timeout') ||
+        msg.includes('fetch failed')
+      ) {
+        return true
+      }
+      return false
+    }
+
+    const callOpenAIWithRetry = async (
+      promptText: string,
+      retries = 3,
+      delays = [2000, 4000, 8000],
+    ): Promise<any> => {
+      try {
+        const response = await openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content:
+                'Você é um especialista em Recrutamento e Seleção focado em análise técnica de currículos e Job Matching.',
+            },
+            { role: 'user', content: promptText },
+          ],
+          response_format: { type: 'json_object' },
+        })
+        return JSON.parse(response.choices[0].message.content || '{}')
+      } catch (error: any) {
+        if (retries > 0 && isRetryableError(error)) {
+          const delay = delays[3 - retries] ?? 8000
+          console.log(
+            `Erro OpenAI em identify-vaga. Retentando em ${delay}ms... (${retries} restantes)`,
+          )
+          await new Promise((res) => setTimeout(res, delay))
+          return callOpenAIWithRetry(promptText, retries - 1, delays)
+        }
+        throw error
+      }
+    }
+
     const prompt = `
       Temos o seguinte currículo estruturado do candidato:
       ${JSON.stringify(candidato.dados_extraidos)}
@@ -102,20 +150,7 @@ Deno.serve(async (req: Request) => {
       }
     `
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content:
-            'Você é um especialista em Recrutamento e Seleção focado em análise técnica de currículos e Job Matching.',
-        },
-        { role: 'user', content: prompt },
-      ],
-      response_format: { type: 'json_object' },
-    })
-
-    const result = JSON.parse(response.choices[0].message.content || '{}')
+    const result = await callOpenAIWithRetry(prompt)
 
     // Normalizing low confidences
     if (result.confianca === 'baixa' || result.confianca === 'nenhuma') {

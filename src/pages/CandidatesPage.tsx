@@ -22,6 +22,7 @@ import { CandidateDeleteDialog } from '@/components/candidates/CandidateDeleteDi
 import { BulkActionBar } from '@/components/candidates/BulkActionBar'
 import { BulkDeleteDialog } from '@/components/candidates/BulkDeleteDialog'
 import { VagaSelectDialog } from '@/components/candidates/VagaSelectDialog'
+import { BulkProgressDialog, BulkCandidateItem } from '@/components/candidates/BulkProgressDialog'
 import {
   Select,
   SelectContent,
@@ -31,6 +32,8 @@ import {
 } from '@/components/ui/select'
 import { MassImportDialog } from '@/components/candidates/MassImportDialog'
 import { useAuth } from '@/hooks/use-auth'
+
+const BATCH_SIZE = 5
 
 export default function CandidatesPage() {
   const [candidates, setCandidates] = useState<any[]>([])
@@ -44,6 +47,10 @@ export default function CandidatesPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [showBulkDelete, setShowBulkDelete] = useState(false)
   const [bulkReanalyzing, setBulkReanalyzing] = useState(false)
+  const [bulkProgressOpen, setBulkProgressOpen] = useState(false)
+  const [bulkItems, setBulkItems] = useState<BulkCandidateItem[]>([])
+  const [currentBatchIndex, setCurrentBatchIndex] = useState(0)
+  const [totalBatchesCount, setTotalBatchesCount] = useState(0)
   const [pendingQualify, setPendingQualify] = useState<{
     candidateId: string
     userId: string
@@ -222,7 +229,7 @@ export default function CandidatesPage() {
     }
   }
 
-  const handleBulkReanalyze = () => {
+  const handleBulkReanalyze = async () => {
     const selectedCandidates = filtered.filter((c) => selectedIds.has(c.id))
     const valid = selectedCandidates.filter((c) => c.curriculo_url)
     const invalid = selectedCandidates.filter((c) => !c.curriculo_url)
@@ -240,38 +247,106 @@ export default function CandidatesPage() {
     if (invalid.length > 0) {
       toast({
         title: 'Candidatos sem currículo',
-        description: `${invalid.length} candidato(s) sem currículo serão pulados.`,
+        description: `${invalid.length} candidato(s) sem currículo serão pulados da análise.`,
       })
     }
 
-    toast({
-      title: 'Reanálise iniciada',
-      description: `Reanálise iniciada para ${valid.length} candidatos. Você pode continuar navegando.`,
-    })
+    // Inicializa a lista de itens para o diálogo de progresso
+    const initialItems: BulkCandidateItem[] = valid.map((c) => ({
+      id: c.id,
+      nome: c.nome,
+      vaga: c.vaga,
+      status: 'pending',
+    }))
 
+    setBulkItems(initialItems)
     setSelectedIds(new Set())
     setBulkReanalyzing(true)
+    setBulkProgressOpen(true)
 
-    Promise.allSettled(valid.map((c) => reanalyzeCandidateEdge(c.id)))
-      .then((results) => {
-        const failed = results.filter((r) => r.status === 'rejected')
-        if (failed.length === 0) {
-          toast({ title: 'Reanálise concluída com sucesso' })
-        } else {
-          toast({
-            variant: 'destructive',
-            title: 'Reanálise parcial',
-            description: `${failed.length} de ${valid.length} candidatos falharam na reanálise.`,
-          })
-        }
-        loadData()
+    // Agrupa em lotes de BATCH_SIZE (5)
+    const batches: BulkCandidateItem[][] = []
+    for (let i = 0; i < initialItems.length; i += BATCH_SIZE) {
+      batches.push(initialItems.slice(i, i + BATCH_SIZE))
+    }
+
+    setTotalBatchesCount(batches.length)
+    setCurrentBatchIndex(1)
+
+    let totalSuccess = 0
+    let totalErrors = 0
+
+    // Processa os lotes sequencialmente, aguardando a conclusão de cada um antes do próximo
+    for (let bIndex = 0; bIndex < batches.length; bIndex++) {
+      const batch = batches[bIndex]
+      setCurrentBatchIndex(bIndex + 1)
+
+      // Marca todos do lote atual como "processing"
+      setBulkItems((prev) =>
+        prev.map((item) =>
+          batch.some((b) => b.id === item.id) ? { ...item, status: 'processing' } : item,
+        ),
+      )
+
+      // Executa as chamadas do lote atual em paralelo com rastreamento individual
+      await Promise.allSettled(
+        batch.map(async (candidate) => {
+          try {
+            const res = await reanalyzeCandidateEdge(candidate.id)
+            const analiseResultado =
+              res?.data?.data?.analise?.resultado ||
+              res?.data?.analise?.resultado ||
+              res?.analise?.resultado ||
+              'qualificado'
+
+            setBulkItems((prev) =>
+              prev.map((item) =>
+                item.id === candidate.id
+                  ? {
+                      ...item,
+                      status: 'success',
+                      resultado: analiseResultado,
+                    }
+                  : item,
+              ),
+            )
+            totalSuccess++
+          } catch (err: any) {
+            const errorMsg =
+              err?.message || err?.details || 'Erro ao processar análise do candidato.'
+
+            setBulkItems((prev) =>
+              prev.map((item) =>
+                item.id === candidate.id
+                  ? {
+                      ...item,
+                      status: 'error',
+                      error: errorMsg,
+                    }
+                  : item,
+              ),
+            )
+            totalErrors++
+          }
+        }),
+      )
+    }
+
+    setBulkReanalyzing(false)
+    loadData()
+
+    if (totalErrors === 0) {
+      toast({
+        title: 'Reanálise em massa concluída com sucesso!',
+        description: `${totalSuccess} candidato(s) reanalisados com sucesso.`,
       })
-      .catch((err: any) => {
-        toast({ variant: 'destructive', title: 'Erro na reanálise', description: err.message })
+    } else {
+      toast({
+        variant: totalSuccess > 0 ? 'default' : 'destructive',
+        title: 'Reanálise finalizada',
+        description: `${totalSuccess} processados com sucesso, ${totalErrors} falha(s).`,
       })
-      .finally(() => {
-        setBulkReanalyzing(false)
-      })
+    }
   }
 
   if (loading) {
@@ -402,6 +477,19 @@ export default function CandidatesPage() {
         onClose={() => setShowMassImport(false)}
         onComplete={loadData}
         userId={user?.id || ''}
+      />
+
+      <BulkProgressDialog
+        isOpen={bulkProgressOpen}
+        items={bulkItems}
+        currentBatch={currentBatchIndex}
+        totalBatches={totalBatchesCount}
+        batchSize={BATCH_SIZE}
+        isRunning={bulkReanalyzing}
+        onClose={() => {
+          setBulkProgressOpen(false)
+          setBulkItems([])
+        }}
       />
     </div>
   )

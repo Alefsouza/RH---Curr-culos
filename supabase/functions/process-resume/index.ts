@@ -96,10 +96,26 @@ Deno.serve(async (req: Request) => {
     }
     const openai = new OpenAI({ apiKey: openaiKey })
 
+    const isRetryableError = (error: any) => {
+      const status = error?.status || error?.statusCode || error?.response?.status
+      if (status === 429) return true
+      if (typeof status === 'number' && status >= 500 && status < 600) return true
+      const msg = String(error?.message || '').toLowerCase()
+      if (
+        msg.includes('rate limit') ||
+        msg.includes('429') ||
+        msg.includes('timeout') ||
+        msg.includes('fetch failed')
+      ) {
+        return true
+      }
+      return false
+    }
+
     const callOpenAIWithRetry = async (
       prompt: string,
       retries = 3,
-      backoff = 2000,
+      delays = [2000, 4000, 8000],
     ): Promise<any> => {
       try {
         const response = await openai.chat.completions.create({
@@ -116,10 +132,13 @@ Deno.serve(async (req: Request) => {
         })
         return JSON.parse(response.choices[0].message.content || '{}')
       } catch (error: any) {
-        if (error.status === 503 && retries > 0) {
-          console.log(`OpenAI 503, retentando em ${backoff}ms...`)
-          await new Promise((resolve) => setTimeout(resolve, backoff))
-          return callOpenAIWithRetry(prompt, retries - 1, backoff * 2)
+        if (retries > 0 && isRetryableError(error)) {
+          const delay = delays[3 - retries] ?? 8000
+          console.log(
+            `OpenAI erro (${error?.status || error?.message}), retentando em ${delay}ms...`,
+          )
+          await new Promise((resolve) => setTimeout(resolve, delay))
+          return callOpenAIWithRetry(prompt, retries - 1, delays)
         }
         throw error
       }

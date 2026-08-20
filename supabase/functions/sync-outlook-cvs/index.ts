@@ -150,7 +150,7 @@ Deno.serve(async (req: Request) => {
           continue
         }
 
-        const openaiKey = Deno.env.get('OPENIA_KEY') || Deno.env.get('OPENAI_KEY')
+        const openaiKey = Deno.env.get('OPENAI_KEY') || Deno.env.get('OPENIA_KEY')
         if (!openaiKey) throw new Error('OpenAI key not configured')
 
         const extractionRes = await fetch('https://api.openai.com/v1/chat/completions', {

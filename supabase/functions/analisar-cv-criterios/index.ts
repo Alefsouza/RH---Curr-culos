@@ -205,9 +205,9 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
 - detalhes (objeto com score (número inteiro de 0 a 100 representando a compatibilidade geral do candidato), matched_criteria (array de objetos com nome (string) e evidencia (string)), unmatched_criteria (array de objetos com nome (string) e motivo (string)), summary (string com resumo conciso da análise), pontos_fortes (array), pontos_fracos (array), aderencia (string) e motivo (string, explicação breve sobre a decisão, focando na localização se for reprovado))`
 
     const openaiKey =
-      Deno.env.get('OPENIA_KEY') || Deno.env.get('OPENAI_API_KEY') || Deno.env.get('OPENAI_KEY')
+      Deno.env.get('OPENAI_KEY') || Deno.env.get('OPENAI_API_KEY') || Deno.env.get('OPENIA_KEY')
     if (!openaiKey) {
-      console.log('ERRO: OPENIA_KEY não configurada')
+      console.log('ERRO: OPENAI_KEY não configurada')
       return new Response(JSON.stringify({ error: 'Chave OpenAI não configurada no servidor.' }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -215,6 +215,22 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
     }
 
     const openai = new OpenAI({ apiKey: openaiKey })
+
+    const isRetryableError = (error: any) => {
+      const status = error?.status || error?.statusCode || error?.response?.status
+      if (status === 429) return true
+      if (typeof status === 'number' && status >= 500 && status < 600) return true
+      const msg = String(error?.message || '').toLowerCase()
+      if (
+        msg.includes('rate limit') ||
+        msg.includes('429') ||
+        msg.includes('timeout') ||
+        msg.includes('fetch failed')
+      ) {
+        return true
+      }
+      return false
+    }
 
     const callOpenAIWithRetry = async (
       prompt: string,
@@ -231,10 +247,11 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
         const content = response.choices[0]?.message?.content
         return content ? JSON.parse(content) : {}
       } catch (error: any) {
-        if (error.status === 503 && retries > 0) {
-          const delay = delays[3 - retries] || 8000
+        if (retries > 0 && isRetryableError(error)) {
+          const delayIndex = 3 - retries
+          const delay = delays[delayIndex] ?? 8000
           console.log(
-            `Erro 503: Serviço indisponível. Tentando novamente em ${delay}ms... (${retries} tentativas)`,
+            `Erro OpenAI (${error?.status || error?.message}). Tentando novamente em ${delay}ms... (${retries} tentativas restantes)`,
           )
           await new Promise((res) => setTimeout(res, delay))
           return callOpenAIWithRetry(prompt, retries - 1, delays)
@@ -365,12 +382,29 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
     let numeros_whatsapp: string[] = []
     try {
       const promptWhatsApp = `Extraia TODOS os números de telefone celular brasileiros (DDD + 9 dígitos, começando com 9) do currículo, ignorando telefones fixos. Retorne APENAS os números no formato: 11999999999, separados por vírgula se houver mais de um.\n\nCurrículo:\n${JSON.stringify(cvData)}`
-      const responseWpp = await openai.chat.completions.create({
-        model: 'gpt-4-turbo',
-        temperature: 0.1,
-        messages: [{ role: 'user', content: promptWhatsApp }],
-      })
-      const extractedText = responseWpp.choices[0]?.message?.content?.trim() || ''
+
+      const callWppWithRetry = async (
+        retries = 3,
+        delays = [2000, 4000, 8000],
+      ): Promise<string> => {
+        try {
+          const responseWpp = await openai.chat.completions.create({
+            model: 'gpt-4-turbo',
+            temperature: 0.1,
+            messages: [{ role: 'user', content: promptWhatsApp }],
+          })
+          return responseWpp.choices[0]?.message?.content?.trim() || ''
+        } catch (error: any) {
+          if (retries > 0 && isRetryableError(error)) {
+            const delay = delays[3 - retries] ?? 8000
+            await new Promise((res) => setTimeout(res, delay))
+            return callWppWithRetry(retries - 1, delays)
+          }
+          throw error
+        }
+      }
+
+      const extractedText = await callWppWithRetry()
       numeros_whatsapp = extractedText
         .split(',')
         .map((s) => s.replace(/\D/g, ''))
