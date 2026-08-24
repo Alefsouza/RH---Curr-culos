@@ -74,8 +74,10 @@ export default function AuthPage() {
         {/* Logo Section */}
         <div className="flex justify-center mb-6">
           <img
-            src="https://wrnhfpncasqifaisvyaf.supabase.co/storage/v1/object/public/assets/logo_branco_transparente_nitido-80a6a-BIUC1rYD.png"
+            src="https://wrnhfpncasqifaisvyaf.supabase.co/storage/v1/object/public/assets/logo_branco_transparente_nitido-80a6a-BIUCr1YD.png"
             alt="Logo Via Sudeste"
+            crossOrigin="anonymous"
+            referrerPolicy="no-referrer"
             className="h-16 md:h-20 w-auto object-contain drop-shadow-lg"
           />
         </div>
