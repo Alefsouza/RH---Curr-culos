@@ -4,8 +4,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
-import { Navigate, Link } from 'react-router-dom'
-import { Mail, Lock, Eye, EyeOff, AlertCircle, KeyRound, BriefcaseBusiness } from 'lucide-react'
+import { Navigate } from 'react-router-dom'
+import { Mail, Lock, Eye, EyeOff, AlertCircle, KeyRound } from 'lucide-react'
 
 export default function AuthPage() {
   const [email, setEmail] = useState('financeiro@viasudeste.com')
@@ -59,25 +59,25 @@ export default function AuthPage() {
 
   return (
     <div className="auth-page relative min-h-screen flex items-center justify-center p-4 overflow-hidden bg-slate-950">
-      <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950/40" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(16,185,129,0.15),rgba(255,255,255,0))]" />
+      {/* Background Image covering full area */}
+      <div
+        className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+        style={{
+          backgroundImage: `url('https://wrnhfpncasqifaisvyaf.supabase.co/storage/v1/object/public/assets/6.jpeg')`,
+        }}
+      />
+      {/* Dark overlay for contrast and readability */}
+      <div className="absolute inset-0 bg-slate-950/65 backdrop-blur-[2px]" />
+      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-slate-950/40" />
 
       <div className="relative z-10 w-full max-w-md animate-fade-in-up">
         {/* Logo Section */}
         <div className="flex justify-center mb-6">
-          <div className="glass-logo-container rounded-2xl border border-white/20 bg-white/10 backdrop-blur-xl px-8 py-5 shadow-lg transition-all duration-300 hover:shadow-xl hover:bg-white/15 flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[hsl(149_100%_33%)] text-white shadow-md">
-              <BriefcaseBusiness className="h-6 w-6" />
-            </div>
-            <div className="flex flex-col text-left">
-              <span className="text-2xl font-bold tracking-tight text-white drop-shadow-sm">
-                Via Sudeste
-              </span>
-              <span className="text-xs uppercase tracking-widest text-emerald-400 font-semibold">
-                Recursos Humanos
-              </span>
-            </div>
-          </div>
+          <img
+            src="https://wrnhfpncasqifaisvyaf.supabase.co/storage/v1/object/public/assets/logo_branco_transparente_nitido-80a6a-BIUC1rYD.png"
+            alt="Logo Via Sudeste"
+            className="h-16 md:h-20 w-auto object-contain drop-shadow-lg"
+          />
         </div>
 
         {/* Card */}
