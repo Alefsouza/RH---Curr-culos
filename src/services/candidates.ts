@@ -172,13 +172,30 @@ export async function identifyVagaForCandidate(candidatoId: string, userId: stri
 }
 
 export interface RecoverCandidatesResumo {
+  total_candidatos?: number
   total_pdfs_encontrados: number
+  inseridos?: number
   sucesso: number
+  pulados?: number
   pulados_existentes: number
+  pulados_duplicados?: number
   falhas: number
   detalhes_falhas?: Array<{
     arquivo?: string
     erro?: string
+    path?: string
+    motivo?: string
+    [key: string]: any
+  }>
+  detalhes?: Array<{
+    arquivo: string
+    status: 'inserido' | 'pulado' | 'falha'
+    nome?: string | null
+    email?: string | null
+    telefone?: string | null
+    vaga_id?: string | null
+    erro?: string
+    motivo?: string
     [key: string]: any
   }>
   tempo_total_segundos?: number

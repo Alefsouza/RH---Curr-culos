@@ -16,10 +16,16 @@ function uint8ArrayToBase64(bytes: Uint8Array): string {
   return btoa(binary)
 }
 
-// Extrai texto bruto contido em streams/objetos do PDF via regex simples
+// Extrai texto bruto contido em streams/objetos do PDF via regex com suporte a UTF-8
 function extractAsciiTextFromPdfBytes(bytes: Uint8Array): string {
-  const textDecoder = new TextDecoder('latin1')
-  const raw = textDecoder.decode(bytes)
+  let raw = ''
+  try {
+    const textDecoderUtf8 = new TextDecoder('utf-8', { fatal: false })
+    raw = textDecoderUtf8.decode(bytes)
+  } catch {
+    const textDecoderLatin1 = new TextDecoder('latin1')
+    raw = textDecoderLatin1.decode(bytes)
+  }
 
   const textChunks: string[] = []
 
@@ -43,16 +49,29 @@ function extractAsciiTextFromPdfBytes(bytes: Uint8Array): string {
     const hexMatches = block.matchAll(/<([0-9a-fA-F\s]+)>/g)
     for (const hex of hexMatches) {
       const cleanHex = hex[1].replace(/\s+/g, '')
-      if (cleanHex.length % 2 === 0 && cleanHex.length >= 4) {
-        let str = ''
-        for (let k = 0; k < cleanHex.length; k += 2) {
-          const code = parseInt(cleanHex.substring(k, k + 2), 16)
-          if (code >= 32 && code <= 126) {
-            str += String.fromCharCode(code)
+      if (cleanHex.length % 2 === 0 && cleanHex.length >= 2) {
+        try {
+          const hexBytes = new Uint8Array(cleanHex.length / 2)
+          for (let k = 0; k < cleanHex.length; k += 2) {
+            hexBytes[k / 2] = parseInt(cleanHex.substring(k, k + 2), 16)
           }
-        }
-        if (str.trim().length > 0) {
-          textChunks.push(str)
+          const decodedHexStr = new TextDecoder('utf-8', { fatal: false }).decode(hexBytes)
+          // Se contiver caracteres legíveis
+          if (decodedHexStr.trim().length > 0) {
+            textChunks.push(decodedHexStr)
+          }
+        } catch {
+          // Fallback charCode
+          let str = ''
+          for (let k = 0; k < cleanHex.length; k += 2) {
+            const code = parseInt(cleanHex.substring(k, k + 2), 16)
+            if (code >= 32) {
+              str += String.fromCharCode(code)
+            }
+          }
+          if (str.trim().length > 0) {
+            textChunks.push(str)
+          }
         }
       }
     }
@@ -211,6 +230,7 @@ Deno.serve(async (req: Request) => {
       sucesso: 0,
       pulados: 0,
       pulados_existentes: 0,
+      pulados_duplicados: 0,
       falhas: 0,
       detalhes_falhas: [] as { arquivo: string; erro: string; path?: string; motivo?: string }[],
       detalhes: [] as {
@@ -221,6 +241,7 @@ Deno.serve(async (req: Request) => {
         telefone?: string | null
         vaga_id?: string | null
         erro?: string
+        motivo?: string
       }[],
       tempo_total_segundos: 0,
     }
@@ -272,31 +293,35 @@ Deno.serve(async (req: Request) => {
       const base64Data = uint8ArrayToBase64(pdfBytes)
 
       const systemPrompt =
-        'Você é um especialista em RH e análise de currículos. Extraia com precisão os dados cadastrais e profissionais do documento enviado. Responda ESTRITAMENTE em JSON válido.'
+        'Você é um especialista em RH e análise de currículos. Extraia com precisão os dados cadastrais e profissionais do documento enviado em português brasileiro. Preserve rigorosamente todos os acentos e caracteres especiais da língua portuguesa (ç, ã, õ, â, ê, ô, á, é, í, ó, ú, etc.). Responda ESTRITAMENTE em JSON válido.'
 
       let promptText = `Analise o currículo (arquivo: ${filePath}) e extraia todos os dados estruturados.
-Extraia com cuidado:
-- nome (nome completo do candidato)
-- email (endereço de e-mail válido)
-- telefones_celulares (lista de telefones celulares brasileiros com DDD, preferencialmente 11 dígitos, ex: 11999999999)
-- telefone (telefone principal formatado ou null)
-- endereco (cidade, estado ou endereço completo)
-- resumo_cv (resumo das qualificações e perfil profissional)
-- experiencia_profissional (lista de experiências anteriores com cargos e empresas)
-- skills (lista de habilidades técnicas e competências)
-- formacao_academica (lista de formações acadêmicas e cursos)
+Extraia com cuidado preservando a grafia correta com acentos em português:
+- nome: Nome completo extraído do currículo, ou null se não identificado
+- email: Endereço de e-mail válido, ou null se não identificado
+- telefones_celulares: Lista de telefones celulares brasileiros com DDD (ex: ["11999999999"]) ou [] se nenhum
+- telefone: Telefone celular principal ou null se não identificado
+- endereco: Cidade, estado ou endereço completo, ou null se não identificado
+- resumo_cv: Resumo das qualificações e perfil profissional, ou null se não identificado
+- experiencia_profissional: Lista de experiências anteriores com cargos e empresas, ou [] se não houver
+- skills: Lista de habilidades técnicas e competências, ou [] se não houver
+- formacao_academica: Lista de formações acadêmicas e cursos, ou [] se não houver
+
+IMPORTANTE:
+1. Preserve todos os acentos e caracteres especiais portugueses (ex: João, Gonçalves, São Paulo, Concluído, Análise).
+2. NUNCA retorne o texto literal "string ou null", "string", ou "null" como string de texto. Use o valor JSON null real quando o dado não existir.
 
 Formato JSON estrito esperado:
 {
-  "nome": "string ou null",
-  "email": "string ou null",
-  "telefones_celulares": ["string"],
-  "telefone": "string ou null",
-  "endereco": "string ou null",
-  "resumo_cv": "string ou null",
-  "experiencia_profissional": ["string"],
-  "skills": ["string"],
-  "formacao_academica": ["string"]
+  "nome": null,
+  "email": null,
+  "telefones_celulares": [],
+  "telefone": null,
+  "endereco": null,
+  "resumo_cv": null,
+  "experiencia_profissional": [],
+  "skills": [],
+  "formacao_academica": []
 }`
 
       let messages: any[] = []
@@ -442,9 +467,92 @@ Formato JSON estrito esperado:
         normalizedTelefone = uniqueParts.length > 0 ? uniqueParts.join(',') : rawTelefone
       }
 
-      const finalNome = candidateName || 'Candidato Desconhecido'
-      const finalEmail = candidateEmail || null
-      const finalTelefone = normalizedTelefone
+      const sanitizeValue = (val: string | null) => {
+        if (!val) return null
+        const trimmed = val.trim()
+        const lower = trimmed.toLowerCase()
+        if (
+          lower === 'string ou null' ||
+          lower === 'null' ||
+          lower === 'undefined' ||
+          lower === 'string' ||
+          lower === 'none'
+        ) {
+          return null
+        }
+        return trimmed
+      }
+
+      const cleanCandidateName = sanitizeValue(candidateName)
+      const cleanCandidateEmail = sanitizeValue(candidateEmail)
+      const cleanTelefone = sanitizeValue(normalizedTelefone)
+
+      if (!cleanCandidateName && !cleanCandidateEmail) {
+        throw new Error('Não foi possível extrair nome e email válidos do PDF. Candidato ignorado.')
+      }
+
+      const finalNome = cleanCandidateName || 'Candidato Desconhecido'
+      const finalEmail = cleanCandidateEmail || null
+      const finalTelefone = cleanTelefone
+
+      // Checagem de duplicação no banco de dados antes de processar/inserir
+      // 1. Por email (se não for nulo)
+      // 2. Por nome + telefone (se ambos não forem nulos)
+      let isDuplicate = false
+      let duplicateReason = ''
+
+      if (finalEmail) {
+        const { data: emailDup, error: emailErr } = await supabaseAdmin
+          .from('candidatos')
+          .select('id, nome, email')
+          .ilike('email', finalEmail)
+          .limit(1)
+          .maybeSingle()
+
+        if (!emailErr && emailDup) {
+          isDuplicate = true
+          duplicateReason = `Candidato já cadastrado com o e-mail: ${finalEmail} (${emailDup.nome})`
+        }
+      }
+
+      if (!isDuplicate && cleanCandidateName && finalTelefone) {
+        // Verificar por nome e telefone
+        const tels = finalTelefone
+          .split(',')
+          .map((t: string) => t.trim())
+          .filter(Boolean)
+
+        for (const tel of tels) {
+          const { data: phoneDup, error: phoneErr } = await supabaseAdmin
+            .from('candidatos')
+            .select('id, nome, telefone')
+            .ilike('nome', cleanCandidateName)
+            .ilike('telefone', `%${tel}%`)
+            .limit(1)
+            .maybeSingle()
+
+          if (!phoneErr && phoneDup) {
+            isDuplicate = true
+            duplicateReason = `Candidato já cadastrado com o mesmo nome e telefone: ${cleanCandidateName} (${tel})`
+            break
+          }
+        }
+      }
+
+      if (isDuplicate) {
+        console.log(`[PULADO DUPLICADO] ${duplicateReason} [Arquivo: ${filePath}]`)
+        results.pulados++
+        results.pulados_duplicados++
+        results.detalhes.push({
+          arquivo: filePath,
+          status: 'pulado',
+          nome: finalNome,
+          email: finalEmail,
+          telefone: finalTelefone,
+          motivo: duplicateReason,
+        })
+        return
+      }
 
       // d. Chamar `identify-vaga-from-cv` passando o texto / dados extraídos para identificar a vaga
       console.log(`[IDENTIFY-VAGA] Identificando vaga compatível para ${finalNome}...`)

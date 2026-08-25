@@ -297,7 +297,7 @@ export default function CandidatesPage() {
 
         toast({
           title: 'Recuperação concluída',
-          description: `${resumo.sucesso} currículo(s) recuperado(s) com sucesso, ${resumo.pulados_existentes} já existente(s), ${resumo.falhas} falha(s).`,
+          description: `${resumo.sucesso} currículo(s) recuperado(s) com sucesso, ${(resumo.pulados_existentes || 0) + (resumo.pulados_duplicados || 0)} já existente(s)/duplicado(s), ${resumo.falhas} falha(s).`,
         })
       } else {
         toast({

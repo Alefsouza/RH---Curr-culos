@@ -77,9 +77,11 @@ export function RecoverCandidatesResultDialog({
             </div>
 
             <div className="bg-blue-50 border border-blue-200/70 rounded-lg p-3 text-center">
-              <span className="text-xs text-blue-700 font-medium block">Já Existentes</span>
+              <span className="text-xs text-blue-700 font-medium block">
+                {resumo.pulados_duplicados ? 'Pulados/Duplicados' : 'Já Existentes'}
+              </span>
               <span className="text-lg font-bold text-blue-700 mt-0.5 block">
-                {resumo.pulados_existentes}
+                {(resumo.pulados_existentes || 0) + (resumo.pulados_duplicados || 0)}
               </span>
             </div>
 
