@@ -1,1 +1,5 @@
-{}
+{
+  "imports": {
+    "npm:openai@4": "npm:openai@4.0.0"
+  }
+}

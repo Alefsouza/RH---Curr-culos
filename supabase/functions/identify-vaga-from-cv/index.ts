@@ -20,10 +20,10 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    const { candidato_id, user_id } = body
+    const { candidato_id, user_id, texto_cv, dados_extraidos } = body
 
-    if (!candidato_id) {
-      return new Response(JSON.stringify({ error: 'Faltando candidato_id' }), {
+    if (!candidato_id && !texto_cv && !dados_extraidos) {
+      return new Response(JSON.stringify({ error: 'Faltando candidato_id ou texto/dados do CV' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -33,14 +33,19 @@ Deno.serve(async (req: Request) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
     const supabase = createClient(supabaseUrl, supabaseKey)
 
-    const { data: candidato, error: candidatoError } = await supabase
-      .from('candidatos')
-      .select('dados_extraidos')
-      .eq('id', candidato_id)
-      .single()
+    let cvDataToAnalyze = dados_extraidos || texto_cv
 
-    if (candidatoError || !candidato) {
-      throw new Error('Candidato não encontrado no banco de dados.')
+    if (!cvDataToAnalyze && candidato_id) {
+      const { data: candidato, error: candidatoError } = await supabase
+        .from('candidatos')
+        .select('dados_extraidos')
+        .eq('id', candidato_id)
+        .single()
+
+      if (candidatoError || !candidato) {
+        throw new Error('Candidato não encontrado no banco de dados.')
+      }
+      cvDataToAnalyze = candidato.dados_extraidos
     }
 
     // Busca todas as vagas disponíveis no sistema (sem restrição por user_id)
@@ -130,8 +135,8 @@ Deno.serve(async (req: Request) => {
     }
 
     const prompt = `
-      Temos o seguinte currículo estruturado do candidato:
-      ${JSON.stringify(candidato.dados_extraidos)}
+      Temos o seguinte currículo / dados do candidato:
+      ${typeof cvDataToAnalyze === 'string' ? cvDataToAnalyze : JSON.stringify(cvDataToAnalyze)}
 
       E temos as seguintes vagas abertas (com seus IDs):
       ${JSON.stringify(vagas)}
