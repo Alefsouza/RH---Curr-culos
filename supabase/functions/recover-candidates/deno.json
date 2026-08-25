@@ -1,6 +1,1 @@
-{
-  "imports": {
-    "npm:openai@4": "npm:openai@4.0.0",
-    "npm:pdf-parse@1.1.1": "npm:pdf-parse@1.1.1"
-  }
-}
+{}

@@ -1,16 +1,35 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import OpenAI from 'npm:openai@4'
-import { Buffer } from 'node:buffer'
-import pdf from 'npm:pdf-parse@1.1.1'
 import { corsHeaders } from '../_shared/cors.ts'
-import { normalizePhone } from '../_shared/phone.ts'
 
-interface StorageFile {
-  name: string
-  id?: string
-  metadata?: Record<string, any>
-  created_at?: string
+// Helper para extrair e sanitizar um nome provisório a partir do caminho do arquivo
+function deriveCandidateName(filePath: string): string {
+  // Pega apenas a última parte do caminho (filename)
+  const segments = filePath.split('/')
+  const filename = segments[segments.length - 1] || 'Candidato'
+
+  // Remove a extensão (.pdf, etc)
+  let cleanName = filename.replace(/\.[^/.]+$/, '')
+
+  // Decodifica URI se houver caracteres codificados (%20, etc)
+  try {
+    cleanName = decodeURIComponent(cleanName)
+  } catch {
+    // se falhar decode, continua com o valor bruto
+  }
+
+  // Substitui separadores comuns (_, -, +) por espaços
+  cleanName = cleanName.replace(/[_\-+]/g, ' ')
+
+  // Remove múltiplos espaços e faz trim
+  cleanName = cleanName.replace(/\s+/g, ' ').trim()
+
+  // Se o nome ficou vazio ou apenas números/hashes sem sentido, dá um fallback legível
+  if (!cleanName || cleanName.length < 2) {
+    return 'Candidato (Storage)'
+  }
+
+  return cleanName
 }
 
 Deno.serve(async (req: Request) => {
@@ -26,8 +45,8 @@ Deno.serve(async (req: Request) => {
     const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey)
 
-    // 1. Obter User ID do TI (ti@viasudeste.com)
-    const { data: tiUser, error: tiUserError } = await supabaseAdmin
+    // 1. Obter User ID do TI (ti@viasudeste.com) com fallback para primeiro admin/usuário
+    const { data: tiUser } = await supabaseAdmin
       .from('usuarios')
       .select('id')
       .eq('email', 'ti@viasudeste.com')
@@ -51,8 +70,8 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    // 2. Obter Etapa ID da Triagem (select id from public.etapas where nome = 'Triagem' order by ordem asc limit 1)
-    const { data: etapaTriagem, error: etapaError } = await supabaseAdmin
+    // 2. Obter Etapa ID da Triagem com fallback para a primeira etapa por ordem
+    const { data: etapaTriagem } = await supabaseAdmin
       .from('etapas')
       .select('id')
       .ilike('nome', 'Triagem')
@@ -60,18 +79,16 @@ Deno.serve(async (req: Request) => {
       .limit(1)
       .maybeSingle()
 
-    const triagemEtapaId = etapaTriagem?.id || null
-
-    // 3. Inicializar OpenAI
-    const openaiKey =
-      Deno.env.get('OPENAI_KEY') || Deno.env.get('OPENIA_KEY') || Deno.env.get('OPENAI_API_KEY')
-    if (!openaiKey) {
-      return new Response(
-        JSON.stringify({ error: 'Chave OPENAI_KEY não configurada no servidor.' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      )
+    let triagemEtapaId = etapaTriagem?.id
+    if (!triagemEtapaId) {
+      const { data: firstEtapa } = await supabaseAdmin
+        .from('etapas')
+        .select('id')
+        .order('ordem', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      triagemEtapaId = firstEtapa?.id || null
     }
-    const openai = new OpenAI({ apiKey: openaiKey })
 
     // Helper recursivo para listar todos os arquivos do bucket `curriculos`
     const listAllPdfsRecursively = async (path = ''): Promise<string[]> => {
@@ -119,190 +136,39 @@ Deno.serve(async (req: Request) => {
       sucesso: 0,
       pulados_existentes: 0,
       falhas: 0,
-      detalhes_falhas: [] as { path: string; motivo: string }[],
+      detalhes_falhas: [] as { arquivo: string; erro: string; path?: string; motivo?: string }[],
       tempo_total_segundos: 0,
     }
 
-    const isRetryableError = (error: any) => {
-      const status = error?.status || error?.statusCode || error?.response?.status
-      if (status === 429) return true
-      if (typeof status === 'number' && status >= 500 && status < 600) return true
-      const msg = String(error?.message || '').toLowerCase()
-      if (
-        msg.includes('rate limit') ||
-        msg.includes('429') ||
-        msg.includes('timeout') ||
-        msg.includes('fetch failed')
-      ) {
-        return true
-      }
-      return false
-    }
-
-    const callOpenAIWithRetry = async (
-      prompt: string,
-      retries = 3,
-      delays = [2000, 4000, 8000],
-    ): Promise<any> => {
-      try {
-        const response = await openai.chat.completions.create({
-          model: 'gpt-4o-mini',
-          messages: [
-            {
-              role: 'system',
-              content:
-                'Você é um assistente de RH focado em estruturar dados de currículos. Retorne sempre um JSON válido.',
-            },
-            { role: 'user', content: prompt },
-          ],
-          response_format: { type: 'json_object' },
-        })
-        return JSON.parse(response.choices[0].message.content || '{}')
-      } catch (error: any) {
-        if (retries > 0 && isRetryableError(error)) {
-          const delay = delays[3 - retries] ?? 8000
-          console.log(
-            `OpenAI erro (${error?.status || error?.message}), retentando em ${delay}ms...`,
-          )
-          await new Promise((resolve) => setTimeout(resolve, delay))
-          return callOpenAIWithRetry(prompt, retries - 1, delays)
-        }
-        throw error
-      }
-    }
-
-    // Função de processamento individual de um PDF
+    // Função de processamento individual de um PDF sem dependências Node.js
     const processSinglePdf = async (filePath: string) => {
       try {
-        // a. Baixar o arquivo do Storage
-        const { data: fileData, error: downloadError } = await supabaseAdmin.storage
-          .from('curriculos')
-          .download(filePath)
-
-        if (downloadError || !fileData) {
-          throw new Error(
-            `Erro ao baixar arquivo do Storage: ${downloadError?.message || 'Arquivo vazio'}`,
-          )
-        }
-
-        // Extrair texto do PDF
-        const arrayBuffer = await fileData.arrayBuffer()
-        const fileBuffer = Buffer.from(arrayBuffer)
-        let extractedText = ''
-        try {
-          const parsed = await pdf(fileBuffer)
-          extractedText = parsed.text || ''
-        } catch (pdfErr: any) {
-          throw new Error(`Falha ao extrair texto do PDF: ${pdfErr.message}`)
-        }
-
-        if (!extractedText.trim()) {
-          throw new Error('PDF vazio ou ilegível (sem texto extraível).')
-        }
-
-        // b. Extrair informações com OpenAI (nome, email, telefone, formacao, experiencias, etc.)
-        const extractionPrompt = `Extraia os seguintes dados do currículo:
-- nome: Nome completo do candidato
-- email: E-mail de contato ou null
-- telefones_celulares: Lista de números de telefone celular com DDD (apenas celulares BR, 11 dígitos, ex: 11999999999)
-- endereco: Endereço completo ou cidade/estado
-- experiencia_profissional: Lista com experiências profissionais resumidas
-- formacao_academica: Lista com formação acadêmica/cursos
-- skills: Lista de habilidades principais
-
-Currículo:
-${extractedText.substring(0, 15000)}
-
-Retorne ESTRITAMENTE um JSON com as chaves:
-{
-  "nome": "string",
-  "email": "string ou null",
-  "telefones_celulares": ["string"],
-  "endereco": "string ou null",
-  "experiencia_profissional": ["string"],
-  "formacao_academica": ["string"],
-  "skills": ["string"]
-}`
-
-        const extractedData = await callOpenAIWithRetry(extractionPrompt)
-
-        const candidateName = (extractedData.nome || '').trim() || 'Candidato Desconhecido'
-        const candidateEmail = extractedData.email
-          ? String(extractedData.email).trim().toLowerCase()
-          : null
-
-        let telefonesArr: string[] = []
-        if (Array.isArray(extractedData.telefones_celulares)) {
-          telefonesArr = extractedData.telefones_celulares
-        } else if (extractedData.telefone) {
-          telefonesArr = [extractedData.telefone]
-        }
-
-        const rawTelefone = telefonesArr.join(',')
-        let finalTelefone: string | null = null
-        let telefoneNormalizado: string | null = null
-
-        if (rawTelefone) {
-          const parts = rawTelefone
-            .split(',')
-            .map((t: string) => t.trim())
-            .filter(Boolean)
-          const normalizedParts = parts
-            .map((t: string) => {
-              const n = normalizePhone(t)
-              return n && n.length >= 10 && n.length <= 11 ? n : null
-            })
-            .filter(Boolean) as string[]
-          const uniqueParts = Array.from(new Set(normalizedParts))
-          finalTelefone = uniqueParts.length > 0 ? uniqueParts.join(',') : rawTelefone
-          telefoneNormalizado =
-            uniqueParts.length > 0 ? uniqueParts[0] : normalizePhone(rawTelefone)
-        }
-
-        // e. Pular se o candidato já existir (verificar por email + nome)
-        if (candidateEmail) {
-          const { data: existingByEmail } = await supabaseAdmin
-            .from('candidatos')
-            .select('id')
-            .eq('email', candidateEmail)
-            .limit(1)
-
-          if (existingByEmail && existingByEmail.length > 0) {
-            console.log(`Candidato já existe por email (${candidateEmail}). Pulando...`)
-            results.pulados_existentes++
-            return
-          }
-        }
-
-        if (candidateName && candidateName !== 'Candidato Desconhecido') {
-          const { data: existingByName } = await supabaseAdmin
-            .from('candidatos')
-            .select('id')
-            .ilike('nome', candidateName)
-            .limit(1)
-
-          if (existingByName && existingByName.length > 0) {
-            console.log(`Candidato já existe por nome (${candidateName}). Pulando...`)
-            results.pulados_existentes++
-            return
-          }
-        }
-
-        // URL pública no bucket curriculos
         const publicUrl = `${supabaseUrl}/storage/v1/object/public/curriculos/${filePath}`
 
-        // d. Inserir em candidatos
+        // Verificar se já existe candidato com este curriculo_url exato ou contendo o caminho
+        const { data: existingCandidate } = await supabaseAdmin
+          .from('candidatos')
+          .select('id')
+          .or(`curriculo_url.eq."${publicUrl}",curriculo_url.ilike."%${filePath}%"`)
+          .limit(1)
+          .maybeSingle()
+
+        if (existingCandidate) {
+          console.log(`Candidato já cadastrado para ${filePath}. Pulando...`)
+          results.pulados_existentes++
+          return
+        }
+
+        // a. Derivar nome provisório
+        const provisionalName = deriveCandidateName(filePath)
+
+        // c. Inserir registro MÍNIMO em candidatos
         const candidatePayload = {
-          nome: candidateName,
-          email: candidateEmail,
-          telefone: finalTelefone,
-          telefone_normalizado: telefoneNormalizado,
-          fonte: 'recuperacao_storage',
+          nome: provisionalName,
           curriculo_url: publicUrl,
-          dados_extraidos: extractedData,
           user_id: effectiveUserId,
           etapa_id: triagemEtapaId,
-          vaga_id: null as string | null,
+          fonte: 'recuperacao_storage',
           criado_em: new Date().toISOString(),
         }
 
@@ -313,71 +179,75 @@ Retorne ESTRITAMENTE um JSON com as chaves:
           .single()
 
         if (insertError || !insertedCandidate) {
-          throw new Error(`Erro ao inserir candidato no banco: ${insertError?.message}`)
+          throw new Error(
+            `Erro ao inserir candidato no banco: ${insertError?.message || 'Falha no insert'}`,
+          )
         }
 
         const candidateId = insertedCandidate.id
 
-        // Registrar em candidato_etapa se tiver etapa
+        // d. Inserir em candidato_etapa com etapa Triagem
         if (triagemEtapaId) {
-          await supabaseAdmin.from('candidato_etapa').insert({
+          const { error: etapaRelError } = await supabaseAdmin.from('candidato_etapa').insert({
             candidato_id: candidateId,
             etapa_id: triagemEtapaId,
             usuario_id: effectiveUserId,
           })
+
+          if (etapaRelError) {
+            console.warn(
+              `Aviso ao inserir candidato_etapa para ${candidateId}:`,
+              etapaRelError.message,
+            )
+          }
         }
 
-        // c. Chamar identify-vaga-from-cv para encontrar a vaga compatível
-        let matchedVagaId: string | null = null
+        // e. Chamar supabaseAdmin.functions.invoke('reanalisar-candidato')
+        // A edge function 'reanalisar-candidato' faz o trabalho completo:
+        // identificar vaga, baixar/ler PDF, chamar OpenAI, analisar critérios
         try {
-          const identifyRes = await supabaseAdmin.functions.invoke('identify-vaga-from-cv', {
-            body: { candidato_id: candidateId, user_id: effectiveUserId },
-          })
-          if (identifyRes.data?.vaga_id) {
-            matchedVagaId = identifyRes.data.vaga_id
-            await supabaseAdmin
-              .from('candidatos')
-              .update({ vaga_id: matchedVagaId })
-              .eq('id', candidateId)
-          }
-        } catch (vagaErr) {
-          console.error(`Erro ao identificar vaga para candidato ${candidateId}:`, vagaErr)
-        }
-
-        // Executar critérios de análise se identificou vaga
-        if (matchedVagaId) {
-          try {
-            await supabaseAdmin.functions.invoke('analisar-cv-criterios', {
-              body: { cv_id: candidateId, vaga_id: matchedVagaId, user_id: effectiveUserId },
+          const { data: reanaliseData, error: reanaliseError } =
+            await supabaseAdmin.functions.invoke('reanalisar-candidato', {
+              body: { candidate_id: candidateId },
             })
-          } catch (critErr) {
-            console.error(`Erro ao analisar critérios para candidato ${candidateId}:`, critErr)
+
+          if (reanaliseError) {
+            console.warn(`Aviso na reanálise do candidato ${candidateId}:`, reanaliseError.message)
+          } else if (reanaliseData?.error) {
+            console.warn(`Aviso retornado pela reanálise para ${candidateId}:`, reanaliseData.error)
           }
+        } catch (invokeErr: any) {
+          console.warn(
+            `Exceção ao invocar reanalisar-candidato para ${candidateId}:`,
+            invokeErr?.message,
+          )
         }
 
         results.sucesso++
-        console.log(`Candidato ${candidateName} recuperado com sucesso (${filePath})!`)
+        console.log(`Candidato "${provisionalName}" recuperado com sucesso (${filePath})!`)
       } catch (err: any) {
         console.error(`Falha no arquivo ${filePath}:`, err.message)
         results.falhas++
         results.detalhes_falhas.push({
+          arquivo: filePath,
+          erro: err.message || 'Erro desconhecido',
           path: filePath,
           motivo: err.message || 'Erro desconhecido',
         })
       }
     }
 
-    // 4. Processar em lotes de 5 para não sobrecarregar a OpenAI
+    // 4. Processar em lotes de 5 com Promise.all
     const BATCH_SIZE = 5
     for (let i = 0; i < allPdfPaths.length; i += BATCH_SIZE) {
       const batch = allPdfPaths.slice(i, i + BATCH_SIZE)
       console.log(
         `Processando lote ${Math.floor(i / BATCH_SIZE) + 1} de ${Math.ceil(allPdfPaths.length / BATCH_SIZE)} (itens ${i + 1} a ${Math.min(i + BATCH_SIZE, allPdfPaths.length)})...`,
       )
-      await Promise.all(batch.map((path) => processSinglePdf(path)))
+      await Promise.all(batch.map((filePath) => processSinglePdf(filePath)))
     }
 
-    results.tempo_total_segundos = Math.round((Date.now() - startTime) / 1000)
+    results.tempo_total_segundos = Math.round(((Date.now() - startTime) / 1000) * 10) / 10
 
     console.log('Recuperação concluída:', results)
 
