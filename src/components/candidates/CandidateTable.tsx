@@ -26,6 +26,8 @@ import {
   Loader2,
   ArrowUp,
   ArrowDown,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
@@ -80,6 +82,11 @@ import {
 export function CandidateTable({
   candidates,
   vagas = [],
+  totalCount = 0,
+  page = 1,
+  pageSize = 30,
+  onPageChange,
+  onPageSizeChange,
   onEdit,
   onDelete,
   onToggleStatus,
@@ -92,6 +99,11 @@ export function CandidateTable({
 }: {
   candidates: any[]
   vagas?: { id: string; titulo: string }[]
+  totalCount?: number
+  page?: number
+  pageSize?: number
+  onPageChange?: (page: number) => void
+  onPageSizeChange?: (size: number) => void
   onEdit: (c: any) => void
   onDelete: (id: string) => void
   onToggleStatus: (id: string, status: string | null, vagaId: string | null) => void
@@ -468,6 +480,69 @@ export function CandidateTable({
           </Card>
         ))}
       </div>
+
+      {/* Paginação */}
+      {totalCount > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 px-1">
+          <div className="text-sm text-slate-500 order-2 sm:order-1">
+            Mostrando{' '}
+            <span className="font-medium text-slate-700">
+              {Math.min((page - 1) * pageSize + 1, totalCount)}
+            </span>{' '}
+            a{' '}
+            <span className="font-medium text-slate-700">
+              {Math.min(page * pageSize, totalCount)}
+            </span>{' '}
+            de <span className="font-medium text-slate-700">{totalCount}</span> candidatos
+          </div>
+
+          <div className="flex flex-wrap items-center gap-4 sm:gap-6 order-1 sm:order-2">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-500 whitespace-nowrap">Itens por página:</span>
+              <Select
+                value={String(pageSize)}
+                onValueChange={(val) => onPageSizeChange?.(Number(val))}
+              >
+                <SelectTrigger className="h-8 w-[72px] bg-white">
+                  <SelectValue placeholder={String(pageSize)} />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="30">30</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onPageChange?.(page - 1)}
+                disabled={page <= 1}
+                className="h-8 px-2.5 bg-white text-slate-700"
+              >
+                <ChevronLeft className="h-4 w-4 mr-1" />
+                Anterior
+              </Button>
+              <div className="text-xs font-medium text-slate-600 px-2">
+                Página {page} de {Math.max(1, Math.ceil(totalCount / pageSize))}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onPageChange?.(page + 1)}
+                disabled={page >= Math.ceil(totalCount / pageSize)}
+                className="h-8 px-2.5 bg-white text-slate-700"
+              >
+                Próxima
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

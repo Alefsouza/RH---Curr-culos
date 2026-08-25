@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import {
   getCandidatesList,
@@ -6,10 +6,10 @@ import {
   updateCandidate,
   updateAnaliseStatus,
   bulkDeleteCandidates,
-  identifyVagaForCandidate,
   updateCandidateVaga,
   recoverCandidatesFromStorage,
   fixRecoveredCandidates,
+  type CandidateItem,
   type RecoverCandidatesResumo,
   type FixRecoveredCandidatesResponse,
 } from '@/services/candidates'
@@ -17,15 +17,7 @@ import { fetchVagas } from '@/services/review'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Search,
-  Users as UsersIcon,
-  AlertCircle,
-  X,
-  HardDrive,
-  Loader2,
-  Wrench,
-} from 'lucide-react'
+import { Search, Users as UsersIcon, AlertCircle, X } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/hooks/use-auth'
 import { CandidateTable } from '@/components/candidates/CandidateTable'
@@ -42,11 +34,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { startOfDay, endOfDay, isAfter, isBefore, parseISO } from 'date-fns'
 import { useBulkReanalysis } from '@/contexts/BulkReanalysisContext'
 
 export default function CandidatesPage() {
-  const [candidates, setCandidates] = useState<any[]>([])
+  const [candidates, setCandidates] = useState<CandidateItem[]>([])
+  const [totalCount, setTotalCount] = useState(0)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(30)
   const [vagas, setVagas] = useState<{ id: string; titulo: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -54,7 +48,7 @@ export default function CandidatesPage() {
   const [statusFilter, setStatusFilter] = useState('todos')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
-  const [dateSortOrder, setDateSortOrder] = useState<'desc' | 'asc' | null>(null)
+  const [dateSortOrder, setDateSortOrder] = useState<'desc' | 'asc' | null>('desc')
   const [editData, setEditData] = useState<any | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -67,16 +61,37 @@ export default function CandidatesPage() {
   const [recoverResumo, setRecoverResumo] = useState<RecoverCandidatesResumo | null>(null)
   const [showRecoverDialog, setShowRecoverDialog] = useState(false)
   const [isFixing, setIsFixing] = useState(false)
-  const [fixResumo, setFixResumo] = useState<FixRecoveredCandidatesResponse | null>(null)
+  const [, setFixResumo] = useState<FixRecoveredCandidatesResponse | null>(null)
   const { profile } = useAuth()
   const { toast } = useToast()
   const { startReanalysis, isProcessing: isReanalyzing } = useBulkReanalysis()
 
+  // Debounce na busca textual para não fazer requisições a cada tecla digitada
+  const [debouncedSearch, setDebouncedSearch] = useState(search)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [search])
+
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const [data, vagasData] = await Promise.all([getCandidatesList(), fetchVagas()])
-      setCandidates(data)
+      const [candidatesRes, vagasData] = await Promise.all([
+        getCandidatesList({
+          page,
+          pageSize,
+          search: debouncedSearch,
+          statusFilter,
+          startDate: startDate || undefined,
+          endDate: endDate || undefined,
+          dateSortOrder,
+        }),
+        fetchVagas(),
+      ])
+      setCandidates(candidatesRes.data)
+      setTotalCount(candidatesRes.total)
       setVagas(vagasData)
       setError(null)
     } catch (err: any) {
@@ -84,81 +99,65 @@ export default function CandidatesPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [page, pageSize, debouncedSearch, statusFilter, startDate, endDate, dateSortOrder])
+
+  // Guarda referência estável para loadData nos listeners realtime
+  const loadDataRef = useRef(loadData)
+  useEffect(() => {
+    loadDataRef.current = loadData
+  }, [loadData])
 
   useEffect(() => {
     loadData()
+  }, [loadData])
 
+  useEffect(() => {
     const channel = supabase
       .channel('candidates-updates')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'analises' }, () => {
-        loadData()
+        loadDataRef.current()
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'candidatos' }, () => {
-        loadData()
+        loadDataRef.current()
       })
       .subscribe()
 
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [loadData])
+  }, [])
 
-  const filtered = useMemo(() => {
-    const list = candidates.filter((c) => {
-      const matchSearch =
-        c.nome.toLowerCase().includes(search.toLowerCase()) ||
-        c.email.toLowerCase().includes(search.toLowerCase()) ||
-        c.vaga.toLowerCase().includes(search.toLowerCase())
+  const handleSearchChange = (val: string) => {
+    setSearch(val)
+    setPage(1)
+  }
 
-      let matchStatus = true
-      if (statusFilter === 'qualificado') {
-        matchStatus = c.status_analise === 'qualificado'
-      } else if (statusFilter === 'nao_qualificado') {
-        matchStatus = c.status_analise === 'nao_qualificado'
-      } else if (statusFilter === 'revisar') {
-        matchStatus = c.status_analise === 'revisar'
-      } else if (statusFilter === 'sem_etapa') {
-        matchStatus = !c.etapa_id
-      }
+  const handleStatusFilterChange = (val: string) => {
+    setStatusFilter(val)
+    setPage(1)
+  }
 
-      let matchDate = true
-      if (startDate && c.criado_em) {
-        if (isBefore(parseISO(c.criado_em), startOfDay(parseISO(startDate)))) {
-          matchDate = false
-        }
-      }
-      if (endDate && c.criado_em) {
-        if (isAfter(parseISO(c.criado_em), endOfDay(parseISO(endDate)))) {
-          matchDate = false
-        }
-      }
+  const handleStartDateChange = (val: string) => {
+    setStartDate(val)
+    setPage(1)
+  }
 
-      return matchSearch && matchStatus && matchDate
-    })
+  const handleEndDateChange = (val: string) => {
+    setEndDate(val)
+    setPage(1)
+  }
 
-    if (!dateSortOrder) {
-      return list
-    }
-
-    return [...list].sort((a, b) => {
-      const timeA = a.criado_em ? new Date(a.criado_em).getTime() : 0
-      const timeB = b.criado_em ? new Date(b.criado_em).getTime() : 0
-
-      if (dateSortOrder === 'desc') {
-        return timeB - timeA
-      } else {
-        return timeA - timeB
-      }
-    })
-  }, [candidates, search, statusFilter, startDate, endDate, dateSortOrder])
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize)
+    setPage(1)
+  }
 
   const handleToggleDateSort = useCallback(() => {
     setDateSortOrder((current) => {
-      if (current === null) return 'desc'
       if (current === 'desc') return 'asc'
-      return null
+      return 'desc'
     })
+    setPage(1)
   }, [])
 
   const handleToggleSelect = useCallback((id: string) => {
@@ -175,17 +174,17 @@ export default function CandidatesPage() {
 
   const handleToggleSelectAll = useCallback(() => {
     setSelectedIds((prev) => {
-      const allSelected = filtered.length > 0 && filtered.every((c) => prev.has(c.id))
+      const allSelected = candidates.length > 0 && candidates.every((c) => prev.has(c.id))
       if (allSelected) {
         const next = new Set(prev)
-        filtered.forEach((c) => next.delete(c.id))
+        candidates.forEach((c) => next.delete(c.id))
         return next
       }
       const next = new Set(prev)
-      filtered.forEach((c) => next.add(c.id))
+      candidates.forEach((c) => next.add(c.id))
       return next
     })
-  }, [filtered])
+  }, [candidates])
 
   const handleClearSelection = useCallback(() => {
     setSelectedIds(new Set())
@@ -354,7 +353,7 @@ export default function CandidatesPage() {
   }
 
   const handleBulkReanalyze = () => {
-    const selectedCandidates = filtered
+    const selectedCandidates = candidates
       .filter((c) => selectedIds.has(c.id))
       .map((c) => ({
         id: c.id,
@@ -369,7 +368,19 @@ export default function CandidatesPage() {
     setSelectedIds(new Set())
   }
 
-  if (loading) {
+  const hasActiveFilters =
+    search || statusFilter !== 'todos' || startDate || endDate || dateSortOrder !== 'desc'
+
+  const handleClearFilters = () => {
+    setSearch('')
+    setStatusFilter('todos')
+    setStartDate('')
+    setEndDate('')
+    setDateSortOrder('desc')
+    setPage(1)
+  }
+
+  if (loading && candidates.length === 0) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-10 w-[200px]" />
@@ -383,7 +394,7 @@ export default function CandidatesPage() {
     )
   }
 
-  if (error) {
+  if (error && candidates.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
         <AlertCircle className="h-12 w-12 text-red-500" />
@@ -392,16 +403,6 @@ export default function CandidatesPage() {
         <Button onClick={loadData}>Tentar Novamente</Button>
       </div>
     )
-  }
-
-  const hasActiveFilters =
-    search || statusFilter !== 'todos' || startDate || endDate || dateSortOrder !== null
-  const handleClearFilters = () => {
-    setSearch('')
-    setStatusFilter('todos')
-    setStartDate('')
-    setEndDate('')
-    setDateSortOrder(null)
   }
 
   return (
@@ -424,15 +425,15 @@ export default function CandidatesPage() {
           <div className="relative flex-1 min-w-[220px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <Input
-              placeholder="Buscar por nome, e-mail ou vaga..."
+              placeholder="Buscar por nome ou e-mail..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => handleSearchChange(e.target.value)}
               className="pl-9 h-11 focus-visible:ring-primary bg-white shadow-none"
             />
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <Select value={statusFilter} onValueChange={handleStatusFilterChange}>
               <SelectTrigger className="w-full sm:w-[170px] h-11 bg-white shadow-none">
                 <SelectValue placeholder="Filtrar por Status" />
               </SelectTrigger>
@@ -453,7 +454,7 @@ export default function CandidatesPage() {
                   aria-label="Data Inicial"
                   placeholder="Data Inicial"
                   value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
+                  onChange={(e) => handleStartDateChange(e.target.value)}
                   className="h-11 bg-white text-xs sm:text-sm text-slate-700 shadow-none"
                 />
               </div>
@@ -465,7 +466,7 @@ export default function CandidatesPage() {
                   aria-label="Data Final"
                   placeholder="Data Final"
                   value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
+                  onChange={(e) => handleEndDateChange(e.target.value)}
                   className="h-11 bg-white text-xs sm:text-sm text-slate-700 shadow-none"
                 />
               </div>
@@ -486,22 +487,27 @@ export default function CandidatesPage() {
         </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {candidates.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-[40vh] border rounded-xl bg-white border-dashed shadow-sm">
           <div className="bg-slate-100 p-4 rounded-full mb-4">
             <UsersIcon className="h-8 w-8 text-slate-400" />
           </div>
           <h3 className="text-lg font-medium text-slate-900">Nenhum candidato encontrado</h3>
           <p className="text-sm text-slate-500 mt-1 max-w-sm text-center">
-            {search
+            {search || statusFilter !== 'todos' || startDate || endDate
               ? 'Ajuste seus termos de busca para encontrar candidatos.'
               : 'Ainda não há candidatos na sua base de talentos.'}
           </p>
         </div>
       ) : (
         <CandidateTable
-          candidates={filtered}
+          candidates={candidates}
           vagas={vagas}
+          totalCount={totalCount}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={handlePageSizeChange}
           onEdit={setEditData}
           onDelete={setDeleteId}
           onToggleStatus={handleToggleStatus}

@@ -1,5 +1,37 @@
 import { supabase } from '@/lib/supabase/client'
 
+export type CandidateItem = {
+  id: string
+  nome: string
+  email: string
+  telefone: string
+  curriculo_url: string | null
+  fonte: string
+  criado_em: string
+  vaga_id: string | null
+  etapa_id: string | null
+  vaga: string
+  etapa: string
+  etapa_cor: string
+  status_analise: string
+  duplicado_de: string | null
+}
+
+export interface GetCandidatesListParams {
+  page?: number
+  pageSize?: number
+  search?: string
+  statusFilter?: string
+  startDate?: string
+  endDate?: string
+  dateSortOrder?: 'desc' | 'asc' | null
+}
+
+export interface GetCandidatesListResult {
+  data: CandidateItem[]
+  total: number
+}
+
 type CandidatesListItem = {
   id: string
   nome: string
@@ -16,10 +48,26 @@ type CandidatesListItem = {
   analises: { id: string; resultado: string | null; criado_em: string; detalhes: any }[] | null
 }
 
-export async function getCandidatesList() {
-  const { data, error } = await supabase
-    .from('candidatos')
-    .select(`
+export async function getCandidatesList(
+  params: GetCandidatesListParams = {},
+): Promise<GetCandidatesListResult> {
+  const {
+    page = 1,
+    pageSize = 30,
+    search = '',
+    statusFilter = 'todos',
+    startDate,
+    endDate,
+    dateSortOrder = 'desc',
+  } = params
+
+  const isStatusFilterActive = statusFilter && statusFilter !== 'todos'
+  const trimmedSearch = search.trim()
+
+  // Se o filtro de status da análise IA estiver ativo, precisamos consultar ou filtrar com base no status resolvido
+  // Para filtros padrão (busca textual por nome/email, datas, ordenação), aplicamos server-side diretamente com count exact e range
+  let query = supabase.from('candidatos').select(
+    `
       id,
       nome,
       email,
@@ -33,12 +81,99 @@ export async function getCandidatesList() {
       vagas (titulo),
       etapas (nome, cor),
       analises (id, resultado, criado_em, detalhes)
-    `)
-    .order('criado_em', { ascending: false })
+    `,
+    { count: 'exact' },
+  )
+
+  if (trimmedSearch) {
+    // Busca textual por nome ou email via ilike
+    const escaped = trimmedSearch.replace(/[%_]/g, '\\$&')
+    query = query.or(`nome.ilike.%${escaped}%,email.ilike.%${escaped}%`)
+  }
+
+  if (statusFilter === 'sem_etapa') {
+    query = query.is('etapa_id', null)
+  }
+
+  if (startDate) {
+    // Formata início do dia em UTC/ISO
+    const startIso = new Date(`${startDate}T00:00:00.000`).toISOString()
+    query = query.gte('criado_em', startIso)
+  }
+
+  if (endDate) {
+    // Formata fim do dia em UTC/ISO
+    const endIso = new Date(`${endDate}T23:59:59.999`).toISOString()
+    query = query.lte('criado_em', endIso)
+  }
+
+  const ascending = dateSortOrder === 'asc'
+  query = query.order('criado_em', { ascending })
+
+  if (isStatusFilterActive && statusFilter !== 'sem_etapa') {
+    // Quando filtrando por status_analise (qualificado / nao_qualificado / revisar),
+    // buscamos os registros correspondentes aos filtros anteriores e paginamos após resolver a análise mais recente
+    const { data, error } = await query
+    if (error) throw error
+
+    const mapped = ((data || []) as unknown as CandidatesListItem[]).map((c) => {
+      const sortedAnalises = c.analises
+        ? [...c.analises].sort(
+            (a, b) => new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime(),
+          )
+        : []
+
+      const latestIa = sortedAnalises[0]
+      const resolvedStatus = latestIa ? latestIa.resultado : 'pendente'
+
+      return {
+        id: c.id,
+        nome: c.nome,
+        email: c.email || '',
+        telefone: c.telefone || '',
+        curriculo_url: c.curriculo_url,
+        fonte: c.fonte || 'Site',
+        criado_em: c.criado_em,
+        vaga_id: c.vaga_id,
+        etapa_id: c.etapa_id,
+        vaga: c.vagas ? (Array.isArray(c.vagas) ? c.vagas[0]?.titulo : c.vagas.titulo) : 'Sem vaga',
+        etapa: c.etapas
+          ? Array.isArray(c.etapas)
+            ? c.etapas[0]?.nome
+            : c.etapas.nome
+          : 'Sem etapa',
+        etapa_cor: c.etapas
+          ? Array.isArray(c.etapas)
+            ? c.etapas[0]?.cor
+            : c.etapas.cor
+          : 'bg-slate-200',
+        status_analise: resolvedStatus,
+        duplicado_de: c.duplicado_de,
+      }
+    })
+
+    const filtered = mapped.filter((c) => c.status_analise === statusFilter)
+    const total = filtered.length
+    const from = (page - 1) * pageSize
+    const to = from + pageSize
+    const paginatedData = filtered.slice(from, to)
+
+    return {
+      data: paginatedData,
+      total,
+    }
+  }
+
+  // Paginação padrão server-side
+  const from = (page - 1) * pageSize
+  const to = from + pageSize - 1
+  query = query.range(from, to)
+
+  const { data, count, error } = await query
 
   if (error) throw error
 
-  return (data as unknown as CandidatesListItem[]).map((c) => {
+  const mappedData: CandidateItem[] = ((data || []) as unknown as CandidatesListItem[]).map((c) => {
     const sortedAnalises = c.analises
       ? [...c.analises].sort(
           (a, b) => new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime(),
@@ -69,6 +204,11 @@ export async function getCandidatesList() {
       duplicado_de: c.duplicado_de,
     }
   })
+
+  return {
+    data: mappedData,
+    total: count ?? 0,
+  }
 }
 
 export async function updateAnaliseStatus(
