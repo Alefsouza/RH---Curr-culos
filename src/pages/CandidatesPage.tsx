@@ -415,37 +415,7 @@ export default function CandidatesPage() {
           </p>
         </div>
 
-        {profile?.is_admin && (
-          <div className="flex items-center gap-2">
-            <Button
-              onClick={handleFixRecoveredCandidates}
-              disabled={isFixing || isRecovering}
-              variant="outline"
-              className="h-10 border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-sm gap-2 text-sm font-medium transition-all"
-            >
-              {isFixing ? (
-                <Loader2 className="h-4 w-4 animate-spin text-primary" />
-              ) : (
-                <Wrench className="h-4 w-4 text-slate-600" />
-              )}
-              {isFixing ? 'Corrigindo...' : 'Corrigir Candidatos'}
-            </Button>
-
-            <Button
-              onClick={handleRecoverCandidates}
-              disabled={isRecovering || isFixing}
-              variant="outline"
-              className="h-10 border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-sm gap-2 text-sm font-medium transition-all"
-            >
-              {isRecovering ? (
-                <Loader2 className="h-4 w-4 animate-spin text-primary" />
-              ) : (
-                <HardDrive className="h-4 w-4 text-slate-600" />
-              )}
-              {isRecovering ? 'Processando...' : 'Recuperar Currículos'}
-            </Button>
-          </div>
-        )}
+        {profile?.is_admin && <div className="flex items-center gap-2"></div>}
       </div>
 
       {/* Barra de filtros */}
