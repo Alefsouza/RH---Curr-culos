@@ -23,6 +23,7 @@ import {
   Briefcase,
   GraduationCap,
   Code,
+  FileText,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
@@ -89,11 +90,26 @@ function ReviewDetail({ analise, etapas, onConfirm, onCancel, isSubmitting }: an
 
   return (
     <div className="flex flex-col h-full animate-fade-in">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <h2 className="text-2xl font-bold tracking-tight">Revisando: {candidato?.nome}</h2>
-        <Button variant="outline" onClick={onCancel}>
-          Voltar para lista
-        </Button>
+        <div className="flex items-center gap-2">
+          {candidato?.curriculo_url && (
+            <Button variant="outline" asChild>
+              <a
+                href={candidato.curriculo_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2"
+              >
+                <FileText className="h-4 w-4" />
+                Ver Currículo
+              </a>
+            </Button>
+          )}
+          <Button variant="outline" onClick={onCancel}>
+            Voltar para lista
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
