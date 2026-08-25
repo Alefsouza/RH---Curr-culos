@@ -21,7 +21,7 @@ export function KanbanBoard({
   const sortedStages = [...stages].sort((a, b) => a.order - b.order)
 
   return (
-    <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden pb-2 h-full">
+    <div className="flex-1 min-h-0 overflow-x-auto overflow-y-auto pb-2 h-full">
       <div className="flex flex-col md:flex-row gap-6 h-full items-stretch min-w-max px-1">
         {sortedStages.map((stage, index) => {
           const stageCandidates = candidates.filter((c) => c.stageId === stage.id)
