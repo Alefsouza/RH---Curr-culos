@@ -285,16 +285,16 @@ ${extractedText.substring(0, 15000)}`
         .from('etapas')
         .select('id')
         .eq('user_id', user_id)
-        .ilike('nome', 'Novos')
+        .ilike('nome', 'Triagem')
         .maybeSingle()
 
       if (!etapa) {
         const { data: newEtapa } = await supabase
           .from('etapas')
           .insert({
-            nome: 'Novos',
+            nome: 'Triagem',
             ordem: 0,
-            cor: 'bg-blue-100',
+            cor: '#6b7280',
             user_id: user_id,
           })
           .select('id')

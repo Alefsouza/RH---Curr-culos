@@ -344,34 +344,37 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
 
         if (
           currentEtapa &&
-          (currentEtapa.ordem <= 1 || currentEtapa.nome.toLowerCase() === 'novos')
+          (currentEtapa.ordem <= 1 || currentEtapa.nome.toLowerCase() === 'triagem')
         ) {
           isEtapaInicial = true
         }
       }
 
       if (hasNoEtapa || isEtapaInicial) {
-        const { data: etapaNovos } = await supabaseAdmin
+        const { data: etapaTriagem } = await supabaseAdmin
           .from('etapas')
           .select('id')
           .eq('user_id', candidato.user_id)
-          .ilike('nome', 'Novos')
+          .ilike('nome', 'Triagem')
           .maybeSingle()
 
-        if (etapaNovos) {
-          await supabaseAdmin.from('candidatos').update({ etapa_id: etapaNovos.id }).eq('id', cv_id)
+        if (etapaTriagem) {
+          await supabaseAdmin
+            .from('candidatos')
+            .update({ etapa_id: etapaTriagem.id })
+            .eq('id', cv_id)
 
           const { data: relExists } = await supabaseAdmin
             .from('candidato_etapa')
             .select('id')
             .eq('candidato_id', cv_id)
-            .eq('etapa_id', etapaNovos.id)
+            .eq('etapa_id', etapaTriagem.id)
             .maybeSingle()
 
           if (!relExists) {
             await supabaseAdmin.from('candidato_etapa').insert({
               candidato_id: cv_id,
-              etapa_id: etapaNovos.id,
+              etapa_id: etapaTriagem.id,
               usuario_id: effectiveUserId || candidato.user_id,
             })
           }

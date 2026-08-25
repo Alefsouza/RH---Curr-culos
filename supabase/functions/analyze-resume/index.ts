@@ -383,12 +383,12 @@ ${extractedText.substring(0, 15000)}`
         .single()
 
       if (!currentCandidate?.etapa_id) {
-        console.log('Buscando etapa padrão "Novos"...')
+        console.log('Buscando etapa padrão "Triagem"...')
         let { data: etapa, error: etapaError } = await supabase
           .from('etapas')
           .select('id')
           .eq('user_id', user_id)
-          .ilike('nome', 'Novos')
+          .ilike('nome', 'Triagem')
           .maybeSingle()
 
         if (etapaError) {
@@ -397,13 +397,13 @@ ${extractedText.substring(0, 15000)}`
         }
 
         if (!etapa) {
-          console.log('A etapa "Novos" não foi encontrada. Criando nova etapa...')
+          console.log('A etapa "Triagem" não foi encontrada. Criando nova etapa...')
           const { data: newEtapa, error: insertEtapaError } = await supabase
             .from('etapas')
             .insert({
-              nome: 'Novos',
+              nome: 'Triagem',
               ordem: 0,
-              cor: 'bg-blue-100',
+              cor: '#6b7280',
               user_id: user_id,
             })
             .select('id')
@@ -414,7 +414,7 @@ ${extractedText.substring(0, 15000)}`
             throw insertEtapaError
           }
           etapa = newEtapa
-          console.log('Nova etapa "Novos" criada com sucesso.')
+          console.log('Nova etapa "Triagem" criada com sucesso.')
         }
 
         if (etapa) {

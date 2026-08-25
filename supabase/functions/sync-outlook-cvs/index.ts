@@ -231,7 +231,7 @@ Deno.serve(async (req: Request) => {
           .from('etapas')
           .select('id')
           .eq('user_id', userId)
-          .ilike('nome', 'Novos')
+          .ilike('nome', 'Triagem')
           .maybeSingle()
         if (etapa) {
           await supabase.from('candidatos').update({ etapa_id: etapa.id }).eq('id', candidatoId)
