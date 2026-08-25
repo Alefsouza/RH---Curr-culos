@@ -9,13 +9,23 @@ import {
   identifyVagaForCandidate,
   updateCandidateVaga,
   recoverCandidatesFromStorage,
+  fixRecoveredCandidates,
   type RecoverCandidatesResumo,
+  type FixRecoveredCandidatesResponse,
 } from '@/services/candidates'
 import { fetchVagas } from '@/services/review'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Search, Users as UsersIcon, AlertCircle, X, HardDrive, Loader2 } from 'lucide-react'
+import {
+  Search,
+  Users as UsersIcon,
+  AlertCircle,
+  X,
+  HardDrive,
+  Loader2,
+  Wrench,
+} from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/hooks/use-auth'
 import { CandidateTable } from '@/components/candidates/CandidateTable'
@@ -56,6 +66,8 @@ export default function CandidatesPage() {
   const [isRecovering, setIsRecovering] = useState(false)
   const [recoverResumo, setRecoverResumo] = useState<RecoverCandidatesResumo | null>(null)
   const [showRecoverDialog, setShowRecoverDialog] = useState(false)
+  const [isFixing, setIsFixing] = useState(false)
+  const [fixResumo, setFixResumo] = useState<FixRecoveredCandidatesResponse | null>(null)
   const { profile } = useAuth()
   const { toast } = useToast()
   const { startReanalysis, isProcessing: isReanalyzing } = useBulkReanalysis()
@@ -266,7 +278,7 @@ export default function CandidatesPage() {
   }
 
   const handleRecoverCandidates = async () => {
-    if (isRecovering) return
+    if (isRecovering || isFixing) return
 
     setIsRecovering(true)
     toast({
@@ -304,6 +316,40 @@ export default function CandidatesPage() {
       })
     } finally {
       setIsRecovering(false)
+    }
+  }
+
+  const handleFixRecoveredCandidates = async () => {
+    if (isFixing || isRecovering) return
+
+    setIsFixing(true)
+    toast({
+      title: 'Corrigindo candidatos recuperados...',
+      description: 'Reprocessando candidatos com dados incompletos ou texto bruto.',
+    })
+
+    try {
+      const res = await fixRecoveredCandidates()
+      setFixResumo(res)
+
+      const sucessos = res.sucessos ?? 0
+      const falhas = res.falhas ?? 0
+
+      toast({
+        title: 'Correção finalizada',
+        description: `${sucessos} corrigidos com sucesso, ${falhas} falhas`,
+      })
+
+      await loadData()
+    } catch (err: any) {
+      console.error('Erro ao corrigir candidatos:', err)
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao corrigir candidatos',
+        description: err.message || 'Falha ao executar a função de correção.',
+      })
+    } finally {
+      setIsFixing(false)
     }
   }
 
@@ -372,8 +418,22 @@ export default function CandidatesPage() {
         {profile?.is_admin && (
           <div className="flex items-center gap-2">
             <Button
+              onClick={handleFixRecoveredCandidates}
+              disabled={isFixing || isRecovering}
+              variant="outline"
+              className="h-10 border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-sm gap-2 text-sm font-medium transition-all"
+            >
+              {isFixing ? (
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              ) : (
+                <Wrench className="h-4 w-4 text-slate-600" />
+              )}
+              {isFixing ? 'Corrigindo...' : 'Corrigir Candidatos'}
+            </Button>
+
+            <Button
               onClick={handleRecoverCandidates}
-              disabled={isRecovering}
+              disabled={isRecovering || isFixing}
               variant="outline"
               className="h-10 border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-sm gap-2 text-sm font-medium transition-all"
             >

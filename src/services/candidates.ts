@@ -199,3 +199,28 @@ export async function recoverCandidatesFromStorage(): Promise<RecoverCandidatesR
   if (data?.error) throw new Error(data.error)
   return data as RecoverCandidatesResponse
 }
+
+export interface FixRecoveredCandidatesDetail {
+  id: string
+  nome: string
+  status: string
+  erro?: string
+}
+
+export interface FixRecoveredCandidatesResponse {
+  success: boolean
+  total?: number
+  sucessos?: number
+  falhas?: number
+  detalhes?: FixRecoveredCandidatesDetail[]
+  error?: string
+}
+
+export async function fixRecoveredCandidates(): Promise<FixRecoveredCandidatesResponse> {
+  const { data, error } = await supabase.functions.invoke('fix-recovered-candidates', {
+    body: {},
+  })
+  if (error) throw error
+  if (data?.error) throw new Error(data.error)
+  return data as FixRecoveredCandidatesResponse
+}
