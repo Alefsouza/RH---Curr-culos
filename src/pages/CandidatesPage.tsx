@@ -8,19 +8,23 @@ import {
   bulkDeleteCandidates,
   identifyVagaForCandidate,
   updateCandidateVaga,
+  recoverCandidatesFromStorage,
+  type RecoverCandidatesResumo,
 } from '@/services/candidates'
 import { fetchVagas } from '@/services/review'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Search, Users as UsersIcon, AlertCircle, X } from 'lucide-react'
+import { Search, Users as UsersIcon, AlertCircle, X, HardDrive, Loader2 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { useAuth } from '@/hooks/use-auth'
 import { CandidateTable } from '@/components/candidates/CandidateTable'
 import { CandidateEditDialog } from '@/components/candidates/CandidateEditDialog'
 import { CandidateDeleteDialog } from '@/components/candidates/CandidateDeleteDialog'
 import { BulkActionBar } from '@/components/candidates/BulkActionBar'
 import { BulkDeleteDialog } from '@/components/candidates/BulkDeleteDialog'
 import { VagaSelectDialog } from '@/components/candidates/VagaSelectDialog'
+import { RecoverCandidatesResultDialog } from '@/components/candidates/RecoverCandidatesResultDialog'
 import {
   Select,
   SelectContent,
@@ -49,6 +53,10 @@ export default function CandidatesPage() {
     candidateId: string
     userId: string
   } | null>(null)
+  const [isRecovering, setIsRecovering] = useState(false)
+  const [recoverResumo, setRecoverResumo] = useState<RecoverCandidatesResumo | null>(null)
+  const [showRecoverDialog, setShowRecoverDialog] = useState(false)
+  const { profile } = useAuth()
   const { toast } = useToast()
   const { startReanalysis, isProcessing: isReanalyzing } = useBulkReanalysis()
 
@@ -257,6 +265,48 @@ export default function CandidatesPage() {
     }
   }
 
+  const handleRecoverCandidates = async () => {
+    if (isRecovering) return
+
+    setIsRecovering(true)
+    toast({
+      title: 'Recuperação de currículos iniciada',
+      description:
+        'Varrendo o bucket e processando currículos com IA. Isso pode levar alguns minutos...',
+    })
+
+    try {
+      const response = await recoverCandidatesFromStorage()
+      const resumo = response?.resumo
+
+      if (resumo) {
+        setRecoverResumo(resumo)
+        setShowRecoverDialog(true)
+
+        toast({
+          title: 'Recuperação concluída',
+          description: `${resumo.sucesso} currículo(s) recuperado(s) com sucesso, ${resumo.pulados_existentes} já existente(s), ${resumo.falhas} falha(s).`,
+        })
+      } else {
+        toast({
+          title: 'Operação finalizada',
+          description: response?.message || 'Varredura de currículos finalizada com sucesso.',
+        })
+      }
+
+      await loadData()
+    } catch (err: any) {
+      console.error('Erro ao recuperar currículos:', err)
+      toast({
+        variant: 'destructive',
+        title: 'Erro na recuperação de currículos',
+        description: err.message || 'Falha ao executar a função de recuperação.',
+      })
+    } finally {
+      setIsRecovering(false)
+    }
+  }
+
   const handleBulkReanalyze = () => {
     const selectedCandidates = filtered
       .filter((c) => selectedIds.has(c.id))
@@ -311,11 +361,31 @@ export default function CandidatesPage() {
   return (
     <div className="space-y-6 pb-24">
       {/* Cabeçalho: Título e descrição */}
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Candidatos</h1>
-        <p className="text-sm text-slate-500">
-          Gerencie todos os talentos cadastrados no processo seletivo.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Candidatos</h1>
+          <p className="text-sm text-slate-500">
+            Gerencie todos os talentos cadastrados no processo seletivo.
+          </p>
+        </div>
+
+        {profile?.is_admin && (
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={handleRecoverCandidates}
+              disabled={isRecovering}
+              variant="outline"
+              className="h-10 border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-sm gap-2 text-sm font-medium transition-all"
+            >
+              {isRecovering ? (
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              ) : (
+                <HardDrive className="h-4 w-4 text-slate-600" />
+              )}
+              {isRecovering ? 'Processando...' : 'Recuperar Currículos'}
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Barra de filtros */}
@@ -446,6 +516,12 @@ export default function CandidatesPage() {
         vagas={vagas}
         onClose={() => setPendingQualify(null)}
         onConfirm={handleConfirmVaga}
+      />
+
+      <RecoverCandidatesResultDialog
+        isOpen={showRecoverDialog}
+        onClose={() => setShowRecoverDialog(false)}
+        resumo={recoverResumo}
       />
     </div>
   )

@@ -171,11 +171,31 @@ export async function identifyVagaForCandidate(candidatoId: string, userId: stri
   return data as { vaga_id: string | null; confianca: string; justificativa: string }
 }
 
-export async function recoverCandidatesFromStorage() {
+export interface RecoverCandidatesResumo {
+  total_pdfs_encontrados: number
+  sucesso: number
+  pulados_existentes: number
+  falhas: number
+  detalhes_falhas?: Array<{
+    arquivo?: string
+    erro?: string
+    [key: string]: any
+  }>
+  tempo_total_segundos?: number
+}
+
+export interface RecoverCandidatesResponse {
+  success: boolean
+  resumo?: RecoverCandidatesResumo
+  error?: string
+  message?: string
+}
+
+export async function recoverCandidatesFromStorage(): Promise<RecoverCandidatesResponse> {
   const { data, error } = await supabase.functions.invoke('recover-candidates', {
     body: {},
   })
   if (error) throw error
   if (data?.error) throw new Error(data.error)
-  return data
+  return data as RecoverCandidatesResponse
 }
