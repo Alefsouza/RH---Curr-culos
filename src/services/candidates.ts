@@ -170,3 +170,12 @@ export async function identifyVagaForCandidate(candidatoId: string, userId: stri
   if (data?.error) throw new Error(data.error)
   return data as { vaga_id: string | null; confianca: string; justificativa: string }
 }
+
+export async function recoverCandidatesFromStorage() {
+  const { data, error } = await supabase.functions.invoke('recover-candidates', {
+    body: {},
+  })
+  if (error) throw error
+  if (data?.error) throw new Error(data.error)
+  return data
+}
