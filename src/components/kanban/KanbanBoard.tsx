@@ -22,7 +22,7 @@ export function KanbanBoard({
 
   return (
     <div className="flex-1 min-h-0 overflow-x-auto overflow-y-auto pb-2 h-full">
-      <div className="flex flex-col md:flex-row gap-6 h-full items-stretch min-w-max px-1">
+      <div className="flex flex-col md:flex-row gap-6 min-h-full items-stretch min-w-max px-1">
         {sortedStages.map((stage, index) => {
           const stageCandidates = candidates.filter((c) => c.stageId === stage.id)
           const nextStage = index < sortedStages.length - 1 ? sortedStages[index + 1] : null

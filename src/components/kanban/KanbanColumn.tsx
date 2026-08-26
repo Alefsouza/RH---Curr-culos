@@ -219,8 +219,8 @@ export function KanbanColumn({
 
   return (
     <>
-      <div className="group flex flex-col flex-shrink-0 w-full md:w-[320px] bg-slate-50/50 rounded-xl border border-transparent hover:border-primary/40 transition-colors shadow-sm overflow-hidden h-full max-h-full">
-        <div className="flex flex-col border-b border-transparent group-hover:border-primary/20 hover:border-primary/20 transition-colors bg-white/50 backdrop-blur-sm">
+      <div className="group flex flex-col flex-shrink-0 w-full md:w-[320px] min-h-[650px] bg-slate-50/50 rounded-xl border border-transparent hover:border-primary/40 transition-colors shadow-sm overflow-hidden h-full">
+        <div className="flex flex-col border-b border-transparent group-hover:border-primary/20 hover:border-primary/20 transition-colors bg-white/50 backdrop-blur-sm shrink-0">
           <div className="flex items-center justify-between p-3 pb-2">
             <div className="flex items-center gap-2 min-w-0">
               <div className={cn('w-2.5 h-2.5 rounded-full shrink-0', stage.color)} />
@@ -284,7 +284,7 @@ export function KanbanColumn({
 
         <div
           className={cn(
-            'flex-1 overflow-y-auto p-3 space-y-3 transition-colors duration-200',
+            'flex-1 min-h-0 overflow-y-auto p-3 space-y-3 transition-colors duration-200',
             isDragOver &&
               'bg-blue-50/50 outline-dashed outline-2 outline-blue-200 outline-offset-[-4px] rounded-b-xl',
           )}
