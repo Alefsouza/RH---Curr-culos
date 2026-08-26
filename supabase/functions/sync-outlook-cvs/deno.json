@@ -1,6 +1,5 @@
 {
   "imports": {
-    "pdf-parse": "npm:pdf-parse@1.1.1",
-    "mammoth": "npm:mammoth@1.8.0"
+    "openai": "npm:openai@4"
   }
 }
