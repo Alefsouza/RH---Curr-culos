@@ -17,6 +17,7 @@ const statusConfig: Record<string, any> = {
   },
   success: { label: 'Sucesso', icon: CheckCircle, color: 'bg-green-100 text-green-800' },
   error: { label: 'Erro', icon: XCircle, color: 'bg-red-100 text-red-800' },
+  failed: { label: 'Falha', icon: XCircle, color: 'bg-red-100 text-red-800' },
   partial: { label: 'Parcial', icon: AlertTriangle, color: 'bg-yellow-100 text-yellow-800' },
 }
 

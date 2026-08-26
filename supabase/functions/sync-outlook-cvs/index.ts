@@ -705,8 +705,21 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
     errors.push({ general: true, error: err.message })
   } finally {
     // Atualiza registro de sync_runs
-    const finalRunStatus =
-      errors.length > 0 && cvsImported > 0 ? 'partial' : errors.length > 0 ? 'error' : 'success'
+    // O status 'error' só deve ser setado quando uma exceção não tratada / erro fatal interrompe o fluxo principal (errors.some(e => e.general))
+    // Quando o loop termina normalmente (mesmo com 0 importados), deve ser 'success' (ou 'partial' se houve erros individuais nos anexos com alguns importados)
+    const hasGeneralError = errors.some((e: any) => e.general)
+    let finalRunStatus = 'success'
+    if (hasGeneralError) {
+      finalRunStatus = 'error'
+    } else if (errors.length > 0 && cvsImported > 0) {
+      finalRunStatus = 'partial'
+    } else if (errors.length > 0 && cvsImported === 0) {
+      // Se não houve erro geral de conexão/token, mas houve falhas em emails individuais e 0 importados
+      // Se todos os emails foram escaneados sem erro fatal, 'partial' ou 'success'
+      finalRunStatus = 'partial'
+    } else {
+      finalRunStatus = 'success'
+    }
 
     if (syncRunId) {
       await supabase
