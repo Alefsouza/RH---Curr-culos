@@ -13,13 +13,27 @@ Deno.serve(async (req: Request) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
     const supabase = createClient(supabaseUrl, supabaseKey)
 
-    const { data: adminUser } = await supabase
+    let { data: adminUser } = await supabase
       .from('usuarios')
       .select('id')
       .eq('email', 'financeiro@viasudeste.com')
       .maybeSingle()
+
+    if (!adminUser) {
+      const { data: fallbackUser } = await supabase
+        .from('usuarios')
+        .select('id')
+        .eq('is_admin', true)
+        .order('criado_em', { ascending: true })
+        .limit(1)
+        .single()
+      adminUser = fallbackUser
+    }
+
     const userId = adminUser?.id
-    if (!userId) throw new Error('Nenhum usuário administrador encontrado.')
+    if (!userId) {
+      throw new Error('Nenhum usuário administrador encontrado.')
+    }
 
     const { data: syncRun } = await supabase
       .from('sync_runs')
