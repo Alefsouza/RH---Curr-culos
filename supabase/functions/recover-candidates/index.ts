@@ -4,18 +4,6 @@ import OpenAI from 'npm:openai@4'
 import { corsHeaders } from '../_shared/cors.ts'
 import { normalizePhone } from '../_shared/phone.ts'
 
-// Helper para converter Uint8Array em Base64 usando Web APIs padrão (sem node:buffer)
-function uint8ArrayToBase64(bytes: Uint8Array): string {
-  let binary = ''
-  const len = bytes.byteLength
-  const chunkSize = 8192
-  for (let i = 0; i < len; i += chunkSize) {
-    const chunk = bytes.subarray(i, Math.min(i + chunkSize, len))
-    binary += String.fromCharCode.apply(null, chunk as unknown as number[])
-  }
-  return btoa(binary)
-}
-
 // Extrai texto bruto contido em streams/objetos do PDF via regex com suporte a UTF-8
 function extractAsciiTextFromPdfBytes(bytes: Uint8Array): string {
   let raw = ''
@@ -283,19 +271,25 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Função de extração de dados do PDF via OpenAI
+    // Função de extração de dados do PDF via OpenAI (apenas texto puro, sem image_url)
     const extractCandidateDataFromPdf = async (
       pdfBytes: Uint8Array,
       filePath: string,
-    ): Promise<{ extractedData: ExtractedCandidateData; rawText: string }> => {
+    ): Promise<{ extractedData: ExtractedCandidateData; rawText: string } | null> => {
       // 1. Tentar extrair texto básico via regex nos streams do PDF
       const basicText = extractAsciiTextFromPdfBytes(pdfBytes)
-      const base64Data = uint8ArrayToBase64(pdfBytes)
+
+      if (!basicText || basicText.trim().length < 50) {
+        console.warn(
+          `[extractCandidateDataFromPdf] PDF ${filePath} não contém texto legível suficiente (< 50 caracteres).`,
+        )
+        return null
+      }
 
       const systemPrompt =
         'Você é um especialista em RH e análise de currículos. Extraia com precisão os dados cadastrais e profissionais do documento enviado em português brasileiro. Preserve rigorosamente todos os acentos e caracteres especiais da língua portuguesa (ç, ã, õ, â, ê, ô, á, é, í, ó, ú, etc.). Responda ESTRITAMENTE em JSON válido.'
 
-      let promptText = `Analise o currículo (arquivo: ${filePath}) e extraia todos os dados estruturados.
+      const promptText = `Analise o currículo (arquivo: ${filePath}) e extraia todos os dados estruturados.
 Extraia com cuidado preservando a grafia correta com acentos em português:
 - nome: Nome completo extraído do currículo, ou null se não identificado
 - email: Endereço de e-mail válido, ou null se não identificado
@@ -324,55 +318,15 @@ Formato JSON estrito esperado:
   "formacao_academica": []
 }`
 
-      let messages: any[] = []
+      const messages = [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: `${promptText}\n\nTexto extraído do PDF:\n${basicText.substring(0, 20000)}`,
+        },
+      ]
 
-      // Se temos texto ASCII legível relevante (> 60 caracteres)
-      if (basicText.length > 60) {
-        messages = [
-          { role: 'system', content: systemPrompt },
-          {
-            role: 'user',
-            content: `${promptText}\n\nTexto extraído do PDF:\n${basicText.substring(0, 20000)}`,
-          },
-        ]
-      } else {
-        // Envia o PDF em base64 como anexo / data-uri
-        messages = [
-          { role: 'system', content: systemPrompt },
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: promptText,
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: `data:application/pdf;base64,${base64Data}`,
-                  detail: 'high',
-                },
-              },
-            ],
-          },
-        ]
-      }
-
-      let parsedJson: ExtractedCandidateData
-      try {
-        parsedJson = await callOpenAIWithRetry(messages)
-      } catch (firstErr) {
-        // Se falhou com base64 / data-uri, tenta fallback com o texto bruto mesmo que curto
-        console.warn(`Tentando fallback de extração para ${filePath}:`, firstErr)
-        messages = [
-          { role: 'system', content: systemPrompt },
-          {
-            role: 'user',
-            content: `${promptText}\n\nConteúdo disponível do arquivo:\n${basicText.substring(0, 10000)}`,
-          },
-        ]
-        parsedJson = await callOpenAIWithRetry(messages)
-      }
+      const parsedJson: ExtractedCandidateData = await callOpenAIWithRetry(messages)
 
       const rawTextToMatch = [
         parsedJson.resumo_cv || '',
@@ -430,9 +384,13 @@ Formato JSON estrito esperado:
         throw new Error('Arquivo vazio (0 bytes).')
       }
 
-      // b & c. Converter para base64 e chamar OpenAI para extrair nome, email, telefone, etc.
+      // b & c. Chamar OpenAI com texto extraído para obter nome, email, telefone, etc.
       console.log(`[EXTRAÇÃO IA] Extraindo dados do currículo: ${filePath}...`)
-      const { extractedData, rawText } = await extractCandidateDataFromPdf(pdfBytes, filePath)
+      const extractionResult = await extractCandidateDataFromPdf(pdfBytes, filePath)
+      if (!extractionResult) {
+        throw new Error('PDF não possui texto legível suficiente (< 50 caracteres / escaneado).')
+      }
+      const { extractedData, rawText } = extractionResult
 
       // Validação obrigatória: nome e/ou email
       const candidateName = extractedData.nome ? String(extractedData.nome).trim() : null

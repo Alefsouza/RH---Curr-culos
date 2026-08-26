@@ -4,18 +4,6 @@ import OpenAI from 'npm:openai@4'
 import { corsHeaders } from '../_shared/cors.ts'
 import { normalizePhone } from '../_shared/phone.ts'
 
-// Converte Uint8Array em Base64 usando Web APIs padrão (sem node:buffer)
-function uint8ArrayToBase64(bytes: Uint8Array): string {
-  let binary = ''
-  const len = bytes.byteLength
-  const chunkSize = 8192
-  for (let i = 0; i < len; i += chunkSize) {
-    const chunk = bytes.subarray(i, Math.min(i + chunkSize, len))
-    binary += String.fromCharCode.apply(null, chunk as unknown as number[])
-  }
-  return btoa(binary)
-}
-
 // Extrai texto bruto contido em streams/objetos do PDF via regex com suporte a UTF-8
 function extractAsciiTextFromPdfBytes(bytes: Uint8Array): string {
   let raw = ''
@@ -115,13 +103,12 @@ interface ExtractedCandidateData {
   [key: string]: any
 }
 
-// Extrai dados do currículo via OpenAI
+// Extrai dados do currículo via OpenAI (apenas texto puro, sem image_url)
 async function extractCandidateData(
   openai: OpenAI,
   fileBytes: Uint8Array,
   fileName: string,
-  base64String: string,
-): Promise<{ extractedData: ExtractedCandidateData; rawText: string }> {
+): Promise<{ extractedData: ExtractedCandidateData; rawText: string } | null> {
   const ext = fileName.toLowerCase().split('.').pop()
   let extractedRawText = ''
 
@@ -129,6 +116,15 @@ async function extractCandidateData(
     extractedRawText = extractRawTextFromDocxBytes(fileBytes)
   } else {
     extractedRawText = extractAsciiTextFromPdfBytes(fileBytes)
+  }
+
+  // Se o texto extraído for vazio ou muito curto (< 50 caracteres), arquivo escaneado/imagem/sem texto legível
+  // NÃO enviar como imagem para a OpenAI (PDF não é imagem suportada e causa erro 400)
+  if (!extractedRawText || extractedRawText.trim().length < 50) {
+    console.warn(
+      `[extractCandidateData] Arquivo ${fileName} não possui texto legível suficiente (${extractedRawText?.trim().length || 0} caracteres). PDF escaneado ou sem texto.`,
+    )
+    return null
   }
 
   const systemPrompt =
@@ -163,42 +159,13 @@ Formato JSON estrito esperado:
   "formacao_academica": []
 }`
 
-  let messages: any[] = []
-
-  if (extractedRawText.length > 60) {
-    messages = [
-      { role: 'system', content: systemPrompt },
-      {
-        role: 'user',
-        content: `${promptText}\n\nTexto extraído do currículo:\n${extractedRawText.substring(0, 20000)}`,
-      },
-    ]
-  } else {
-    // Usar OpenAI com envio do PDF em base64 (data-uri)
-    const mimeType =
-      ext === 'docx'
-        ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        : 'application/pdf'
-    messages = [
-      { role: 'system', content: systemPrompt },
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: promptText,
-          },
-          {
-            type: 'image_url',
-            image_url: {
-              url: `data:${mimeType};base64,${base64String}`,
-              detail: 'high',
-            },
-          },
-        ],
-      },
-    ]
-  }
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    {
+      role: 'user',
+      content: `${promptText}\n\nTexto extraído do currículo:\n${extractedRawText.substring(0, 20000)}`,
+    },
+  ]
 
   const isRetryableError = (error: any) => {
     const status = error?.status || error?.statusCode || error?.response?.status
@@ -236,24 +203,7 @@ Formato JSON estrito esperado:
     }
   }
 
-  let parsedJson: ExtractedCandidateData
-  try {
-    parsedJson = await callOpenAIWithRetry(messages)
-  } catch (firstErr) {
-    if (extractedRawText) {
-      console.warn(`Tentando fallback com texto disponível para ${fileName}:`, firstErr)
-      messages = [
-        { role: 'system', content: systemPrompt },
-        {
-          role: 'user',
-          content: `${promptText}\n\nConteúdo disponível do arquivo:\n${extractedRawText.substring(0, 10000)}`,
-        },
-      ]
-      parsedJson = await callOpenAIWithRetry(messages)
-    } else {
-      throw firstErr
-    }
-  }
+  const parsedJson: ExtractedCandidateData = await callOpenAIWithRetry(messages)
 
   const rawTextToMatch = [
     parsedJson.resumo_cv || '',
@@ -459,12 +409,33 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
 
         // Extrair dados do candidato via OpenAI
         console.log(`Outlook Sync: Extraindo dados de ${fileName} via OpenAI...`)
-        const { extractedData, rawText } = await extractCandidateData(
-          openai,
-          fileBytes,
-          fileName,
-          base64Data,
-        )
+        const extractionResult = await extractCandidateData(openai, fileBytes, fileName)
+
+        if (!extractionResult) {
+          console.warn(
+            `Outlook Sync: Arquivo ${fileName} não pôde ser lido (texto < 50 caracteres / escaneado). Marcando como não processado e continuando.`,
+          )
+          cvsSkippedNoMatch++
+          const unprocessablePayload = {
+            ...importBase,
+            status: 'texto_insuficiente',
+            erro_detalhes:
+              'Arquivo não contém texto legível suficiente (< 50 caracteres ou documento escaneado/imagem).',
+            anexo_filename: fileName,
+            processado_em: new Date().toISOString(),
+          }
+          if (existing?.id) {
+            await supabase
+              .from('email_importacoes')
+              .update(unprocessablePayload)
+              .eq('id', existing.id)
+          } else {
+            await supabase.from('email_importacoes').insert(unprocessablePayload)
+          }
+          continue
+        }
+
+        const { extractedData, rawText } = extractionResult
 
         const candidateName = extractedData.nome ? String(extractedData.nome).trim() : null
         const candidateEmail = extractedData.email ? String(extractedData.email).trim() : null
