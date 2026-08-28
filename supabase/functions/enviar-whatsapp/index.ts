@@ -120,7 +120,13 @@ Deno.serve(async (req: Request) => {
       .eq('etapa_id', etapa_id)
       .maybeSingle()
 
-    if (templateError || !template || !template.texto) {
+    const isChatbotTemplate =
+      template?.tipo === 'chatbot_interativo' || template?.tipo === 'chatbot'
+    const hasValidContent = isChatbotTemplate
+      ? Boolean(template?.pergunta_texto?.trim())
+      : Boolean(template?.texto?.trim())
+
+    if (templateError || !template || !hasValidContent) {
       return new Response(
         JSON.stringify({
           warning: true,
