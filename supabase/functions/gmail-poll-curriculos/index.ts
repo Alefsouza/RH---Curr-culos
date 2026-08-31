@@ -41,8 +41,15 @@ Deno.serve(async (req: Request) => {
 
     // Trigger auxiliar para backfill de proximidade via cron
     const urlObj = new URL(req.url)
-    if (urlObj.searchParams.get('runBackfillProximity') === 'true' || req.headers.get('x-run-backfill') === 'true') {
-      console.log('Disparando backfill-proximidade via gmail-poll-curriculos...')
+    if (
+      urlObj.searchParams.get('runBackfillProximity') === 'true' ||
+      req.headers.get('x-run-backfill') === 'true'
+    ) {
+      const bLimit = parseInt(urlObj.searchParams.get('limit') || '50', 10)
+      const bOffset = parseInt(urlObj.searchParams.get('offset') || '0', 10)
+      console.log(
+        `Disparando backfill-proximidade via gmail-poll-curriculos (limit: ${bLimit}, offset: ${bOffset})...`,
+      )
       const proxRes = await fetch(`${supabaseUrl}/functions/v1/backfill-proximidade`, {
         method: 'POST',
         headers: {
@@ -50,9 +57,9 @@ Deno.serve(async (req: Request) => {
           Authorization: `Bearer ${supabaseKey}`,
         },
         body: JSON.stringify({
-          forceAll: true,
-          limit: 500,
-          offset: 0,
+          forceAll: false,
+          limit: bLimit,
+          offset: bOffset,
         }),
       })
       const proxData = await proxRes.json()
