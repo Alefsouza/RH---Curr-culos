@@ -54,10 +54,11 @@ Deno.serve(async (req: Request) => {
       sapopemba: sapopembaCoords,
     })
 
-    // Buscar candidatos
+    // Buscar candidatos que possuem análise com resultado = 'qualificado'
     let query = supabase
       .from('candidatos')
-      .select('id, nome, dados_extraidos, proximidade')
+      .select('id, nome, dados_extraidos, proximidade, analises!inner(resultado)')
+      .eq('analises.resultado', 'qualificado')
       .not('dados_extraidos->endereco', 'is', null)
 
     if (!forceAll) {
@@ -74,8 +75,17 @@ Deno.serve(async (req: Request) => {
       `[Backfill Proximidade] Encontrados ${candidates?.length || 0} candidatos para processar.`,
     )
 
+    // Deduplica candidatos caso algum tenha mais de uma análise qualificada
+    const uniqueCandidatesMap = new Map<string, any>()
+    for (const cand of candidates || []) {
+      if (cand?.id && !uniqueCandidatesMap.has(cand.id)) {
+        uniqueCandidatesMap.set(cand.id, cand)
+      }
+    }
+    const uniqueCandidates = Array.from(uniqueCandidatesMap.values())
+
     const results = {
-      total: candidates?.length || 0,
+      total: uniqueCandidates.length,
       updated: 0,
       cursino: 0,
       sapopemba: 0,
@@ -83,7 +93,7 @@ Deno.serve(async (req: Request) => {
       erros: 0,
     }
 
-    for (const cand of candidates || []) {
+    for (const cand of uniqueCandidates) {
       const endereco = cand.dados_extraidos?.endereco
       if (!endereco) continue
 

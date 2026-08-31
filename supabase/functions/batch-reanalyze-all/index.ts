@@ -41,6 +41,27 @@ Deno.serve(async (req: Request) => {
       return isUnanalyzed || isGenericName
     })
 
+    // Trigger auxiliar para rodar o backfill de proximidade se solicitado
+    if (body.runBackfillProximity) {
+      console.log('Disparando backfill-proximidade via batch-reanalyze-all...')
+      const proxRes = await fetch(`${supabaseUrl}/functions/v1/backfill-proximidade`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({
+          forceAll: body.forceAll ?? true,
+          limit: body.limit || 500,
+          offset: body.offset || 0,
+        }),
+      })
+      const proxData = await proxRes.json()
+      return new Response(JSON.stringify({ proxData }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     const totalPending = pendingCandidates.length
     const batch = pendingCandidates.slice(offset, offset + limit)
 

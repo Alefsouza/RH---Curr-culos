@@ -39,6 +39,28 @@ Deno.serve(async (req: Request) => {
       )
     }
 
+    // Trigger auxiliar para backfill de proximidade via cron
+    const urlObj = new URL(req.url)
+    if (urlObj.searchParams.get('runBackfillProximity') === 'true' || req.headers.get('x-run-backfill') === 'true') {
+      console.log('Disparando backfill-proximidade via gmail-poll-curriculos...')
+      const proxRes = await fetch(`${supabaseUrl}/functions/v1/backfill-proximidade`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({
+          forceAll: true,
+          limit: 500,
+          offset: 0,
+        }),
+      })
+      const proxData = await proxRes.json()
+      return new Response(JSON.stringify({ proxData }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     const clientId = Deno.env.get('GMAIL_CLIENT_ID')
     const clientSecret = Deno.env.get('GMAIL_SECRET')
     const refreshToken = Deno.env.get('GMAIL_REFRESH')

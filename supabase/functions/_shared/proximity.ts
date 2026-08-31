@@ -23,8 +23,6 @@ export const REFERENCE_LOCATIONS = {
   },
 } as const
 
-export const MAX_DISTANCE_KM = 4.0 // Raio de proximidade em km
-
 // Fórmula de Haversine para cálculo de distância em km entre dois pontos geográficos
 export function calculateHaversineDistance(coord1: Coordinates, coord2: Coordinates): number {
   const toRad = (value: number) => (value * Math.PI) / 180
@@ -116,7 +114,7 @@ export async function geocodeAddress(address: string, apiKey: string): Promise<C
   }
 }
 
-// Determina qual referência geográfica o endereço está mais próximo (< 4km)
+// Determina qual referência geográfica o endereço está mais próximo (sem raio mínimo)
 export async function determineProximity(
   endereco: any,
   apiKey: string,
@@ -141,12 +139,9 @@ export async function determineProximity(
     `[Proximity] "${addressStr}" -> Cursino: ${distCursino.toFixed(2)}km, Sapopemba: ${distSapopemba.toFixed(2)}km`,
   )
 
-  if (distCursino <= MAX_DISTANCE_KM && distCursino <= distSapopemba) {
+  if (distCursino <= distSapopemba) {
     return 'cursino'
   }
-  if (distSapopemba <= MAX_DISTANCE_KM && distSapopemba < distCursino) {
-    return 'sapopemba'
-  }
 
-  return null
+  return 'sapopemba'
 }
