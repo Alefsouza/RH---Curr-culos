@@ -1,15 +1,93 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
-import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { createClient } from 'npm:@supabase/supabase-js@2'
 import OpenAI from 'npm:openai@4'
-import { Buffer } from 'node:buffer'
-import pdf from 'npm:pdf-parse@1.1.1'
-import { normalizePhone } from '../_shared/phone.ts'
+import { corsHeaders } from '../_shared/cors.ts'
+import {
+  normalizePhone,
+  isValidBrazilianPhone,
+  sanitizeAndValidateName,
+  sanitizeAndValidateEmail,
+} from '../_shared/validation.ts'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, x-supabase-client-platform, apikey, content-type',
+// Extrai texto bruto contido em streams/objetos do PDF via regex com suporte a UTF-8
+function extractAsciiTextFromPdfBytes(bytes: Uint8Array): string {
+  let raw = ''
+  try {
+    const textDecoderUtf8 = new TextDecoder('utf-8', { fatal: false })
+    raw = textDecoderUtf8.decode(bytes)
+  } catch {
+    const textDecoderLatin1 = new TextDecoder('latin1')
+    raw = textDecoderLatin1.decode(bytes)
+  }
+
+  const textChunks: string[] = []
+
+  const btMatches = raw.matchAll(/BT[\s\S]*?ET/g)
+  for (const match of btMatches) {
+    const block = match[0]
+    const literalMatches = block.matchAll(/\((.*?)\)/g)
+    for (const lit of literalMatches) {
+      const decoded = lit[1]
+        .replace(/\\n/g, '\n')
+        .replace(/\\r/g, '\r')
+        .replace(/\\t/g, '\t')
+        .replace(/\\([()\\])/g, '$1')
+      if (decoded.trim().length > 0) {
+        textChunks.push(decoded)
+      }
+    }
+    const hexMatches = block.matchAll(/<([0-9a-fA-F\s]+)>/g)
+    for (const hex of hexMatches) {
+      const cleanHex = hex[1].replace(/\s+/g, '')
+      if (cleanHex.length % 2 === 0 && cleanHex.length >= 2) {
+        try {
+          const hexBytes = new Uint8Array(cleanHex.length / 2)
+          for (let k = 0; k < cleanHex.length; k += 2) {
+            hexBytes[k / 2] = parseInt(cleanHex.substring(k, k + 2), 16)
+          }
+          const decodedHexStr = new TextDecoder('utf-8', { fatal: false }).decode(hexBytes)
+          if (decodedHexStr.trim().length > 0) {
+            textChunks.push(decodedHexStr)
+          }
+        } catch {
+          let str = ''
+          for (let k = 0; k < cleanHex.length; k += 2) {
+            const code = parseInt(cleanHex.substring(k, k + 2), 16)
+            if (code >= 32) {
+              str += String.fromCharCode(code)
+            }
+          }
+          if (str.trim().length > 0) {
+            textChunks.push(str)
+          }
+        }
+      }
+    }
+  }
+
+  return textChunks.join(' ').replace(/\s+/g, ' ').trim()
+}
+
+// Extrai texto legível de arquivo DOCX sem bibliotecas externas
+function extractRawTextFromDocxBytes(bytes: Uint8Array): string {
+  try {
+    const decoder = new TextDecoder('utf-8', { fatal: false })
+    const content = decoder.decode(bytes)
+    const textMatches = content.matchAll(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/gi)
+    const chunks: string[] = []
+    for (const match of textMatches) {
+      if (match[1] && match[1].trim()) {
+        chunks.push(match[1])
+      }
+    }
+    if (chunks.length > 0) {
+      return chunks.join(' ').replace(/\s+/g, ' ').trim()
+    }
+    const stripped = content.replace(/<[^>]+>/g, ' ').replace(/[^\x20-\x7E\xC0-\xFF\n\r\t]/g, ' ')
+    return stripped.replace(/\s+/g, ' ').trim()
+  } catch {
+    return ''
+  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -58,30 +136,22 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    // 2. Parse Document
+    // 2. Parse Document (Native Deno APIs)
     const arrayBuffer = await fileData.arrayBuffer()
-    const fileBuffer = Buffer.from(arrayBuffer)
+    const fileBytes = new Uint8Array(arrayBuffer)
     let extractedText = ''
-    try {
-      if (filePath.toLowerCase().endsWith('.docx')) {
-        const mammoth = await import('npm:mammoth')
-        const data = await mammoth.extractRawText({ buffer: fileBuffer })
-        extractedText = data.value
-      } else {
-        const data = await pdf(fileBuffer)
-        extractedText = data.text
-      }
-    } catch (err) {
-      console.error('Erro ao ler arquivo:', err)
-      return new Response(JSON.stringify({ error: 'Erro ao extrair texto do arquivo.' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+
+    if (filePath.toLowerCase().endsWith('.docx')) {
+      extractedText = extractRawTextFromDocxBytes(fileBytes)
+    } else {
+      extractedText = extractAsciiTextFromPdfBytes(fileBytes)
     }
 
-    if (!extractedText.trim()) {
+    if (!extractedText.trim() || extractedText.trim().length < 50) {
       return new Response(
-        JSON.stringify({ error: 'O arquivo está vazio ou não contém texto legível.' }),
+        JSON.stringify({
+          error: 'O arquivo está vazio ou não contém texto legível (< 50 caracteres).',
+        }),
         {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -101,15 +171,12 @@ Deno.serve(async (req: Request) => {
       if (status === 429) return true
       if (typeof status === 'number' && status >= 500 && status < 600) return true
       const msg = String(error?.message || '').toLowerCase()
-      if (
+      return (
         msg.includes('rate limit') ||
         msg.includes('429') ||
         msg.includes('timeout') ||
         msg.includes('fetch failed')
-      ) {
-        return true
-      }
-      return false
+      )
     }
 
     const callOpenAIWithRetry = async (
@@ -124,7 +191,7 @@ Deno.serve(async (req: Request) => {
             {
               role: 'system',
               content:
-                'Você é um assistente de RH focado em estruturar dados de currículos. Retorne sempre um JSON válido.',
+                'Você é um assistente sênior de RH focado em estruturar dados de currículos em português brasileiro. NUNCA invente dados nem use nomes fictícios (ex: "Candidato Desconhecido", "João da Silva"). Retorne sempre um JSON válido.',
             },
             { role: 'user', content: prompt },
           ],
@@ -134,9 +201,7 @@ Deno.serve(async (req: Request) => {
       } catch (error: any) {
         if (retries > 0 && isRetryableError(error)) {
           const delay = delays[3 - retries] ?? 8000
-          console.log(
-            `OpenAI erro (${error?.status || error?.message}), retentando em ${delay}ms...`,
-          )
+          console.log(`OpenAI erro, retentando em ${delay}ms...`)
           await new Promise((resolve) => setTimeout(resolve, delay))
           return callOpenAIWithRetry(prompt, retries - 1, delays)
         }
@@ -144,27 +209,38 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const extractionPrompt = `Extraia os seguintes dados do currículo: nome, email, telefones celulares, experiencia profissional, skills, formacao academica, endereço (cidade e estado ou completo).
-Extraia APENAS números de telefone celular brasileiros (DDD + 9 dígitos, começando com 9). Ignore telefones fixos. Formato: 11999999999.
-Se algum dado não for encontrado, retorne null ou um array vazio.
-Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
+    const extractionPrompt = `Extraia os seguintes dados do currículo:
+- nome: Nome completo REAL do candidato, ou null se não identificado
+- email: Endereço de e-mail REAL, ou null se não identificado
+- telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11987654321"]) ou [] se nenhum
+- endereco: Cidade e estado ou endereço completo, ou null se não identificado
+- experiencia_profissional: Lista de experiências anteriores com cargos e empresas, ou []
+- skills: Lista de habilidades técnicas e competências, ou []
+- formacao_academica: Lista de cursos e escolaridade, ou []
+
+IMPORTANTE:
+1. NUNCA invente dados (evite "Candidato Desconhecido", "João da Silva", "11999999999", "exemplo@email.com"). Se não constar com clareza, use null.
+2. Evite duplicação de palavras no nome (ex: "Lucas Lucas").
+3. NUNCA use a string "string ou null" ou "string". Use null real.
+
+Formato JSON estrito esperado:
 {
-  "nome": "string",
-  "email": "string",
-  "telefones_celulares": ["string"],
-  "endereco": "string ou null",
-  "experiencia_profissional": ["string"],
-  "skills": ["string"],
-  "formacao_academica": ["string"]
+  "nome": null,
+  "email": null,
+  "telefones_celulares": [],
+  "endereco": null,
+  "experiencia_profissional": [],
+  "skills": [],
+  "formacao_academica": []
 }
 
 Texto extraído do currículo:
-${extractedText.substring(0, 15000)}`
+${extractedText.substring(0, 18000)}`
 
     let extractedData
     try {
       extractedData = await callOpenAIWithRetry(extractionPrompt)
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro na chamada da OpenAI:', err)
       return new Response(
         JSON.stringify({
@@ -177,16 +253,26 @@ ${extractedText.substring(0, 15000)}`
       )
     }
 
-    const finalEmail = extractedData.email || email || null
+    const cleanName = sanitizeAndValidateName(extractedData.nome || nome)
+    const cleanEmail = sanitizeAndValidateEmail(extractedData.email || email)
+
+    if (!cleanName) {
+      return new Response(
+        JSON.stringify({ error: 'Nome de candidato não identificado com segurança no documento.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
+    }
 
     let telefonesArr: string[] = []
     if (Array.isArray(extractedData.telefones_celulares)) {
       telefonesArr = extractedData.telefones_celulares
     } else if (extractedData.telefone) {
       telefonesArr = [extractedData.telefone]
+    } else if (telefone) {
+      telefonesArr = [telefone]
     }
 
-    const rawTelefone = telefonesArr.length > 0 ? telefonesArr.join(',') : telefone || null
+    const rawTelefone = telefonesArr.length > 0 ? telefonesArr.join(',') : null
     let finalTelefone = null
     if (rawTelefone) {
       const parts = rawTelefone
@@ -196,13 +282,15 @@ ${extractedText.substring(0, 15000)}`
       const normalizedParts = parts
         .map((t: string) => {
           const n = normalizePhone(t)
-          return n && n.length >= 10 && n.length <= 11 ? n : null
+          return n && isValidBrazilianPhone(n) ? n : null
         })
-        .filter(Boolean)
+        .filter((n): n is string => Boolean(n))
       const uniqueParts = Array.from(new Set(normalizedParts))
-      finalTelefone = uniqueParts.length > 0 ? uniqueParts.join(',') : rawTelefone
+      finalTelefone = uniqueParts.length > 0 ? uniqueParts.join(',') : null
     }
-    const finalNome = extractedData.nome || nome || 'Candidato Desconhecido'
+
+    const finalNome = cleanName
+    const finalEmail = cleanEmail
 
     // 4. Deduplication
     const orConditions = []
@@ -284,7 +372,6 @@ ${extractedText.substring(0, 15000)}`
       let { data: etapa } = await supabase
         .from('etapas')
         .select('id')
-        .eq('user_id', user_id)
         .ilike('nome', 'Triagem')
         .maybeSingle()
 
@@ -315,151 +402,19 @@ ${extractedText.substring(0, 15000)}`
     // 7. Analyze against job criteria
     const analisesRealizadas = []
     if (vaga_id) {
-      const { data: vaga } = await supabase.from('vagas').select('*').eq('id', vaga_id).single()
-
-      if (vaga) {
-        let criteriosText = 'Sem critérios definidos.'
-        let localizacoesVaga: string[] = []
-        let raioKm = 0
-
-        if (vaga.criterios_qualificacao && typeof vaga.criterios_qualificacao === 'object') {
-          const critObj = vaga.criterios_qualificacao as any
-          criteriosText = critObj.texto_livre || JSON.stringify(critObj)
-          if (Array.isArray(critObj.localizacoes) && critObj.localizacoes.length > 0) {
-            localizacoesVaga = critObj.localizacoes.map((l: any) =>
-              [l.endereco, l.cidade, l.estado].filter(Boolean).join(', '),
-            )
-          }
-          raioKm = critObj.raio_km || 0
-        } else if (typeof vaga.criterios_qualificacao === 'string') {
-          criteriosText = vaga.criterios_qualificacao
+      try {
+        const critRes = await supabase.functions.invoke('analisar-cv-criterios', {
+          body: {
+            cv_id: candidatoId,
+            vaga_id: vaga_id,
+            user_id: user_id,
+          },
+        })
+        if (critRes.data?.data?.analise) {
+          analisesRealizadas.push(critRes.data.data.analise)
         }
-
-        const enderecoCV = extractedData.endereco || ''
-        let menorDistanciaKm: number | null = null
-        let qualificadoPorLocalizacao = true
-        let distanciaCalculada = false
-
-        const googleApiKey = Deno.env.get('GOOGLE_API_KEY')
-
-        if (localizacoesVaga.length > 0 && raioKm > 0) {
-          if (!enderecoCV) {
-            qualificadoPorLocalizacao = false
-            distanciaCalculada = false
-          } else if (googleApiKey) {
-            const callGoogleMaps = async (
-              orig: string,
-              dest: string,
-              retries = 3,
-            ): Promise<number | null> => {
-              try {
-                const url = new URL('https://maps.googleapis.com/maps/api/distancematrix/json')
-                url.searchParams.append('origins', orig)
-                url.searchParams.append('destinations', dest)
-                url.searchParams.append('key', googleApiKey)
-                url.searchParams.append('units', 'metric')
-                const res = await fetch(url.toString(), { method: 'POST' })
-                if (!res.ok) {
-                  if (res.status === 503 && retries > 0) {
-                    await new Promise((r) => setTimeout(r, 2000))
-                    return callGoogleMaps(orig, dest, retries - 1)
-                  }
-                  return null
-                }
-                const data = await res.json()
-                if (data.status === 'OK' && data.rows?.[0]?.elements?.[0]?.status === 'OK') {
-                  return data.rows[0].elements[0].distance.value / 1000
-                }
-                return null
-              } catch (e) {
-                if (retries > 0) {
-                  await new Promise((r) => setTimeout(r, 2000))
-                  return callGoogleMaps(orig, dest, retries - 1)
-                }
-                return null
-              }
-            }
-
-            for (const dest of localizacoesVaga) {
-              const dist = await callGoogleMaps(enderecoCV, dest)
-              if (dist !== null) {
-                if (menorDistanciaKm === null || dist < menorDistanciaKm) menorDistanciaKm = dist
-              }
-            }
-
-            if (menorDistanciaKm !== null) {
-              qualificadoPorLocalizacao = menorDistanciaKm <= raioKm
-              distanciaCalculada = true
-            } else {
-              qualificadoPorLocalizacao = false
-            }
-          }
-        }
-
-        const analyzePrompt = `Analise o currículo para a vaga de "${vaga.titulo}".
-Descrição da vaga: ${vaga.descricao || 'Não informada'}
-Critérios Textuais: ${criteriosText}
-Localização do Candidato: ${enderecoCV || 'Não informada'}
-Distância calculada: ${distanciaCalculada ? menorDistanciaKm?.toFixed(2) + ' km' : 'N/A'} (Raio aceito: ${raioKm} km)
-Qualificado por localização: ${qualificadoPorLocalizacao}
-
-Dados estruturados do currículo:
-${JSON.stringify(extractedData)}
-
-Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
-{
-  "resultado": "qualificado" | "nao_qualificado" | "revisar",
-  "detalhes": {
-    "pontos_fortes": ["string"],
-    "pontos_fracos": ["string"],
-    "aderencia": "percentual de aderência (ex: 80%)",
-    "motivo": "string explicando a reprovação se aplicável, especialmente se for por localização"
-  }
-}`
-
-        try {
-          const analiseJson = await callOpenAIWithRetry(analyzePrompt)
-
-          let statusFinal = analiseJson.resultado || 'revisar'
-          let motivoFinal = analiseJson.detalhes?.motivo || ''
-
-          if (localizacoesVaga.length > 0 && raioKm > 0) {
-            if (!enderecoCV) {
-              statusFinal = 'nao_qualificado'
-              motivoFinal = `Reprovado por localização: Endereço não identificado no currículo. ${motivoFinal}`
-            } else if (distanciaCalculada && !qualificadoPorLocalizacao) {
-              statusFinal = 'nao_qualificado'
-              if (
-                !motivoFinal.toLowerCase().includes('localização') &&
-                !motivoFinal.toLowerCase().includes('distância')
-              ) {
-                motivoFinal = `Reprovado por localização: Distância de ${menorDistanciaKm?.toFixed(2)} km excede o raio de ${raioKm} km. ${motivoFinal}`
-              }
-            }
-          }
-
-          if (analiseJson.detalhes) analiseJson.detalhes.motivo = motivoFinal
-
-          const { data: novaAnalise, error: analiseError } = await supabase
-            .from('analises')
-            .insert({
-              candidato_id: candidatoId,
-              vaga_id: vaga.id,
-              resultado: statusFinal,
-              detalhes: analiseJson.detalhes || {},
-              user_id: user_id,
-            })
-            .select()
-            .single()
-
-          if (!analiseError) {
-            analisesRealizadas.push(novaAnalise)
-          } else {
-            console.error('Erro ao inserir análise:', analiseError)
-          }
-        } catch (e) {
-          console.error(`Erro ao analisar a vaga ${vaga.titulo}:`, e)
-        }
+      } catch (e: any) {
+        console.error(`Erro ao analisar a vaga ${vaga_id}:`, e?.message)
       }
     }
 

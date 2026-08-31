@@ -2,7 +2,12 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import OpenAI from 'npm:openai@4'
 import { corsHeaders } from '../_shared/cors.ts'
-import { normalizePhone } from '../_shared/phone.ts'
+import {
+  normalizePhone,
+  isValidBrazilianPhone,
+  sanitizeAndValidateName,
+  sanitizeAndValidateEmail,
+} from '../_shared/validation.ts'
 
 // Extrai texto bruto contido em streams/objetos do PDF via regex com suporte a UTF-8
 function extractAsciiTextFromPdfBytes(bytes: Uint8Array): string {
@@ -119,7 +124,6 @@ async function extractCandidateData(
   }
 
   // Se o texto extraído for vazio ou muito curto (< 50 caracteres), arquivo escaneado/imagem/sem texto legível
-  // NÃO enviar como imagem para a OpenAI (PDF não é imagem suportada e causa erro 400)
   if (!extractedRawText || extractedRawText.trim().length < 50) {
     console.warn(
       `[extractCandidateData] Arquivo ${fileName} não possui texto legível suficiente (${extractedRawText?.trim().length || 0} caracteres). PDF escaneado ou sem texto.`,
@@ -128,13 +132,13 @@ async function extractCandidateData(
   }
 
   const systemPrompt =
-    'Você é um especialista em RH e análise de currículos. Extraia com precisão os dados cadastrais e profissionais do documento enviado em português brasileiro. Preserve rigorosamente todos os acentos e caracteres especiais da língua portuguesa (ç, ã, õ, â, ê, ô, á, é, í, ó, ú, etc.). NUNCA invente dados. Se não conseguir identificar um dado com certeza, retorne null ou array vazio. Responda ESTRITAMENTE em JSON válido.'
+    'Você é um especialista em RH e análise de currículos. Extraia com precisão os dados cadastrais e profissionais do documento enviado em português brasileiro. Preserve rigorosamente todos os acentos e caracteres especiais da língua portuguesa (ç, ã, õ, â, ê, ô, á, é, í, ó, ú, etc.). NUNCA invente dados como "Candidato Desconhecido", "Nome Completo Exemplo", "João da Silva", emails de exemplo ou telefones falsos. Se não conseguir ler o nome do candidato real no currículo, retorne null. NUNCA duplique palavras no nome (ex: "Lucas Lucas"). Responda ESTRITAMENTE em JSON válido.'
 
   const promptText = `Analise o currículo (arquivo: ${fileName}) e extraia todos os dados estruturados.
 Extraia com cuidado preservando a grafia correta com acentos em português:
-- nome: Nome completo extraído do currículo, ou null se não identificado
-- email: Endereço de e-mail válido, ou null se não identificado
-- telefones_celulares: Lista de telefones celulares brasileiros com DDD (ex: ["11999999999"]) ou [] se nenhum
+- nome: Nome completo REAL extraído do currículo, ou null se não identificado
+- email: Endereço de e-mail REAL válido, ou null se não identificado
+- telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11987654321"]) ou [] se nenhum
 - telefone: Telefone celular principal ou null se não identificado
 - endereco: Cidade, estado ou endereço completo, ou null se não identificado
 - resumo_cv: Resumo das qualificações e perfil profissional, ou null se não identificado
@@ -143,8 +147,9 @@ Extraia com cuidado preservando a grafia correta com acentos em português:
 - formacao_academica: Lista de formações acadêmicas e cursos, ou [] se não houver
 
 IMPORTANTE:
-1. NUNCA invente dados. Se não conseguir ler ou o dado não constar, use null ou [].
+1. NUNCA invente dados ou placeholders como "Candidato Desconhecido", "João da Silva", "11999999999", "exemplo@email.com". Se não constar, use null ou [].
 2. NUNCA retorne o texto literal "string ou null", "string", ou "null". Use o valor JSON null real quando o dado não existir.
+3. Não duplique nomes (evite "Lucas Lucas" ou repetições).
 
 Formato JSON estrito esperado:
 {
@@ -225,6 +230,96 @@ Formato JSON estrito esperado:
   }
 }
 
+// Interface para mensagens do Microsoft Graph
+interface GraphMessage {
+  id: string
+  subject?: string
+  from?: { emailAddress?: { address?: string; name?: string } }
+  receivedDateTime?: string
+  hasAttachments?: boolean
+  conversationId?: string
+  isRead?: boolean
+  parentFolderId?: string
+}
+
+// Busca recursiva de todas as pastas de e-mail no Microsoft Graph
+async function getAllMailFolderIds(
+  mailboxEmail: string,
+  graphHeaders: Record<string, string>,
+  folderId?: string,
+): Promise<{ id: string; displayName: string }[]> {
+  const folders: { id: string; displayName: string }[] = []
+  const url = folderId
+    ? `https://graph.microsoft.com/v1.0/users/${mailboxEmail}/mailFolders/${folderId}/childFolders?$top=100`
+    : `https://graph.microsoft.com/v1.0/users/${mailboxEmail}/mailFolders?$top=100`
+
+  try {
+    const res = await fetch(url, { headers: graphHeaders })
+    if (!res.ok) {
+      console.warn(`Aviso ao listar pastas (${folderId || 'root'}): ${res.status}`)
+      return folders
+    }
+
+    const data = await res.json()
+    const folderList = data.value || []
+
+    for (const f of folderList) {
+      // Ignorar lixeira (Deleted Items), spam (Junk Email), rascunhos (Drafts), itens enviados (Sent Items)
+      const folderName = (f.displayName || '').toLowerCase()
+      const wellKnown = (f.wellKnownName || '').toLowerCase()
+      if (
+        folderName.includes('deleted') ||
+        folderName.includes('junk') ||
+        folderName.includes('drafts') ||
+        folderName.includes('sent') ||
+        folderName.includes('lixo') ||
+        folderName.includes('exclu') ||
+        folderName.includes('spam') ||
+        wellKnown === 'deleteditems' ||
+        wellKnown === 'junkemail' ||
+        wellKnown === 'drafts' ||
+        wellKnown === 'sentitems'
+      ) {
+        continue
+      }
+
+      folders.push({ id: f.id, displayName: f.displayName })
+
+      // Se tiver subpastas, busca recursivamente
+      if (f.childFolderCount && f.childFolderCount > 0) {
+        const subFolders = await getAllMailFolderIds(mailboxEmail, graphHeaders, f.id)
+        folders.push(...subFolders)
+      }
+    }
+  } catch (err: any) {
+    console.error('Erro ao buscar pastas recursivamente:', err?.message)
+  }
+
+  return folders
+}
+
+// Busca mensagens em uma pasta específica
+async function getMessagesFromFolder(
+  mailboxEmail: string,
+  folderId: string,
+  graphHeaders: Record<string, string>,
+  top = 50,
+): Promise<GraphMessage[]> {
+  try {
+    const url = `https://graph.microsoft.com/v1.0/users/${mailboxEmail}/mailFolders/${folderId}/messages?$top=${top}&$orderby=receivedDateTime desc&$select=id,subject,from,receivedDateTime,hasAttachments,conversationId,isRead`
+    const res = await fetch(url, { headers: graphHeaders })
+    if (!res.ok) {
+      console.warn(`Erro ao buscar mensagens na pasta ${folderId}: ${res.status}`)
+      return []
+    }
+    const data = await res.json()
+    return data.value || []
+  } catch (err: any) {
+    console.error(`Falha ao buscar mensagens na pasta ${folderId}:`, err?.message)
+    return []
+  }
+}
+
 // Execução da sincronização completa
 async function performSync(supabase: any, syncRunId: string | null, userId: string) {
   const errors: any[] = []
@@ -284,26 +379,39 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
       'Content-Type': 'application/json',
     }
 
-    // 2. Buscar e-mails não lidos ou recentes com anexos
-    // Busca os 50 mais recentes da caixa de entrada
-    const messagesRes = await fetch(
-      `https://graph.microsoft.com/v1.0/users/${mailboxEmail}/mailFolders/inbox/messages?$top=50&$orderby=receivedDateTime desc&$select=id,subject,from,receivedDateTime,hasAttachments,conversationId,isRead`,
-      { headers: graphHeaders },
-    )
+    // 2. Buscar todas as pastas recursivamente (MUDANÇA 1: TODAS as pastas do Outlook)
+    console.log(`Outlook Sync: Listando todas as pastas da caixa ${mailboxEmail}...`)
+    const folders = await getAllMailFolderIds(mailboxEmail, graphHeaders)
 
-    if (!messagesRes.ok) {
-      const errText = await messagesRes.text()
-      throw new Error(`Falha ao buscar mensagens no Graph API: ${messagesRes.status} ${errText}`)
+    // Garantir que a inbox esteja inclusa caso folders retorne vazio
+    if (folders.length === 0) {
+      folders.push({ id: 'inbox', displayName: 'Caixa de Entrada' })
     }
 
-    const messagesData = await messagesRes.json()
-    const messages = messagesData.value || []
+    console.log(
+      `Outlook Sync: Encontradas ${folders.length} pastas para verificação:`,
+      folders.map((f) => f.displayName),
+    )
+
+    // Coletar mensagens de todas as pastas, evitando duplicatas de id
+    const messageMap = new Map<string, GraphMessage>()
+
+    for (const folder of folders) {
+      const msgs = await getMessagesFromFolder(mailboxEmail, folder.id, graphHeaders, 50)
+      for (const m of msgs) {
+        if (!messageMap.has(m.id)) {
+          messageMap.set(m.id, m)
+        }
+      }
+    }
+
+    const messages = Array.from(messageMap.values())
     emailsScanned = messages.length
 
-    console.log(`Outlook Sync: ${messages.length} e-mails escaneados na caixa ${mailboxEmail}`)
+    console.log(
+      `Outlook Sync: Total de ${messages.length} e-mails únicos coletados em todas as pastas da caixa ${mailboxEmail}`,
+    )
 
-    const subjectRegex =
-      /(curr[ií]culo|curriculum|\bcv\b|vaga|candidatura|recrutamento|sele[cç][aã]o)/i
     const replyPrefixes = /^(re:|fwd:|res:|enc:)/i
 
     for (const msg of messages) {
@@ -311,8 +419,9 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
       const senderEmail = msg.from?.emailAddress?.address || ''
       const senderDomain = senderEmail.split('@')[1]?.toLowerCase() || ''
 
-      // Validação de assunto / anexos
-      if (replyPrefixes.test(subject) || !subjectRegex.test(subject) || !msg.hasAttachments) {
+      // MUDANÇA 1: REMOVER o filtro rígido de assunto! Aceitar todos os assuntos com anexo.
+      // Apenas ignorar e-mails sem anexo ou respostas triviais sem anexo
+      if (!msg.hasAttachments) {
         cvsSkippedNoMatch++
         continue
       }
@@ -333,13 +442,14 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
         .eq('outlook_message_id', msg.id)
         .maybeSingle()
 
-      if (existing && existing.status !== 'erro') {
+      if (existing && existing.status !== 'erro' && existing.status !== 'sem_anexo_valido') {
         cvsSkippedDuplicate++
         continue
       }
 
       // Buscar detalhes da mensagem com anexos
-      const msgRes = await fetch(
+      // Se houver anexo grande (>3MB), Microsoft Graph $expand=attachments retorna anexo normal ou @odata.type = #microsoft.graph.fileAttachment
+      let msgRes = await fetch(
         `https://graph.microsoft.com/v1.0/users/${mailboxEmail}/messages/${msg.id}?$expand=attachments`,
         { headers: graphHeaders },
       )
@@ -350,7 +460,23 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
       }
 
       const msgDetail = await msgRes.json()
-      const attachments = msgDetail.attachments || []
+      let attachments = msgDetail.attachments || []
+
+      // Se attachments vier vazio mas msg.hasAttachments é true, tenta listar endpoint direto /attachments
+      if (attachments.length === 0) {
+        try {
+          const attRes = await fetch(
+            `https://graph.microsoft.com/v1.0/users/${mailboxEmail}/messages/${msg.id}/attachments`,
+            { headers: graphHeaders },
+          )
+          if (attRes.ok) {
+            const attData = await attRes.json()
+            attachments = attData.value || []
+          }
+        } catch (e: any) {
+          console.warn(`Erro ao listar attachments do msg ${msg.id}:`, e?.message)
+        }
+      }
 
       // Priorizar PDF e DOCX
       let selectedAtt = attachments.find((a: any) => {
@@ -374,7 +500,7 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
         user_id: userId,
       }
 
-      if (!selectedAtt || !selectedAtt.contentBytes) {
+      if (!selectedAtt) {
         cvsSkippedNoMatch++
         const noAttPayload = {
           ...importBase,
@@ -390,25 +516,43 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
         continue
       }
 
-      try {
-        const base64Data = selectedAtt.contentBytes
-        const fileName = selectedAtt.name || 'curriculo.pdf'
-        const ext = fileName.toLowerCase().split('.').pop() || 'pdf'
+      // Se o anexo não veio com contentBytes direto (ex: anexo grande >3MB no Graph), buscar /attachments/{id}/$value
+      let fileBytes: Uint8Array | null = null
+      const fileName = selectedAtt.name || 'curriculo.pdf'
+      const ext = fileName.toLowerCase().split('.').pop() || 'pdf'
 
-        // Decodificar Base64 para Uint8Array usando Web APIs padrão (sem node:buffer)
-        const binaryString = atob(base64Data)
-        const fileBytes = new Uint8Array(binaryString.length)
-        for (let i = 0; i < binaryString.length; i++) {
-          fileBytes[i] = binaryString.charCodeAt(i)
+      try {
+        if (selectedAtt.contentBytes) {
+          const binaryString = atob(selectedAtt.contentBytes)
+          fileBytes = new Uint8Array(binaryString.length)
+          for (let i = 0; i < binaryString.length; i++) {
+            fileBytes[i] = binaryString.charCodeAt(i)
+          }
+        } else if (selectedAtt.id) {
+          // Download direto do stream do anexo grande
+          const attRawRes = await fetch(
+            `https://graph.microsoft.com/v1.0/users/${mailboxEmail}/messages/${msg.id}/attachments/${selectedAtt.id}/$value`,
+            { headers: { Authorization: `Bearer ${accessToken}` } },
+          )
+          if (attRawRes.ok) {
+            const buf = await attRawRes.arrayBuffer()
+            fileBytes = new Uint8Array(buf)
+          }
         }
 
-        // Limite de 10MB
-        if (fileBytes.byteLength > 10 * 1024 * 1024) {
-          throw new Error('Tamanho do arquivo excede o limite de 10MB.')
+        if (!fileBytes || fileBytes.length === 0) {
+          throw new Error('Não foi possível obter os bytes do anexo.')
+        }
+
+        // MUDANÇA 1: Aumentar limite para aceitar arquivos maiores que 10MB (ex.: até 50MB)
+        if (fileBytes.byteLength > 50 * 1024 * 1024) {
+          throw new Error('Tamanho do arquivo excede o limite suportado de 50MB.')
         }
 
         // Extrair dados do candidato via OpenAI
-        console.log(`Outlook Sync: Extraindo dados de ${fileName} via OpenAI...`)
+        console.log(
+          `Outlook Sync: Extraindo dados de ${fileName} (${(fileBytes.byteLength / 1024 / 1024).toFixed(2)} MB)...`,
+        )
         const extractionResult = await extractCandidateData(openai, fileBytes, fileName)
 
         if (!extractionResult) {
@@ -437,38 +581,35 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
 
         const { extractedData, rawText } = extractionResult
 
-        const candidateName = extractedData.nome ? String(extractedData.nome).trim() : null
-        const candidateEmail = extractedData.email ? String(extractedData.email).trim() : null
+        // MUDANÇA 2: Validações rigorosas de nome e email
+        const cleanCandidateName = sanitizeAndValidateName(extractedData.nome)
+        const cleanCandidateEmail = sanitizeAndValidateEmail(extractedData.email)
 
-        const sanitizeValue = (val: string | null) => {
-          if (!val) return null
-          const trimmed = val.trim()
-          const lower = trimmed.toLowerCase()
-          if (
-            lower === 'string ou null' ||
-            lower === 'null' ||
-            lower === 'undefined' ||
-            lower === 'string' ||
-            lower === 'none'
-          ) {
-            return null
-          }
-          return trimmed
-        }
-
-        const cleanCandidateName = sanitizeValue(candidateName)
-        const cleanCandidateEmail = sanitizeValue(candidateEmail)
-
-        if (!cleanCandidateName && !cleanCandidateEmail) {
-          console.log(`Outlook Sync: Nome/Email não identificado no currículo ${fileName}.`)
+        // Se o nome for nulo ou inválido, NÃO inserir candidato com nome inventado
+        if (!cleanCandidateName) {
+          console.log(
+            `Outlook Sync: Nome inválido ou ausente no currículo ${fileName}. Candidato ignorado para evitar placeholders.`,
+          )
           cvsSkippedNoMatch++
+          const invalidPayload = {
+            ...importBase,
+            status: 'nome_invalido',
+            erro_detalhes: 'Nome não identificado com segurança no documento.',
+            anexo_filename: fileName,
+            processado_em: new Date().toISOString(),
+          }
+          if (existing?.id) {
+            await supabase.from('email_importacoes').update(invalidPayload).eq('id', existing.id)
+          } else {
+            await supabase.from('email_importacoes').insert(invalidPayload)
+          }
           continue
         }
 
-        const finalNome = cleanCandidateName || 'Candidato Desconhecido'
-        const finalEmail = cleanCandidateEmail || null
+        const finalNome = cleanCandidateName
+        const finalEmail = cleanCandidateEmail
 
-        // Normalização de telefone
+        // Normalização e validação de telefone
         let telefonesArr: string[] = []
         if (Array.isArray(extractedData.telefones_celulares)) {
           telefonesArr = extractedData.telefones_celulares
@@ -477,20 +618,20 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
         }
 
         const rawTelefone = telefonesArr.length > 0 ? telefonesArr.join(',') : null
-        let normalizedTelefone = null
+        let normalizedTelefone: string | null = null
         if (rawTelefone) {
           const parts = rawTelefone
             .split(',')
             .map((t: string) => t.trim())
             .filter(Boolean)
-          const normalizedParts = parts
+          const validParts = parts
             .map((t: string) => {
               const n = normalizePhone(t)
-              return n && n.length >= 10 && n.length <= 11 ? n : null
+              return n && isValidBrazilianPhone(n) ? n : null
             })
-            .filter(Boolean)
-          const uniqueParts = Array.from(new Set(normalizedParts))
-          normalizedTelefone = uniqueParts.length > 0 ? uniqueParts.join(',') : rawTelefone
+            .filter((n): n is string => Boolean(n))
+          const uniqueParts = Array.from(new Set(validParts))
+          normalizedTelefone = uniqueParts.length > 0 ? uniqueParts.join(',') : null
         }
 
         // Checagem de duplicação do candidato
@@ -705,8 +846,6 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
     errors.push({ general: true, error: err.message })
   } finally {
     // Atualiza registro de sync_runs
-    // O status 'error' só deve ser setado quando uma exceção não tratada / erro fatal interrompe o fluxo principal (errors.some(e => e.general))
-    // Quando o loop termina normalmente (mesmo com 0 importados), deve ser 'success' (ou 'partial' se houve erros individuais nos anexos com alguns importados)
     const hasGeneralError = errors.some((e: any) => e.general)
     let finalRunStatus = 'success'
     if (hasGeneralError) {
@@ -714,8 +853,6 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
     } else if (errors.length > 0 && cvsImported > 0) {
       finalRunStatus = 'partial'
     } else if (errors.length > 0 && cvsImported === 0) {
-      // Se não houve erro geral de conexão/token, mas houve falhas em emails individuais e 0 importados
-      // Se todos os emails foram escaneados sem erro fatal, 'partial' ou 'success'
       finalRunStatus = 'partial'
     } else {
       finalRunStatus = 'success'
@@ -808,7 +945,6 @@ Deno.serve(async (req: Request) => {
     if (isEdgeRuntime && typeof (globalThis as any).EdgeRuntime.waitUntil === 'function') {
       ;(globalThis as any).EdgeRuntime.waitUntil(performSync(supabase, syncRunId, userId))
     } else {
-      // Fallback para ambientes sem EdgeRuntime ou chamadas síncronas
       performSync(supabase, syncRunId, userId).catch((e) =>
         console.error('Background sync failed:', e),
       )

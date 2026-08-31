@@ -2,7 +2,12 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import OpenAI from 'npm:openai@4'
 import { corsHeaders } from '../_shared/cors.ts'
-import { normalizePhone } from '../_shared/phone.ts'
+import {
+  normalizePhone,
+  isValidBrazilianPhone,
+  sanitizeAndValidateName,
+  sanitizeAndValidateEmail,
+} from '../_shared/validation.ts'
 
 // Extrai texto bruto contido em streams/objetos do PDF via regex com suporte a UTF-8
 function extractAsciiTextFromPdfBytes(bytes: Uint8Array): string {
@@ -44,12 +49,10 @@ function extractAsciiTextFromPdfBytes(bytes: Uint8Array): string {
             hexBytes[k / 2] = parseInt(cleanHex.substring(k, k + 2), 16)
           }
           const decodedHexStr = new TextDecoder('utf-8', { fatal: false }).decode(hexBytes)
-          // Se contiver caracteres legíveis
           if (decodedHexStr.trim().length > 0) {
             textChunks.push(decodedHexStr)
           }
         } catch {
-          // Fallback charCode
           let str = ''
           for (let k = 0; k < cleanHex.length; k += 2) {
             const code = parseInt(cleanHex.substring(k, k + 2), 16)
@@ -104,7 +107,7 @@ Deno.serve(async (req: Request) => {
 
     const openai = new OpenAI({ apiKey: openaiKey })
 
-    // 1. Obter Usuário Responsável (ti@viasudeste.com ou fallback primeiro usuário)
+    // 1. Obter Usuário Responsável
     const { data: tiUser } = await supabaseAdmin
       .from('usuarios')
       .select('id')
@@ -173,7 +176,10 @@ Deno.serve(async (req: Request) => {
             // Diretório
             const subFiles = await listAllPdfsRecursively(itemPath)
             pdfPaths.push(...subFiles)
-          } else if (item.name.toLowerCase().endsWith('.pdf')) {
+          } else if (
+            item.name.toLowerCase().endsWith('.pdf') ||
+            item.name.toLowerCase().endsWith('.docx')
+          ) {
             pdfPaths.push(itemPath)
           }
         }
@@ -187,7 +193,7 @@ Deno.serve(async (req: Request) => {
 
     console.log('Varrendo arquivos no bucket "curriculos"...')
     const allPdfPaths = await listAllPdfsRecursively('')
-    console.log(`Total de arquivos PDF encontrados no Storage: ${allPdfPaths.length}`)
+    console.log(`Total de arquivos encontrados no Storage: ${allPdfPaths.length}`)
 
     // 4. Buscar curriculo_url de candidatos já existentes para checagem rápida
     const { data: existingCandidatesData } = await supabaseAdmin
@@ -234,7 +240,6 @@ Deno.serve(async (req: Request) => {
       tempo_total_segundos: 0,
     }
 
-    // Helper com retry para OpenAI
     const isRetryableError = (error: any) => {
       const status = error?.status || error?.statusCode || error?.response?.status
       if (status === 429) return true
@@ -271,39 +276,36 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Função de extração de dados do PDF via OpenAI (apenas texto puro, sem image_url)
     const extractCandidateDataFromPdf = async (
       pdfBytes: Uint8Array,
       filePath: string,
     ): Promise<{ extractedData: ExtractedCandidateData; rawText: string } | null> => {
-      // 1. Tentar extrair texto básico via regex nos streams do PDF
       const basicText = extractAsciiTextFromPdfBytes(pdfBytes)
 
       if (!basicText || basicText.trim().length < 50) {
         console.warn(
-          `[extractCandidateDataFromPdf] PDF ${filePath} não contém texto legível suficiente (< 50 caracteres).`,
+          `[extractCandidateDataFromPdf] Arquivo ${filePath} não contém texto legível suficiente (< 50 caracteres).`,
         )
         return null
       }
 
       const systemPrompt =
-        'Você é um especialista em RH e análise de currículos. Extraia com precisão os dados cadastrais e profissionais do documento enviado em português brasileiro. Preserve rigorosamente todos os acentos e caracteres especiais da língua portuguesa (ç, ã, õ, â, ê, ô, á, é, í, ó, ú, etc.). Responda ESTRITAMENTE em JSON válido.'
+        'Você é um especialista em RH e análise de currículos. Extraia com precisão os dados cadastrais e profissionais do documento enviado em português brasileiro. Preserve rigorosamente todos os acentos e caracteres especiais da língua portuguesa (ç, ã, õ, etc.). NUNCA invente dados nem use nomes genéricos ("Candidato Desconhecido", "João da Silva"). Se não conseguir identificar o nome real com certeza, retorne null. Não duplique nomes (evite "Lucas Lucas"). Responda ESTRITAMENTE em JSON válido.'
 
-      const promptText = `Analise o currículo (arquivo: ${filePath}) e extraia todos os dados estruturados.
-Extraia com cuidado preservando a grafia correta com acentos em português:
-- nome: Nome completo extraído do currículo, ou null se não identificado
-- email: Endereço de e-mail válido, ou null se não identificado
-- telefones_celulares: Lista de telefones celulares brasileiros com DDD (ex: ["11999999999"]) ou [] se nenhum
-- telefone: Telefone celular principal ou null se não identificado
+      const promptText = `Analise o currículo (arquivo: ${filePath}) e extraia todos os dados estruturados:
+- nome: Nome completo REAL extraído do currículo, ou null se não identificado
+- email: Endereço de e-mail REAL válido, ou null se não identificado
+- telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11987654321"]) ou [] se nenhum
+- telefone: Telefone celular principal ou null
 - endereco: Cidade, estado ou endereço completo, ou null se não identificado
 - resumo_cv: Resumo das qualificações e perfil profissional, ou null se não identificado
-- experiencia_profissional: Lista de experiências anteriores com cargos e empresas, ou [] se não houver
-- skills: Lista de habilidades técnicas e competências, ou [] se não houver
-- formacao_academica: Lista de formações acadêmicas e cursos, ou [] se não houver
+- experiencia_profissional: Lista de experiências anteriores, ou []
+- skills: Lista de habilidades e competências, ou []
+- formacao_academica: Lista de cursos e escolaridade, ou []
 
 IMPORTANTE:
-1. Preserve todos os acentos e caracteres especiais portugueses (ex: João, Gonçalves, São Paulo, Concluído, Análise).
-2. NUNCA retorne o texto literal "string ou null", "string", ou "null" como string de texto. Use o valor JSON null real quando o dado não existir.
+1. NUNCA invente dados fictícios.
+2. NUNCA use a string "string ou null" ou "string". Use null real.
 
 Formato JSON estrito esperado:
 {
@@ -348,11 +350,9 @@ Formato JSON estrito esperado:
       }
     }
 
-    // Processamento individual de um PDF com todas as etapas solicitadas
     const processCandidatePdf = async (filePath: string) => {
       const publicUrl = `${supabaseUrl}/storage/v1/object/public/curriculos/${filePath}`
 
-      // 2. Pular arquivos que já têm candidato correspondente
       if (isPdfAlreadyRegistered(filePath, publicUrl)) {
         console.log(`[PULADO] Arquivo já indexado: ${filePath}`)
         results.pulados++
@@ -364,8 +364,6 @@ Formato JSON estrito esperado:
         return
       }
 
-      // 3. Para cada PDF NOVO:
-      // a. Baixar o PDF do Storage
       console.log(`[PROCESSANDO] Baixando do Storage: ${filePath}...`)
       const { data: fileBlob, error: downloadError } = await supabaseAdmin.storage
         .from('curriculos')
@@ -384,7 +382,6 @@ Formato JSON estrito esperado:
         throw new Error('Arquivo vazio (0 bytes).')
       }
 
-      // b & c. Chamar OpenAI com texto extraído para obter nome, email, telefone, etc.
       console.log(`[EXTRAÇÃO IA] Extraindo dados do currículo: ${filePath}...`)
       const extractionResult = await extractCandidateDataFromPdf(pdfBytes, filePath)
       if (!extractionResult) {
@@ -392,15 +389,15 @@ Formato JSON estrito esperado:
       }
       const { extractedData, rawText } = extractionResult
 
-      // Validação obrigatória: nome e/ou email
-      const candidateName = extractedData.nome ? String(extractedData.nome).trim() : null
-      const candidateEmail = extractedData.email ? String(extractedData.email).trim() : null
+      const cleanCandidateName = sanitizeAndValidateName(extractedData.nome)
+      const cleanCandidateEmail = sanitizeAndValidateEmail(extractedData.email)
 
-      if (!candidateName && !candidateEmail) {
-        throw new Error('Não foi possível extrair nome e email válidos do PDF. Candidato ignorado.')
+      if (!cleanCandidateName) {
+        throw new Error(
+          'Não foi possível extrair um nome de candidato real e válido do PDF. Candidato ignorado.',
+        )
       }
 
-      // Normalizar telefones
       let telefonesArr: string[] = []
       if (Array.isArray(extractedData.telefones_celulares)) {
         telefonesArr = extractedData.telefones_celulares
@@ -415,47 +412,20 @@ Formato JSON estrito esperado:
           .split(',')
           .map((t: string) => t.trim())
           .filter(Boolean)
-        const normalizedParts = parts
+        const validParts = parts
           .map((t: string) => {
             const n = normalizePhone(t)
-            return n && n.length >= 10 && n.length <= 11 ? n : null
+            return n && isValidBrazilianPhone(n) ? n : null
           })
-          .filter(Boolean)
-        const uniqueParts = Array.from(new Set(normalizedParts))
-        normalizedTelefone = uniqueParts.length > 0 ? uniqueParts.join(',') : rawTelefone
+          .filter((n): n is string => Boolean(n))
+        const uniqueParts = Array.from(new Set(validParts))
+        normalizedTelefone = uniqueParts.length > 0 ? uniqueParts.join(',') : null
       }
 
-      const sanitizeValue = (val: string | null) => {
-        if (!val) return null
-        const trimmed = val.trim()
-        const lower = trimmed.toLowerCase()
-        if (
-          lower === 'string ou null' ||
-          lower === 'null' ||
-          lower === 'undefined' ||
-          lower === 'string' ||
-          lower === 'none'
-        ) {
-          return null
-        }
-        return trimmed
-      }
+      const finalNome = cleanCandidateName
+      const finalEmail = cleanCandidateEmail
+      const finalTelefone = normalizedTelefone
 
-      const cleanCandidateName = sanitizeValue(candidateName)
-      const cleanCandidateEmail = sanitizeValue(candidateEmail)
-      const cleanTelefone = sanitizeValue(normalizedTelefone)
-
-      if (!cleanCandidateName && !cleanCandidateEmail) {
-        throw new Error('Não foi possível extrair nome e email válidos do PDF. Candidato ignorado.')
-      }
-
-      const finalNome = cleanCandidateName || 'Candidato Desconhecido'
-      const finalEmail = cleanCandidateEmail || null
-      const finalTelefone = cleanTelefone
-
-      // Checagem de duplicação no banco de dados antes de processar/inserir
-      // 1. Por email (se não for nulo)
-      // 2. Por nome + telefone (se ambos não forem nulos)
       let isDuplicate = false
       let duplicateReason = ''
 
@@ -474,7 +444,6 @@ Formato JSON estrito esperado:
       }
 
       if (!isDuplicate && cleanCandidateName && finalTelefone) {
-        // Verificar por nome e telefone
         const tels = finalTelefone
           .split(',')
           .map((t: string) => t.trim())
@@ -512,7 +481,6 @@ Formato JSON estrito esperado:
         return
       }
 
-      // d. Chamar `identify-vaga-from-cv` passando o texto / dados extraídos para identificar a vaga
       console.log(`[IDENTIFY-VAGA] Identificando vaga compatível para ${finalNome}...`)
       let identifiedVagaId: string | null = null
 
@@ -525,18 +493,13 @@ Formato JSON estrito esperado:
           },
         })
 
-        if (identifyRes.error) {
-          console.warn(`Aviso em identify-vaga-from-cv para ${filePath}:`, identifyRes.error)
-        } else if (identifyRes.data?.vaga_id) {
+        if (identifyRes.data?.vaga_id) {
           identifiedVagaId = identifyRes.data.vaga_id
-          console.log(`[VAGA ENCONTRADA] Vaga ${identifiedVagaId} vinculada a ${finalNome}`)
         }
       } catch (idErr: any) {
         console.warn(`Erro ao chamar identify-vaga-from-cv para ${filePath}:`, idErr?.message)
       }
 
-      // e. SÓ ENTÃO inserir o candidato na tabela `candidatos` com todos os dados preenchidos:
-      // nome, email, telefone, vaga_id, curriculo_url, etapa_id = Triagem, status = "Triagem", fonte = "recuperacao_storage"
       console.log(`[INSERT CANDIDATO] Inserindo candidato ${finalNome} no banco de dados...`)
       const candidatePayload = {
         nome: finalNome,
@@ -565,23 +528,14 @@ Formato JSON estrito esperado:
 
       const candidateId = insertedCandidate.id
 
-      // Inserir em candidato_etapa com etapa Triagem
       if (triagemEtapaId) {
-        const { error: etapaRelError } = await supabaseAdmin.from('candidato_etapa').insert({
+        await supabaseAdmin.from('candidato_etapa').insert({
           candidato_id: candidateId,
           etapa_id: triagemEtapaId,
           usuario_id: effectiveUserId,
         })
-
-        if (etapaRelError) {
-          console.warn(
-            `Aviso ao inserir histórico de etapa para ${candidateId}:`,
-            etapaRelError.message,
-          )
-        }
       }
 
-      // Adiciona à lista de URLs existentes em memória para evitar duplicações no mesmo lote
       existingUrls.add(publicUrl)
 
       results.inseridos++
@@ -598,7 +552,6 @@ Formato JSON estrito esperado:
       console.log(`[SUCESSO] Candidato "${finalNome}" recuperado com sucesso (${filePath})!`)
     }
 
-    // 4. Processar em lotes de 5 com Promise.allSettled
     const BATCH_SIZE = 5
     for (let i = 0; i < allPdfPaths.length; i += BATCH_SIZE) {
       const batch = allPdfPaths.slice(i, i + BATCH_SIZE)
@@ -633,14 +586,6 @@ Formato JSON estrito esperado:
     }
 
     results.tempo_total_segundos = Math.round(((Date.now() - startTime) / 1000) * 10) / 10
-
-    console.log('Recuperação finalizada com sucesso:', {
-      total: results.total_candidatos,
-      inseridos: results.inseridos,
-      pulados: results.pulados,
-      falhas: results.falhas,
-      tempo: results.tempo_total_segundos,
-    })
 
     return new Response(
       JSON.stringify({

@@ -1,5 +1,5 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
-import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { createClient } from 'npm:@supabase/supabase-js@2'
 import OpenAI from 'npm:openai@4'
 import { corsHeaders } from '../_shared/cors.ts'
 
@@ -38,7 +38,7 @@ Deno.serve(async (req: Request) => {
     if (!cvDataToAnalyze && candidato_id) {
       const { data: candidato, error: candidatoError } = await supabase
         .from('candidatos')
-        .select('dados_extraidos')
+        .select('dados_extraidos, curriculo_url')
         .eq('id', candidato_id)
         .single()
 
@@ -48,21 +48,11 @@ Deno.serve(async (req: Request) => {
       cvDataToAnalyze = candidato.dados_extraidos
     }
 
-    // Busca todas as vagas disponíveis no sistema (sem restrição por user_id)
-    const vagasQuery = supabase
+    // Busca todas as vagas disponíveis no sistema
+    const { data: vagas, error: vagasError } = await supabase
       .from('vagas')
       .select('id, titulo, descricao, criterios_qualificacao')
       .order('criado_em', { ascending: false })
-
-    let { data: vagas, error: vagasError } = await vagasQuery
-
-    // Se por algum motivo não houver vagas ou houver filtro opcional, fallback seguro
-    if (!vagas || vagas.length === 0) {
-      const { data: allVagas } = await supabase
-        .from('vagas')
-        .select('id, titulo, descricao, criterios_qualificacao')
-      vagas = allVagas || []
-    }
 
     if (vagasError) {
       throw new Error('Erro ao buscar as vagas do sistema.')
@@ -114,7 +104,7 @@ Deno.serve(async (req: Request) => {
             {
               role: 'system',
               content:
-                'Você é um especialista em Recrutamento e Seleção focado em análise técnica de currículos e Job Matching.',
+                'Você é um especialista em Recrutamento e Seleção de RH focado em análise técnica de currículos e Job Matching. Selecione a vaga solicitada ou a vaga mais compatível cadastrada.',
             },
             { role: 'user', content: promptText },
           ],
@@ -141,24 +131,25 @@ Deno.serve(async (req: Request) => {
       E temos as seguintes vagas abertas (com seus IDs):
       ${JSON.stringify(vagas)}
 
-      Sua tarefa é analisar o currículo de forma aprofundada e identificar se o candidato tem aderência a alguma dessas vagas.
+      Sua tarefa é analisar o currículo e identificar a vaga pretendida/solicitada OU em qual dessas vagas o candidato melhor se encaixa com base em suas habilidades e experiências.
       
       Regras:
-      1. Se uma vaga for altamente ou razoavelmente compatível, preencha o "vaga_id" e defina a confiança.
-      2. Se nenhuma vaga for compatível com as experiências e qualificações, retorne vaga_id como null e confianca como "nenhuma" ou "baixa".
+      1. Se houver menção explícita à vaga ou boa compatibilidade com uma das vagas listadas, preencha o "vaga_id" correspondente e defina a confiança ("alta" ou "media").
+      2. Se o candidato tiver perfil para uma das funções, indique a vaga mais provável.
+      3. Se nenhuma vaga fizer o menor sentido para o perfil, retorne vaga_id como null e confianca como "nenhuma".
       
       Retorne ESTRITAMENTE um JSON com a seguinte estrutura:
       {
-        "vaga_id": "UUID da vaga mais compatível ou null se nenhuma for adequada",
+        "vaga_id": "UUID da vaga mais compatível ou null",
         "confianca": "alta", "media", "baixa" ou "nenhuma",
-        "justificativa": "Explicação detalhada do porquê escolheu essa vaga ou porquê reprovou em todas."
+        "justificativa": "Explicação concisa do porquê escolheu essa vaga."
       }
     `
 
     const result = await callOpenAIWithRetry(prompt)
 
-    // Normalizing low confidences
-    if (result.confianca === 'baixa' || result.confianca === 'nenhuma') {
+    // Se confiança for nenhuma, zera vaga_id
+    if (result.confianca === 'nenhuma') {
       result.vaga_id = null
     }
 

@@ -1,5 +1,5 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
-import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { createClient } from 'npm:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 
 Deno.serve(async (req: Request) => {
@@ -22,7 +22,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: candidato, error } = await supabase
       .from('candidatos')
-      .select('id, vaga_id, user_id')
+      .select('id, vaga_id, user_id, dados_extraidos, curriculo_url')
       .eq('id', candidate_id)
       .single()
 
@@ -50,7 +50,11 @@ Deno.serve(async (req: Request) => {
       const identifyRes = await fetch(`${supabaseUrl}/functions/v1/identify-vaga-from-cv`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${supabaseKey}` },
-        body: JSON.stringify({ candidato_id: candidato.id, user_id: effectiveUserId }),
+        body: JSON.stringify({
+          candidato_id: candidato.id,
+          user_id: effectiveUserId,
+          dados_extraidos: candidato.dados_extraidos,
+        }),
       })
 
       const identifyData = await identifyRes.json()
@@ -77,12 +81,24 @@ Deno.serve(async (req: Request) => {
 
         vagaId = identifyData.vaga_id
       } else {
-        return new Response(
-          JSON.stringify({
-            error: 'Nenhuma vaga compatível encontrada para o candidato.',
-          }),
-          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-        )
+        // Se nenhuma vaga for compatível, busca a primeira vaga aberta como fallback para pontuar ou criar analise
+        const { data: fallbackVaga } = await supabase
+          .from('vagas')
+          .select('id')
+          .order('criado_em', { ascending: true })
+          .limit(1)
+          .maybeSingle()
+
+        if (fallbackVaga?.id) {
+          vagaId = fallbackVaga.id
+        } else {
+          return new Response(
+            JSON.stringify({
+              error: 'Nenhuma vaga cadastrada no sistema para realizar a análise.',
+            }),
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          )
+        }
       }
     }
 

@@ -1,14 +1,93 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
-import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { createClient } from 'npm:@supabase/supabase-js@2'
 import OpenAI from 'npm:openai@4'
-import { Buffer } from 'node:buffer'
-import pdf from 'npm:pdf-parse@1.1.1'
+import { corsHeaders } from '../_shared/cors.ts'
+import {
+  normalizePhone,
+  isValidBrazilianPhone,
+  sanitizeAndValidateName,
+  sanitizeAndValidateEmail,
+} from '../_shared/validation.ts'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, x-supabase-client-platform, apikey, content-type',
+// Extrai texto bruto contido em streams/objetos do PDF via regex com suporte a UTF-8
+function extractAsciiTextFromPdfBytes(bytes: Uint8Array): string {
+  let raw = ''
+  try {
+    const textDecoderUtf8 = new TextDecoder('utf-8', { fatal: false })
+    raw = textDecoderUtf8.decode(bytes)
+  } catch {
+    const textDecoderLatin1 = new TextDecoder('latin1')
+    raw = textDecoderLatin1.decode(bytes)
+  }
+
+  const textChunks: string[] = []
+
+  const btMatches = raw.matchAll(/BT[\s\S]*?ET/g)
+  for (const match of btMatches) {
+    const block = match[0]
+    const literalMatches = block.matchAll(/\((.*?)\)/g)
+    for (const lit of literalMatches) {
+      const decoded = lit[1]
+        .replace(/\\n/g, '\n')
+        .replace(/\\r/g, '\r')
+        .replace(/\\t/g, '\t')
+        .replace(/\\([()\\])/g, '$1')
+      if (decoded.trim().length > 0) {
+        textChunks.push(decoded)
+      }
+    }
+    const hexMatches = block.matchAll(/<([0-9a-fA-F\s]+)>/g)
+    for (const hex of hexMatches) {
+      const cleanHex = hex[1].replace(/\s+/g, '')
+      if (cleanHex.length % 2 === 0 && cleanHex.length >= 2) {
+        try {
+          const hexBytes = new Uint8Array(cleanHex.length / 2)
+          for (let k = 0; k < cleanHex.length; k += 2) {
+            hexBytes[k / 2] = parseInt(cleanHex.substring(k, k + 2), 16)
+          }
+          const decodedHexStr = new TextDecoder('utf-8', { fatal: false }).decode(hexBytes)
+          if (decodedHexStr.trim().length > 0) {
+            textChunks.push(decodedHexStr)
+          }
+        } catch {
+          let str = ''
+          for (let k = 0; k < cleanHex.length; k += 2) {
+            const code = parseInt(cleanHex.substring(k, k + 2), 16)
+            if (code >= 32) {
+              str += String.fromCharCode(code)
+            }
+          }
+          if (str.trim().length > 0) {
+            textChunks.push(str)
+          }
+        }
+      }
+    }
+  }
+
+  return textChunks.join(' ').replace(/\s+/g, ' ').trim()
+}
+
+// Extrai texto legível de arquivo DOCX sem bibliotecas externas
+function extractRawTextFromDocxBytes(bytes: Uint8Array): string {
+  try {
+    const decoder = new TextDecoder('utf-8', { fatal: false })
+    const content = decoder.decode(bytes)
+    const textMatches = content.matchAll(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/gi)
+    const chunks: string[] = []
+    for (const match of textMatches) {
+      if (match[1] && match[1].trim()) {
+        chunks.push(match[1])
+      }
+    }
+    if (chunks.length > 0) {
+      return chunks.join(' ').replace(/\s+/g, ' ').trim()
+    }
+    const stripped = content.replace(/<[^>]+>/g, ' ').replace(/[^\x20-\x7E\xC0-\xFF\n\r\t]/g, ' ')
+    return stripped.replace(/\s+/g, ' ').trim()
+  } catch {
+    return ''
+  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -22,9 +101,7 @@ Deno.serve(async (req: Request) => {
     let body
     try {
       body = JSON.parse(bodyText)
-      console.log('Payload recebido e processado com sucesso.')
     } catch (e) {
-      console.error('Erro ao fazer parse do payload:', e)
       return new Response(JSON.stringify({ error: 'Payload inválido. Formato JSON esperado.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -33,134 +110,76 @@ Deno.serve(async (req: Request) => {
 
     const { filePath, nome, email, telefone, vaga_id, user_id } = body
 
-    console.log('Validando dados de entrada...')
     if (!filePath) {
-      console.error('Erro: filePath não fornecido na requisição.')
       return new Response(
-        JSON.stringify({ error: 'O caminho do arquivo PDF (filePath) é obrigatório.' }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
+        JSON.stringify({ error: 'O caminho do arquivo (filePath) é obrigatório.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
     }
 
     if (!user_id) {
-      console.error('Erro: user_id ausente.')
-      return new Response(
-        JSON.stringify({
-          error: 'Dados incompletos. Identificador do usuário é obrigatório.',
-        }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
-      )
+      return new Response(JSON.stringify({ error: 'Identificador do usuário é obrigatório.' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
-    console.log(`Validando vaga_id recebido: ${vaga_id}`)
     if (vaga_id) {
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
       if (!uuidRegex.test(vaga_id)) {
-        console.error(`Erro: vaga_id inválido (${vaga_id}). Não é um UUID válido.`)
         return new Response(
           JSON.stringify({ error: 'Vaga inválida. Selecione uma vaga válida.' }),
-          {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          },
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         )
       }
     }
 
-    console.log('Verificando chaves e credenciais nos Secrets...')
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
-
     const openaiKey = Deno.env.get('OPENAI_KEY') || Deno.env.get('OPENIA_KEY')
+
     if (!openaiKey) {
-      console.error('Erro fatal: Chave da API da OpenAI não configurada nos Secrets do Supabase.')
       return new Response(
-        JSON.stringify({
-          error: 'Configuração do servidor incompleta. A chave da OpenAI não foi encontrada.',
-        }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
+        JSON.stringify({ error: 'Configuração incompleta: chave da OpenAI não configurada.' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey)
 
-    console.log(`Baixando arquivo PDF do Storage: ${filePath}`)
-    // 1. Download PDF from Storage
+    // 1. Download do arquivo do Storage
     const { data: fileData, error: downloadError } = await supabase.storage
       .from('curriculos')
       .download(filePath)
 
     if (downloadError || !fileData) {
-      console.error('Erro ao baixar arquivo do Storage:', downloadError)
       return new Response(
         JSON.stringify({
-          error:
-            'Erro ao acessar o arquivo enviado no banco de dados. Verifique se o arquivo existe e foi salvo corretamente.',
+          error: 'Erro ao acessar o arquivo enviado no Storage.',
           detalhes: downloadError,
         }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
     }
 
-    console.log(`Arquivo PDF baixado com sucesso. Tamanho: ${fileData.size} bytes`)
-
-    // 2. Parse Document (PDF or DOCX)
-    console.log('Iniciando extração de texto do arquivo...')
+    // 2. Extração de texto usando APIs nativas do Deno
     const arrayBuffer = await fileData.arrayBuffer()
-    const fileBuffer = Buffer.from(arrayBuffer)
+    const fileBytes = new Uint8Array(arrayBuffer)
     let extractedText = ''
-    try {
-      if (filePath.toLowerCase().endsWith('.docx')) {
-        const mammoth = await import('npm:mammoth')
-        const data = await mammoth.extractRawText({ buffer: fileBuffer })
-        extractedText = data.value
-        console.log(
-          `Texto extraído com sucesso do DOCX. Total de caracteres: ${extractedText.length}`,
-        )
-      } else {
-        const data = await pdf(fileBuffer)
-        extractedText = data.text
-        console.log(
-          `Texto extraído com sucesso do PDF. Total de caracteres: ${extractedText.length}`,
-        )
-      }
-    } catch (err: any) {
-      console.error('Erro na extração de texto do arquivo:', err)
+
+    if (filePath.toLowerCase().endsWith('.docx')) {
+      extractedText = extractRawTextFromDocxBytes(fileBytes)
+    } else {
+      extractedText = extractAsciiTextFromPdfBytes(fileBytes)
+    }
+
+    if (!extractedText || extractedText.trim().length < 50) {
       return new Response(
         JSON.stringify({
           error:
-            'Erro ao extrair texto do arquivo. O arquivo pode estar corrompido ou protegido por senha.',
-          detalhes: err.message,
+            'O arquivo não contém texto legível suficiente (< 50 caracteres ou documento escaneado/imagem).',
         }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
-      )
-    }
-
-    if (!extractedText || !extractedText.trim()) {
-      console.error('Aviso: O arquivo extraído não contém texto (pode ser uma imagem).')
-      return new Response(
-        JSON.stringify({
-          error: 'O arquivo está vazio ou não contém texto legível (pode ser uma imagem sem OCR).',
-        }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
     }
 
@@ -172,15 +191,12 @@ Deno.serve(async (req: Request) => {
       if (status === 429) return true
       if (typeof status === 'number' && status >= 500 && status < 600) return true
       const msg = String(error?.message || '').toLowerCase()
-      if (
+      return (
         msg.includes('rate limit') ||
         msg.includes('429') ||
         msg.includes('timeout') ||
         msg.includes('fetch failed')
-      ) {
-        return true
-      }
-      return false
+      )
     }
 
     const callOpenAIWithRetry = async (
@@ -195,7 +211,7 @@ Deno.serve(async (req: Request) => {
             {
               role: 'system',
               content:
-                'Você é um assistente de RH focado em estruturar dados de currículos. Retorne sempre um JSON válido.',
+                'Você é um assistente sênior de RH focado em estruturar currículos com máxima precisão. Preserve rigorosamente todos os acentos e grafias do português brasileiro (ç, ã, õ, etc.). NUNCA invente dados ou nomes fictícios (ex: "Candidato Desconhecido", "João da Silva"). Se não conseguir identificar o nome real com certeza, retorne null. Não duplique nomes (evite "Lucas Lucas"). Responda sempre em JSON válido.',
             },
             { role: 'user', content: prompt },
           ],
@@ -205,7 +221,7 @@ Deno.serve(async (req: Request) => {
       } catch (error: any) {
         if (retries > 0 && isRetryableError(error)) {
           const delay = delays[3 - retries] ?? 8000
-          console.log(`OpenAI 503/429, retentando em ${delay}ms...`)
+          console.log(`OpenAI retry em ${delay}ms...`)
           await new Promise((resolve) => setTimeout(resolve, delay))
           return callOpenAIWithRetry(prompt, retries - 1, delays)
         }
@@ -213,441 +229,246 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const extractionPrompt = `Extraia os seguintes dados do currículo: nome, email, telefones celulares, experiencia profissional, skills, formacao academica, endereço (cidade e estado ou completo).
-Extraia APENAS números de telefone celular brasileiros (DDD + 9 dígitos, começando com 9). Ignore telefones fixos. Formato: 11999999999.
-Se algum dado não for encontrado, retorne null ou um array vazio.
-Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
+    const extractionPrompt = `Analise o texto do currículo e extraia:
+- nome: Nome completo REAL extraído do currículo, ou null se não identificado
+- email: Endereço de e-mail REAL válido, ou null se não identificado
+- telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11987654321"]) ou [] se nenhum
+- telefone: Telefone celular principal ou null
+- endereco: Cidade, estado ou endereço completo, ou null se não identificado
+- experiencia_profissional: Lista de experiências anteriores com cargos e empresas, ou []
+- skills: Lista de habilidades técnicas e competências, ou []
+- formacao_academica: Lista de cursos e formações, ou []
+
+IMPORTANTE:
+1. NUNCA invente dados. Não use "Candidato Desconhecido", "João da Silva", emails com @example.com/@email.com ou telefones fictícios.
+2. NUNCA retorne a string literal "string ou null" ou "string". Use null real.
+
+Formato JSON estrito esperado:
 {
-  "nome": "string ou null",
-  "email": "string ou null",
-  "telefones_celulares": ["string"],
-  "endereco": "string ou null",
-  "experiencia_profissional": ["string"],
-  "skills": ["string"],
-  "formacao_academica": ["string"]
+  "nome": null,
+  "email": null,
+  "telefones_celulares": [],
+  "telefone": null,
+  "endereco": null,
+  "experiencia_profissional": [],
+  "skills": [],
+  "formacao_academica": []
 }
 
 Texto extraído do currículo:
-${extractedText.substring(0, 15000)}`
+${extractedText.substring(0, 20000)}`
 
-    let extractedData
+    let extractedData: any
     try {
-      console.log('Enviando texto extraído para a Inteligência Artificial (OpenAI)...')
       extractedData = await callOpenAIWithRetry(extractionPrompt)
-      console.log('Estruturação de dados pela OpenAI concluída com sucesso.')
     } catch (err: any) {
-      console.error('Erro crítico e final na chamada da OpenAI:', err)
       return new Response(
         JSON.stringify({
-          error:
-            'Serviço de Inteligência Artificial indisponível no momento. Não foi possível analisar o currículo.',
+          error: 'Serviço de Inteligência Artificial indisponível no momento.',
           detalhes: err.message,
         }),
-        {
-          status: 503,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
+        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
     }
 
-    const finalEmail = extractedData.email || email || null
+    const cleanName = sanitizeAndValidateName(extractedData.nome || nome)
+    const cleanEmail = sanitizeAndValidateEmail(extractedData.email || email)
 
+    if (!cleanName) {
+      return new Response(
+        JSON.stringify({
+          error: 'Não foi possível extrair um nome de candidato válido do currículo.',
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
+    }
+
+    // Normalização de telefone
     let telefonesArr: string[] = []
     if (Array.isArray(extractedData.telefones_celulares)) {
       telefonesArr = extractedData.telefones_celulares
     } else if (extractedData.telefone) {
       telefonesArr = [extractedData.telefone]
+    } else if (telefone) {
+      telefonesArr = [telefone]
     }
 
-    const rawTelefone = telefonesArr.length > 0 ? telefonesArr.join(',') : telefone || null
+    const rawTelefone = telefonesArr.length > 0 ? telefonesArr.join(',') : null
     let finalTelefone = null
     if (rawTelefone) {
       const parts = rawTelefone
         .split(',')
         .map((t: string) => t.trim())
         .filter(Boolean)
-      const normalizedParts = parts
+      const validParts = parts
         .map((t: string) => {
-          let digits = t.replace(/\D/g, '')
-          if (digits.startsWith('55') && digits.length > 11) {
-            digits = digits.substring(2)
-          }
-          return digits && digits.length >= 10 && digits.length <= 11 ? digits : null
+          const n = normalizePhone(t)
+          return n && isValidBrazilianPhone(n) ? n : null
         })
-        .filter(Boolean)
-      const uniqueParts = Array.from(new Set(normalizedParts))
-      finalTelefone = uniqueParts.length > 0 ? uniqueParts.join(',') : rawTelefone
+        .filter((n): n is string => Boolean(n))
+      const uniqueParts = Array.from(new Set(validParts))
+      finalTelefone = uniqueParts.length > 0 ? uniqueParts.join(',') : null
     }
-    const finalNome = extractedData.nome || nome || 'Candidato Desconhecido'
 
-    // 4. Deduplication and Database operations
-    console.log('Iniciando comunicação com o banco de dados (Deduplicação e Inserção)...')
+    const finalNome = cleanName
+    const finalEmail = cleanEmail
 
-    try {
-      const orConditions = []
-      if (finalEmail) {
-        const safeEmail = finalEmail.replace(/"/g, '')
-        orConditions.push(`email.eq."${safeEmail}"`)
+    // Deduplicação
+    const orConditions = []
+    if (finalEmail) {
+      orConditions.push(`email.eq."${finalEmail.replace(/"/g, '')}"`)
+    }
+    if (finalTelefone) {
+      const tels = finalTelefone
+        .split(',')
+        .map((t: string) => t.trim())
+        .filter(Boolean)
+      for (const tel of tels) {
+        orConditions.push(`telefone.ilike."%${tel.replace(/"/g, '')}%"`)
       }
-      if (finalTelefone) {
-        const tels = finalTelefone
-          .split(',')
-          .map((t: string) => t.trim())
-          .filter(Boolean)
-        for (const tel of tels) {
-          const safeTel = tel.replace(/"/g, '')
-          orConditions.push(`telefone.ilike."%${safeTel}%"`)
-        }
+    }
+
+    const { data: publicUrlData } = supabase.storage.from('curriculos').getPublicUrl(filePath)
+    let finalVagaId = vaga_id
+
+    // Se não veio vaga_id, tenta identificar vaga compatível
+    if (!finalVagaId) {
+      try {
+        const identifyRes = await supabase.functions.invoke('identify-vaga-from-cv', {
+          body: {
+            user_id: user_id,
+            texto_cv: extractedText,
+            dados_extraidos: extractedData,
+          },
+        })
+        finalVagaId = identifyRes.data?.vaga_id || null
+      } catch (idErr: any) {
+        console.warn('Erro ao identificar vaga:', idErr?.message)
       }
+    }
 
-      const { data: publicUrlData } = supabase.storage.from('curriculos').getPublicUrl(filePath)
-      const finalVagaId = vaga_id
+    let candidatoId: string | null = null
 
-      let candidatoId
+    if (orConditions.length > 0) {
+      const { data: duplicates } = await supabase
+        .from('candidatos')
+        .select('id, vaga_id, etapa_id')
+        .eq('user_id', user_id)
+        .or(orConditions.join(','))
+        .limit(1)
 
-      if (orConditions.length > 0) {
-        console.log('Verificando candidatos duplicados no sistema...')
-        const { data: duplicates, error: dupError } = await supabase
+      if (duplicates && duplicates.length > 0) {
+        candidatoId = duplicates[0].id
+        await supabase
           .from('candidatos')
-          .select('id, vaga_id, etapa_id')
-          .eq('user_id', user_id)
-          .or(orConditions.join(','))
-
-        if (dupError) {
-          console.error('Erro ao buscar candidatos duplicados:', dupError)
-          throw dupError
-        }
-
-        if (duplicates && duplicates.length > 0) {
-          candidatoId = duplicates[0].id
-          console.log(
-            `Aviso: Foram encontrados candidatos duplicados. Atualizando registro ${candidatoId}...`,
-          )
-
-          const { error: updateError } = await supabase
-            .from('candidatos')
-            .update({
-              nome: finalNome,
-              email: finalEmail,
-              telefone: finalTelefone,
-              curriculo_url: publicUrlData.publicUrl,
-              dados_extraidos: extractedData,
-              vaga_id: finalVagaId || duplicates[0].vaga_id,
-            })
-            .eq('id', candidatoId)
-
-          if (updateError) {
-            console.error('Erro ao atualizar candidato duplicado:', updateError)
-            throw updateError
-          }
-        } else {
-          console.log('Nenhum candidato duplicado detectado.')
-        }
-      }
-
-      if (!candidatoId) {
-        // 5. Insert Candidate
-        console.log('Preparando para inserir o novo candidato na base de dados...')
-
-        console.log(`Inserindo candidato com vaga_id processado: ${finalVagaId}`)
-
-        const { data: newCandidate, error: insertCandidateError } = await supabase
-          .from('candidatos')
-          .insert({
+          .update({
             nome: finalNome,
             email: finalEmail,
             telefone: finalTelefone,
-            fonte: 'site',
             curriculo_url: publicUrlData.publicUrl,
             dados_extraidos: extractedData,
-            vaga_id: finalVagaId,
+            vaga_id: finalVagaId || duplicates[0].vaga_id,
+          })
+          .eq('id', candidatoId)
+      }
+    }
+
+    if (!candidatoId) {
+      const { data: newCandidate, error: insertCandidateError } = await supabase
+        .from('candidatos')
+        .insert({
+          nome: finalNome,
+          email: finalEmail,
+          telefone: finalTelefone,
+          fonte: 'site',
+          curriculo_url: publicUrlData.publicUrl,
+          dados_extraidos: extractedData,
+          vaga_id: finalVagaId,
+          user_id: user_id,
+        })
+        .select('id')
+        .single()
+
+      if (insertCandidateError || !newCandidate) {
+        throw new Error(`Erro ao cadastrar candidato: ${insertCandidateError?.message}`)
+      }
+      candidatoId = newCandidate.id
+    }
+
+    // Atribuir etapa Triagem se não tiver
+    const { data: currentCandidate } = await supabase
+      .from('candidatos')
+      .select('etapa_id')
+      .eq('id', candidatoId)
+      .single()
+
+    if (!currentCandidate?.etapa_id) {
+      let { data: etapa } = await supabase
+        .from('etapas')
+        .select('id')
+        .ilike('nome', 'Triagem')
+        .maybeSingle()
+
+      if (!etapa) {
+        const { data: newEtapa } = await supabase
+          .from('etapas')
+          .insert({
+            nome: 'Triagem',
+            ordem: 0,
+            cor: '#6b7280',
             user_id: user_id,
           })
           .select('id')
           .single()
-
-        if (insertCandidateError) {
-          console.error('Erro ao inserir candidato na tabela:', insertCandidateError)
-          throw insertCandidateError
-        }
-        candidatoId = newCandidate.id
-        console.log(`Sucesso: Candidato registrado no banco de dados. ID Gerado: ${candidatoId}`)
+        etapa = newEtapa
       }
 
-      // 6. Verificar Etapa Atual
-      console.log('Verificando se o candidato já possui uma etapa...')
-      const { data: currentCandidate } = await supabase
-        .from('candidatos')
-        .select('etapa_id')
-        .eq('id', candidatoId)
-        .single()
-
-      if (!currentCandidate?.etapa_id) {
-        console.log('Buscando etapa padrão "Triagem"...')
-        let { data: etapa, error: etapaError } = await supabase
-          .from('etapas')
-          .select('id')
-          .eq('user_id', user_id)
-          .ilike('nome', 'Triagem')
-          .maybeSingle()
-
-        if (etapaError) {
-          console.error('Erro ao consultar etapas do usuário:', etapaError)
-          throw etapaError
-        }
-
-        if (!etapa) {
-          console.log('A etapa "Triagem" não foi encontrada. Criando nova etapa...')
-          const { data: newEtapa, error: insertEtapaError } = await supabase
-            .from('etapas')
-            .insert({
-              nome: 'Triagem',
-              ordem: 0,
-              cor: '#6b7280',
-              user_id: user_id,
-            })
-            .select('id')
-            .single()
-
-          if (insertEtapaError) {
-            console.error('Erro ao criar a nova etapa:', insertEtapaError)
-            throw insertEtapaError
-          }
-          etapa = newEtapa
-          console.log('Nova etapa "Triagem" criada com sucesso.')
-        }
-
-        if (etapa) {
-          console.log(`Relacionando o candidato à etapa de ID: ${etapa.id}`)
-          const { error: relError } = await supabase.from('candidato_etapa').insert({
-            candidato_id: candidatoId,
-            etapa_id: etapa.id,
-            usuario_id: user_id,
-          })
-          if (relError) throw relError
-
-          const { error: updError } = await supabase
-            .from('candidatos')
-            .update({ etapa_id: etapa.id })
-            .eq('id', candidatoId)
-          if (updError) throw updError
-          console.log('Candidato inserido na etapa corretamente.')
-        }
-      } else {
-        console.log('Candidato já está em uma etapa. Mantendo a etapa atual.')
-      }
-
-      // 7. Analyze against job criteria
-      const analisesRealizadas = []
-      if (finalVagaId) {
-        console.log(
-          `Iniciando análise de aderência do candidato para a vaga vinculada (ID: ${finalVagaId})...`,
-        )
-        const { data: vaga, error: vagaError } = await supabase
-          .from('vagas')
-          .select('*')
-          .eq('id', finalVagaId)
-          .single()
-
-        if (vagaError) {
-          console.error('Erro ao buscar detalhes da vaga para análise:', vagaError)
-          throw vagaError
-        }
-
-        if (vaga) {
-          let criteriosText = 'Sem critérios definidos.'
-          let localizacoesVaga: string[] = []
-          let raioKm = 0
-
-          if (vaga.criterios_qualificacao && typeof vaga.criterios_qualificacao === 'object') {
-            const critObj = vaga.criterios_qualificacao as any
-            criteriosText = critObj.texto_livre || JSON.stringify(critObj)
-            if (Array.isArray(critObj.localizacoes) && critObj.localizacoes.length > 0) {
-              localizacoesVaga = critObj.localizacoes.map((l: any) =>
-                [l.endereco, l.cidade, l.estado].filter(Boolean).join(', '),
-              )
-            }
-            raioKm = critObj.raio_km || 0
-          } else if (typeof vaga.criterios_qualificacao === 'string') {
-            criteriosText = vaga.criterios_qualificacao
-          }
-
-          const enderecoCV = extractedData.endereco || ''
-          let menorDistanciaKm: number | null = null
-          let qualificadoPorLocalizacao = true
-          let distanciaCalculada = false
-
-          const googleApiKey = Deno.env.get('GOOGLE_API_KEY')
-
-          if (localizacoesVaga.length > 0 && raioKm > 0) {
-            if (!enderecoCV) {
-              qualificadoPorLocalizacao = false
-              distanciaCalculada = false
-            } else if (googleApiKey) {
-              const callGoogleMaps = async (
-                orig: string,
-                dest: string,
-                retries = 3,
-              ): Promise<number | null> => {
-                try {
-                  const url = new URL('https://maps.googleapis.com/maps/api/distancematrix/json')
-                  url.searchParams.append('origins', orig)
-                  url.searchParams.append('destinations', dest)
-                  url.searchParams.append('key', googleApiKey)
-                  url.searchParams.append('units', 'metric')
-                  const res = await fetch(url.toString(), { method: 'POST' })
-                  if (!res.ok) {
-                    if (res.status === 503 && retries > 0) {
-                      await new Promise((r) => setTimeout(r, 2000))
-                      return callGoogleMaps(orig, dest, retries - 1)
-                    }
-                    return null
-                  }
-                  const data = await res.json()
-                  if (data.status === 'OK' && data.rows?.[0]?.elements?.[0]?.status === 'OK') {
-                    return data.rows[0].elements[0].distance.value / 1000
-                  }
-                  return null
-                } catch (e) {
-                  if (retries > 0) {
-                    await new Promise((r) => setTimeout(r, 2000))
-                    return callGoogleMaps(orig, dest, retries - 1)
-                  }
-                  return null
-                }
-              }
-
-              for (const dest of localizacoesVaga) {
-                const dist = await callGoogleMaps(enderecoCV, dest)
-                if (dist !== null) {
-                  if (menorDistanciaKm === null || dist < menorDistanciaKm) menorDistanciaKm = dist
-                }
-              }
-
-              if (menorDistanciaKm !== null) {
-                qualificadoPorLocalizacao = menorDistanciaKm <= raioKm
-                distanciaCalculada = true
-              } else {
-                qualificadoPorLocalizacao = false
-              }
-            }
-          }
-
-          const analyzePrompt = `Analise o currículo para a vaga de "${vaga.titulo}".
-Descrição da vaga: ${vaga.descricao || 'Não informada'}
-Critérios Textuais: ${criteriosText}
-Localização do Candidato: ${enderecoCV || 'Não informada'}
-Distância calculada: ${distanciaCalculada ? menorDistanciaKm?.toFixed(2) + ' km' : 'N/A'} (Raio aceito: ${raioKm} km)
-Qualificado por localização: ${qualificadoPorLocalizacao}
-
-Dados estruturados do currículo:
-${JSON.stringify(extractedData)}
-
-Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
-{
-  "resultado": "qualificado" | "nao_qualificado" | "revisar",
-  "detalhes": {
-    "pontos_fortes": ["string"],
-    "pontos_fracos": ["string"],
-    "aderencia": "percentual de aderência (ex: 80%)",
-    "motivo": "string explicando a reprovação se aplicável, especialmente se for por localização"
-  }
-}`
-
-          try {
-            console.log('Enviando dados da vaga para análise comportamental na OpenAI...')
-            const analiseJson = await callOpenAIWithRetry(analyzePrompt)
-            console.log('Feedback da análise da vaga recebido da OpenAI.')
-
-            let statusFinal = analiseJson.resultado || 'revisar'
-            let motivoFinal = analiseJson.detalhes?.motivo || ''
-
-            if (localizacoesVaga.length > 0 && raioKm > 0) {
-              if (!enderecoCV) {
-                statusFinal = 'nao_qualificado'
-                motivoFinal = `Reprovado por localização: Endereço não identificado no currículo. ${motivoFinal}`
-              } else if (distanciaCalculada && !qualificadoPorLocalizacao) {
-                statusFinal = 'nao_qualificado'
-                if (
-                  !motivoFinal.toLowerCase().includes('localização') &&
-                  !motivoFinal.toLowerCase().includes('distância')
-                ) {
-                  motivoFinal = `Reprovado por localização: Distância de ${menorDistanciaKm?.toFixed(2)} km excede o raio de ${raioKm} km. ${motivoFinal}`
-                }
-              }
-            }
-            if (analiseJson.detalhes) analiseJson.detalhes.motivo = motivoFinal
-
-            console.log(`Salvando resultado da análise no banco para a vaga_id: ${vaga.id}`)
-            const { data: novaAnalise, error: analiseError } = await supabase
-              .from('analises')
-              .insert({
-                candidato_id: candidatoId,
-                vaga_id: vaga.id,
-                resultado: statusFinal,
-                detalhes: analiseJson.detalhes || {},
-                user_id: user_id,
-              })
-              .select()
-              .single()
-
-            if (!analiseError) {
-              analisesRealizadas.push(novaAnalise)
-              console.log('Relatório de análise de vaga salvo no banco de dados.')
-            } else {
-              console.error('Erro ao tentar salvar o relatório de análise:', analiseError)
-              throw analiseError
-            }
-          } catch (e: any) {
-            console.error(
-              `Aviso: Falha ao gerar a análise para a vaga "${vaga.titulo}". O processo continuará.`,
-              e,
-            )
-          }
-        }
-      }
-
-      console.log(
-        '--- Processamento do currículo e persistência de dados concluídos com SUCESSO ---',
-      )
-
-      // 8. Success Response
-      return new Response(
-        JSON.stringify({
-          success: true,
+      if (etapa) {
+        await supabase.from('candidato_etapa').insert({
           candidato_id: candidatoId,
-          dados_extraidos: extractedData,
-          analises: analisesRealizadas,
-        }),
-        {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
-      )
-    } catch (dbError: any) {
-      console.error('Erro Crítico no Banco de Dados:', dbError)
-      return new Response(
-        JSON.stringify({
-          error: 'Ocorreu um erro interno ao salvar os dados no banco de dados.',
-          detalhes: dbError.message || JSON.stringify(dbError),
-        }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
-      )
+          etapa_id: etapa.id,
+          usuario_id: user_id,
+        })
+        await supabase.from('candidatos').update({ etapa_id: etapa.id }).eq('id', candidatoId)
+      }
     }
-  } catch (error: any) {
-    console.error('Erro Fatal Não Tratado:', error)
+
+    // Executar análise de critérios
+    const analisesRealizadas = []
+    if (finalVagaId) {
+      try {
+        const critRes = await supabase.functions.invoke('analisar-cv-criterios', {
+          body: {
+            cv_id: candidatoId,
+            vaga_id: finalVagaId,
+            user_id: user_id,
+          },
+        })
+        if (critRes.data?.data?.analise) {
+          analisesRealizadas.push(critRes.data.data.analise)
+        }
+      } catch (critErr: any) {
+        console.warn('Erro ao analisar critérios:', critErr?.message)
+      }
+    }
+
     return new Response(
       JSON.stringify({
-        error: 'Ocorreu um erro interno inesperado no servidor ao processar o currículo.',
-        detalhes: error.message || String(error),
+        success: true,
+        candidato_id: candidatoId,
+        dados_extraidos: extractedData,
+        analises: analisesRealizadas,
       }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      },
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    )
+  } catch (error: any) {
+    console.error('Erro Fatal:', error)
+    return new Response(
+      JSON.stringify({
+        error: 'Ocorreu um erro interno ao processar o currículo.',
+        detalhes: error.message,
+      }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     )
   }
 })

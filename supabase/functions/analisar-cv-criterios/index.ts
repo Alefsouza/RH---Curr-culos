@@ -1,13 +1,13 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
-import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { createClient } from 'npm:@supabase/supabase-js@2'
 import OpenAI from 'npm:openai@4'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, x-supabase-client-platform, apikey, content-type',
-}
+import { corsHeaders } from '../_shared/cors.ts'
+import {
+  normalizePhone,
+  isValidBrazilianPhone,
+  sanitizeAndValidateName,
+  sanitizeAndValidateEmail,
+} from '../_shared/validation.ts'
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -76,9 +76,15 @@ Deno.serve(async (req: Request) => {
         ? candidato.dados_extraidos
         : {}
 
+    // Sanitizar nome do candidato se estiver no formato genérico / placeholder
+    const validName =
+      sanitizeAndValidateName(candidato.nome) || sanitizeAndValidateName(extracted.nome)
+    const validEmail =
+      sanitizeAndValidateEmail(candidato.email) || sanitizeAndValidateEmail(extracted.email)
+
     const cvData = {
-      nome: candidato.nome,
-      email: candidato.email,
+      nome: validName || 'Candidato',
+      email: validEmail,
       telefone: candidato.telefone,
       ...extracted,
     }
@@ -190,7 +196,8 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const promptText = `Analise este currículo comparado com estes critérios:
+    const promptText = `Analise este currículo comparado com os critérios da vaga "${vaga.titulo}":
+- Descrição da vaga: ${vaga.descricao || 'Não informada'}
 - Critérios textuais: ${criteriosText}
 - Localização do candidato: ${enderecoCV || 'Não informado'}
 - Distância até a vaga: ${distanciaCalculada ? menorDistanciaKm.toFixed(2) : 0} km
@@ -202,7 +209,7 @@ ${JSON.stringify(cvData)}
 
 Retorne ESTRITAMENTE um JSON com as seguintes chaves:
 - resultado (qualificado, nao_qualificado ou revisar)
-- detalhes (objeto com score (número inteiro de 0 a 100 representando a compatibilidade geral do candidato), matched_criteria (array de objetos com nome (string) e evidencia (string)), unmatched_criteria (array de objetos com nome (string) e motivo (string)), summary (string com resumo conciso da análise), pontos_fortes (array), pontos_fracos (array), aderencia (string) e motivo (string, explicação breve sobre a decisão, focando na localização se for reprovado))`
+- detalhes (objeto com score (número inteiro de 0 a 100 representando a compatibilidade geral do candidato), matched_criteria (array de objetos com nome (string) e evidencia (string)), unmatched_criteria (array de objetos com nome (string) e motivo (string)), summary (string com resumo conciso da análise), pontos_fortes (array de strings), pontos_fracos (array de strings), aderencia (string ex: '85%') e motivo (string, explicação breve sobre a decisão, focando na localização se for reprovado))`
 
     const openaiKey =
       Deno.env.get('OPENAI_KEY') || Deno.env.get('OPENAI_API_KEY') || Deno.env.get('OPENIA_KEY')
@@ -239,9 +246,15 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
     ): Promise<any> => {
       try {
         const response = await openai.chat.completions.create({
-          model: 'gpt-4-turbo',
-          temperature: 1.0,
-          messages: [{ role: 'user', content: prompt }],
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content:
+                'Você é um avaliador sênior de RH. Analise o perfil do candidato rigorosamente e retorne JSON válido em português brasileiro.',
+            },
+            { role: 'user', content: prompt },
+          ],
           response_format: { type: 'json_object' },
         })
         const content = response.choices[0]?.message?.content
@@ -354,7 +367,6 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
         const { data: etapaTriagem } = await supabaseAdmin
           .from('etapas')
           .select('id')
-          .eq('user_id', candidato.user_id)
           .ilike('nome', 'Triagem')
           .maybeSingle()
 
@@ -382,53 +394,9 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
       }
     }
 
-    let numeros_whatsapp: string[] = []
-    try {
-      const promptWhatsApp = `Extraia TODOS os números de telefone celular brasileiros (DDD + 9 dígitos, começando com 9) do currículo, ignorando telefones fixos. Retorne APENAS os números no formato: 11999999999, separados por vírgula se houver mais de um.\n\nCurrículo:\n${JSON.stringify(cvData)}`
-
-      const callWppWithRetry = async (
-        retries = 3,
-        delays = [2000, 4000, 8000],
-      ): Promise<string> => {
-        try {
-          const responseWpp = await openai.chat.completions.create({
-            model: 'gpt-4-turbo',
-            temperature: 0.1,
-            messages: [{ role: 'user', content: promptWhatsApp }],
-          })
-          return responseWpp.choices[0]?.message?.content?.trim() || ''
-        } catch (error: any) {
-          if (retries > 0 && isRetryableError(error)) {
-            const delay = delays[3 - retries] ?? 8000
-            await new Promise((res) => setTimeout(res, delay))
-            return callWppWithRetry(retries - 1, delays)
-          }
-          throw error
-        }
-      }
-
-      const extractedText = await callWppWithRetry()
-      numeros_whatsapp = extractedText
-        .split(',')
-        .map((s) => s.replace(/\D/g, ''))
-        .filter((s) => s.length === 11)
-    } catch (e: any) {
-      console.error('Erro ao extrair WhatsApps:', e)
-    }
-
-    if (numeros_whatsapp.length > 0) {
-      if (!candidato.telefone || candidato.telefone.trim() === '') {
-        const { error: updatePhoneError } = await supabaseAdmin
-          .from('candidatos')
-          .update({ telefone: numeros_whatsapp[0] })
-          .eq('id', cv_id)
-
-        if (updatePhoneError) {
-          console.error('Erro ao atualizar telefone do candidato:', updatePhoneError)
-        }
-      }
-    } else {
-      console.log('Número de WhatsApp celular não encontrado no currículo')
+    // Se o candidato atual tiver nome corrigido e válido, atualizar no banco
+    if (validName && validName !== candidato.nome) {
+      await supabaseAdmin.from('candidatos').update({ nome: validName }).eq('id', cv_id)
     }
 
     return new Response(
@@ -436,7 +404,6 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
         data: {
           success: true,
           analise: analiseData,
-          numero_whatsapp: numeros_whatsapp.length > 0 ? numeros_whatsapp.join(',') : null,
         },
       }),
       {
