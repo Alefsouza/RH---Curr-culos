@@ -35,10 +35,13 @@ interface KanbanColumnProps {
   stage: Stage
   candidates: Candidate[]
   draggedCandidateId: string | null
-  onDrop: (candidateId: string, stageId: string) => void
+  onDrop: (candidateId: string, stageId: string) => Promise<void> | void
   onDragStart: (id: string) => void
   onDragEnd: () => void
   nextStage?: Stage | null
+  selectedCandidateIds?: Set<string>
+  onToggleSelectCandidate?: (candidateId: string) => void
+  onClearSelectedCandidates?: (candidateIdsToClear?: string[]) => void
 }
 
 export function KanbanColumn({
@@ -49,6 +52,9 @@ export function KanbanColumn({
   onDragStart,
   onDragEnd,
   nextStage,
+  selectedCandidateIds = new Set(),
+  onToggleSelectCandidate,
+  onClearSelectedCandidates,
 }: KanbanColumnProps) {
   const [isDragOver, setIsDragOver] = useState(false)
   const [isAlertOpen, setIsAlertOpen] = useState(false)
@@ -57,6 +63,7 @@ export function KanbanColumn({
   const [newStageName, setNewStageName] = useState(stage.name)
   const [isSaving, setIsSaving] = useState(false)
   const [isMovingAll, setIsMovingAll] = useState(false)
+  const [isMovingSelected, setIsMovingSelected] = useState(false)
   const [movingProgress, setMovingProgress] = useState<{ current: number; total: number } | null>(
     null,
   )
@@ -187,8 +194,10 @@ export function KanbanColumn({
     }
   }
 
+  const selectedCandidatesInStage = candidates.filter((c) => selectedCandidateIds.has(c.id))
+
   const handleMoveAll = async () => {
-    if (!nextStage || candidates.length === 0 || isMovingAll) return
+    if (!nextStage || candidates.length === 0 || isMovingAll || isMovingSelected) return
 
     const total = candidates.length
     setIsMovingAll(true)
@@ -205,6 +214,7 @@ export function KanbanColumn({
         title: `Sucesso!`,
         description: `${total} candidato(s) movido(s) para "${nextStage.name}".`,
       })
+      onClearSelectedCandidates?.(candidates.map((c) => c.id))
     } catch (err: any) {
       toast({
         variant: 'destructive',
@@ -213,6 +223,38 @@ export function KanbanColumn({
       })
     } finally {
       setIsMovingAll(false)
+      setMovingProgress(null)
+    }
+  }
+
+  const handleMoveSelected = async () => {
+    if (!nextStage || selectedCandidatesInStage.length < 2 || isMovingSelected || isMovingAll)
+      return
+
+    const total = selectedCandidatesInStage.length
+    setIsMovingSelected(true)
+    setMovingProgress({ current: 0, total })
+
+    try {
+      for (let i = 0; i < selectedCandidatesInStage.length; i++) {
+        const candidate = selectedCandidatesInStage[i]
+        setMovingProgress({ current: i + 1, total })
+        await onDrop(candidate.id, nextStage.id)
+      }
+
+      toast({
+        title: `Sucesso!`,
+        description: `${total} candidato(s) selecionado(s) movido(s) para "${nextStage.name}".`,
+      })
+      onClearSelectedCandidates?.(selectedCandidatesInStage.map((c) => c.id))
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao mover candidatos selecionados',
+        description: err?.message || 'Ocorreu um erro ao transferir os candidatos selecionados.',
+      })
+    } finally {
+      setIsMovingSelected(false)
       setMovingProgress(null)
     }
   }
@@ -254,12 +296,12 @@ export function KanbanColumn({
           </div>
 
           {nextStage && (
-            <div className="px-3 pb-2.5 pt-0.5">
+            <div className="px-3 pb-2.5 pt-0.5 space-y-1.5">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleMoveAll}
-                disabled={candidates.length === 0 || isMovingAll}
+                disabled={candidates.length === 0 || isMovingAll || isMovingSelected}
                 className="w-full h-8 text-xs font-medium text-slate-600 hover:text-primary hover:border-primary/40 bg-white shadow-none transition-all flex items-center justify-center gap-1.5"
                 title={`Mover todos os ${candidates.length} candidatos visíveis para ${nextStage.name}`}
               >
@@ -273,11 +315,37 @@ export function KanbanColumn({
                   </>
                 ) : (
                   <>
-                    <span>Mover todos</span>
+                    <span>Mover todos ({candidates.length})</span>
                     <ArrowRight className="h-3.5 w-3.5 text-slate-400" />
                   </>
                 )}
               </Button>
+
+              {selectedCandidatesInStage.length > 1 && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleMoveSelected}
+                  disabled={isMovingSelected || isMovingAll}
+                  className="w-full h-8 text-xs font-semibold text-primary bg-primary/10 hover:bg-primary/20 border border-primary/20 shadow-none transition-all flex items-center justify-center gap-1.5"
+                  title={`Mover os ${selectedCandidatesInStage.length} candidatos selecionados para ${nextStage.name}`}
+                >
+                  {isMovingSelected ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                      <span>
+                        Movendo {movingProgress?.current || 0}/
+                        {movingProgress?.total || selectedCandidatesInStage.length}...
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Mover selecionados ({selectedCandidatesInStage.length})</span>
+                      <ArrowRight className="h-3.5 w-3.5 text-primary" />
+                    </>
+                  )}
+                </Button>
+              )}
             </div>
           )}
         </div>
@@ -296,6 +364,8 @@ export function KanbanColumn({
             <KanbanCard
               key={candidate.id}
               candidate={candidate}
+              isSelected={selectedCandidateIds.has(candidate.id)}
+              onToggleSelect={onToggleSelectCandidate}
               isDragging={draggedCandidateId === candidate.id}
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}

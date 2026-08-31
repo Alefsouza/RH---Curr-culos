@@ -124,7 +124,7 @@ export default function Index() {
   }, [candidates, search, selectedVaga, vagas, startDate, endDate])
 
   return (
-    <div className="flex flex-col h-full space-y-6 -m-4 md:-m-6 p-4 md:p-6 min-h-0">
+    <div className="flex flex-col min-h-full space-y-6 pb-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Kanban</h1>

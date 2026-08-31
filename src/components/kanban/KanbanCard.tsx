@@ -21,6 +21,8 @@ import { cn } from '@/lib/utils'
 interface KanbanCardProps {
   candidate: Candidate
   isDragging: boolean
+  isSelected?: boolean
+  onToggleSelect?: (id: string) => void
   onDragStart: (id: string) => void
   onDragEnd: () => void
 }
@@ -40,7 +42,14 @@ const sourceLabels: Record<string, string> = {
   manual_upload: 'Manual',
 }
 
-export function KanbanCard({ candidate, isDragging, onDragStart, onDragEnd }: KanbanCardProps) {
+export function KanbanCard({
+  candidate,
+  isDragging,
+  isSelected = false,
+  onToggleSelect,
+  onDragStart,
+  onDragEnd,
+}: KanbanCardProps) {
   const { toast } = useToast()
 
   const handleDragStart = (e: React.DragEvent) => {
@@ -81,9 +90,12 @@ export function KanbanCard({ candidate, isDragging, onDragStart, onDragEnd }: Ka
       onDragStart={handleDragStart}
       onDragEnd={onDragEnd}
       className={cn(
-        'group relative cursor-grab active:cursor-grabbing border border-border bg-white opacity-100',
-        'transition-[box-shadow,border-color,opacity] duration-200 ease-out will-change-[box-shadow,border-color]',
-        'hover:border-primary/30 hover:shadow-elevation hover:opacity-95',
+        'group relative cursor-grab active:cursor-grabbing border bg-white opacity-100',
+        isSelected
+          ? 'border-primary bg-primary/[0.02] ring-2 ring-primary/20 shadow-sm'
+          : 'border-border',
+        'transition-[box-shadow,border-color,opacity,background-color] duration-200 ease-out will-change-[box-shadow,border-color]',
+        'hover:border-primary/40 hover:shadow-elevation hover:opacity-95',
         isDragging && 'opacity-90 shadow-elevation border-primary/40 ring-1 ring-primary/10',
       )}
     >
@@ -95,6 +107,21 @@ export function KanbanCard({ candidate, isDragging, onDragStart, onDragEnd }: Ka
       >
         <GripVertical size={16} />
       </div>
+
+      <div className="absolute left-2.5 top-2.5 z-10 flex items-center">
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={(e) => {
+            e.stopPropagation()
+            onToggleSelect?.(candidate.id)
+          }}
+          onClick={(e) => e.stopPropagation()}
+          className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer transition-all"
+          title={isSelected ? 'Desmarcar candidato' : 'Selecionar candidato'}
+        />
+      </div>
+
       <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
         <Button
           variant="ghost"
@@ -105,7 +132,7 @@ export function KanbanCard({ candidate, isDragging, onDragStart, onDragEnd }: Ka
           <Trash2 size={14} />
         </Button>
       </div>
-      <CardContent className="p-4 pl-7 space-y-3">
+      <CardContent className="p-4 pl-8 space-y-3">
         <div className="pr-4">
           <h4 className="font-semibold text-slate-800 leading-tight hover:text-primary transition-colors">
             <Link

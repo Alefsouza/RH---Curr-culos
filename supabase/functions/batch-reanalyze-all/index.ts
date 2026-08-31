@@ -30,11 +30,16 @@ Deno.serve(async (req: Request) => {
       throw error
     }
 
-    // Filtrar candidatos sem analise
     const { data: existingAnalises } = await supabase.from('analises').select('candidato_id')
 
     const analyzedSet = new Set((existingAnalises || []).map((a) => a.candidato_id))
-    const pendingCandidates = (candidates || []).filter((c) => !analyzedSet.has(c.id))
+    // Incluir candidatos sem análise OU com nomes desconhecidos/inválidos que precisam de reprocessamento
+    const pendingCandidates = (candidates || []).filter((c) => {
+      const isUnanalyzed = !analyzedSet.has(c.id)
+      const isGenericName =
+        !c.nome || /desconhecido|exemplo|string|sem nome|candidato$/i.test(c.nome.trim())
+      return isUnanalyzed || isGenericName
+    })
 
     const totalPending = pendingCandidates.length
     const batch = pendingCandidates.slice(offset, offset + limit)

@@ -77,10 +77,16 @@ Deno.serve(async (req: Request) => {
         : {}
 
     // Sanitizar nome do candidato se estiver no formato genérico / placeholder
-    const validName =
+    let validName =
       sanitizeAndValidateName(candidato.nome) || sanitizeAndValidateName(extracted.nome)
     const validEmail =
       sanitizeAndValidateEmail(candidato.email) || sanitizeAndValidateEmail(extracted.email)
+
+    // Se o nome não foi identificado mas temos email, formata o prefixo como fallback amigável
+    if (!validName && validEmail) {
+      const prefix = validEmail.split('@')[0]
+      validName = prefix.replace(/[._-]/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
+    }
 
     const cvData = {
       nome: validName || 'Candidato',

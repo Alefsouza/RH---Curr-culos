@@ -37,10 +37,14 @@ export const isValidBrazilianPhone = (phone: string | null | undefined): boolean
 }
 
 const INVALID_NAME_PATTERNS = [
-  /^(candidato\s+desconhecido|desconhecido|sem\s+nome|nome\s+completo\s+exemplo|nome\s+do\s+candidato|nome\s+completo|nome\s+candidato|candidato)$/i,
+  /^(candidato\s+desconhecido|desconhecido|desconhecida|sem\s+nome|nome\s+completo\s+exemplo|nome\s+do\s+candidato|nome\s+completo|nome\s+candidato|candidato|candidata)$/i,
   /^(jo[aã]o\s+da\s+silva|fulano\s+de\s+tal|jo[aã]o\s+silva|maria\s+da\s+silva)$/i,
-  /^(string\s+ou\s+null|string|null|undefined|none|n\/a|nao\s+informado|não\s+informado)$/i,
+  /^(string\s+ou\s+null|string|null|undefined|none|n\/a|nao\s+informado|não\s+informado|nome\s+n[aã]o\s+identificado|n[aã]o\s+identificado)$/i,
   /^curr[ií]culo(\s+vitae)?$/i,
+  /.*candidato\s+desconhecido.*/i,
+  /.*nome\s+completo\s+exemplo.*/i,
+  /.*string\s+ou\s+null.*/i,
+  /.*nome\s+n[aã]o\s+identificado.*/i,
 ]
 
 export const sanitizeAndValidateName = (name: string | null | undefined): string | null => {
