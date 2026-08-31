@@ -132,3 +132,16 @@ export async function createStage(name: string) {
   if (error) throw error
   return data
 }
+
+export async function reorderStages(orderedStageIds: string[]) {
+  // Update each stage's order in parallel
+  const updates = orderedStageIds.map((id, index) =>
+    supabase.from('etapas').update({ ordem: index }).eq('id', id),
+  )
+
+  const results = await Promise.all(updates)
+  const errorResult = results.find((r) => r.error)
+  if (errorResult?.error) {
+    throw errorResult.error
+  }
+}

@@ -9,6 +9,7 @@ interface KanbanBoardProps {
   onDropCandidate: (candidateId: string, newStageId: string) => Promise<void> | void
   onDragStart: (id: string) => void
   onDragEnd: () => void
+  onDropStage?: (sourceStageId: string, targetStageId: string) => Promise<void> | void
 }
 
 export function KanbanBoard({
@@ -18,9 +19,24 @@ export function KanbanBoard({
   onDropCandidate,
   onDragStart,
   onDragEnd,
+  onDropStage,
 }: KanbanBoardProps) {
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<Set<string>>(new Set())
+  const [draggedStageId, setDraggedStageId] = useState<string | null>(null)
   const sortedStages = [...stages].sort((a, b) => a.order - b.order)
+
+  const handleStageDragStart = (stageId: string) => {
+    setDraggedStageId(stageId)
+  }
+
+  const handleStageDragEnd = () => {
+    setDraggedStageId(null)
+  }
+
+  const handleStageDrop = (sourceStageId: string, targetStageId: string) => {
+    setDraggedStageId(null)
+    onDropStage?.(sourceStageId, targetStageId)
+  }
 
   const handleToggleSelectCandidate = (candidateId: string) => {
     setSelectedCandidateIds((prev) => {
@@ -66,6 +82,10 @@ export function KanbanBoard({
               selectedCandidateIds={selectedCandidateIds}
               onToggleSelectCandidate={handleToggleSelectCandidate}
               onClearSelectedCandidates={handleClearSelectedCandidates}
+              draggedStageId={draggedStageId}
+              onStageDragStart={handleStageDragStart}
+              onStageDragEnd={handleStageDragEnd}
+              onStageDrop={handleStageDrop}
             />
           )
         })}

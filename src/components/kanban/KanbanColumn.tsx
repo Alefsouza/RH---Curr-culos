@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { Candidate, Stage } from '@/types/kanban'
 import { KanbanCard } from '@/components/kanban/KanbanCard'
 import { Button } from '@/components/ui/button'
-import { ArrowRight, Loader2, MoreHorizontal, Plus } from 'lucide-react'
+import { ArrowRight, GripHorizontal, Loader2, MoreHorizontal, Plus } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,6 +42,10 @@ interface KanbanColumnProps {
   selectedCandidateIds?: Set<string>
   onToggleSelectCandidate?: (candidateId: string) => void
   onClearSelectedCandidates?: (candidateIdsToClear?: string[]) => void
+  draggedStageId?: string | null
+  onStageDragStart?: (stageId: string) => void
+  onStageDragEnd?: () => void
+  onStageDrop?: (sourceStageId: string, targetStageId: string) => void
 }
 
 export function KanbanColumn({
@@ -55,8 +59,13 @@ export function KanbanColumn({
   selectedCandidateIds = new Set(),
   onToggleSelectCandidate,
   onClearSelectedCandidates,
+  draggedStageId,
+  onStageDragStart,
+  onStageDragEnd,
+  onStageDrop,
 }: KanbanColumnProps) {
-  const [isDragOver, setIsDragOver] = useState(false)
+  const [isCardDragOver, setIsCardDragOver] = useState(false)
+  const [isColumnDragOver, setIsColumnDragOver] = useState(false)
   const [isAlertOpen, setIsAlertOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
@@ -69,20 +78,77 @@ export function KanbanColumn({
   )
   const { toast } = useToast()
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    setIsDragOver(true)
+  const isCurrentStageDragging = draggedStageId === stage.id
+
+  // --- Handlers para arrastar cabeçalho/coluna ---
+  const handleHeaderDragStart = (e: React.DragEvent) => {
+    e.dataTransfer.setData('application/x-kanban-stage', stage.id)
+    e.dataTransfer.setData('text/plain', stage.id)
+    e.dataTransfer.effectAllowed = 'move'
+    onStageDragStart?.(stage.id)
   }
 
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragOver(false)
+  const handleHeaderDragEnd = () => {
+    onStageDragEnd?.()
   }
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleColumnDragOver = (e: React.DragEvent) => {
+    // Se estamos arrastando uma etapa/coluna
+    if (e.dataTransfer.types.includes('application/x-kanban-stage') || draggedStageId) {
+      e.preventDefault()
+      e.stopPropagation()
+      e.dataTransfer.dropEffect = 'move'
+      if (!isColumnDragOver && draggedStageId !== stage.id) {
+        setIsColumnDragOver(true)
+      }
+    }
+  }
+
+  const handleColumnDragLeave = (e: React.DragEvent) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node)) {
+      return
+    }
+    setIsColumnDragOver(false)
+  }
+
+  const handleColumnDrop = (e: React.DragEvent) => {
+    const stageData = e.dataTransfer.getData('application/x-kanban-stage')
+    if (stageData || draggedStageId) {
+      e.preventDefault()
+      e.stopPropagation()
+      setIsColumnDragOver(false)
+      const sourceStageId = stageData || draggedStageId
+      if (sourceStageId && sourceStageId !== stage.id) {
+        onStageDrop?.(sourceStageId, stage.id)
+      }
+    }
+  }
+
+  // --- Handlers para arrastar cards de candidatos ---
+  const handleCardAreaDragOver = (e: React.DragEvent) => {
+    // Se estamos arrastando candidato (não etapa)
+    if (!e.dataTransfer.types.includes('application/x-kanban-stage') && !draggedStageId) {
+      e.preventDefault()
+      e.stopPropagation()
+      e.dataTransfer.dropEffect = 'move'
+      setIsCardDragOver(true)
+    }
+  }
+
+  const handleCardAreaDragLeave = (e: React.DragEvent) => {
     e.preventDefault()
-    setIsDragOver(false)
+    setIsCardDragOver(false)
+  }
+
+  const handleCardAreaDrop = (e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('application/x-kanban-stage') || draggedStageId) {
+      handleColumnDrop(e)
+      return
+    }
+
+    e.preventDefault()
+    e.stopPropagation()
+    setIsCardDragOver(false)
     const candidateId = e.dataTransfer.getData('text/plain')
 
     // Verifica se o ID extraído é um UUID válido antes de disparar a requisição
@@ -261,10 +327,37 @@ export function KanbanColumn({
 
   return (
     <>
-      <div className="group flex flex-col flex-shrink-0 w-full md:w-[320px] min-h-[650px] bg-slate-50/50 rounded-xl border border-transparent hover:border-primary/40 transition-colors shadow-sm overflow-hidden h-full">
+      <div
+        onDragOver={handleColumnDragOver}
+        onDragLeave={handleColumnDragLeave}
+        onDrop={handleColumnDrop}
+        className={cn(
+          'group flex flex-col flex-shrink-0 w-full md:w-[320px] min-h-[650px] bg-slate-50/50 rounded-xl border transition-all shadow-sm overflow-hidden h-full relative',
+          isCurrentStageDragging
+            ? 'opacity-40 border-dashed border-primary/50 bg-slate-100 scale-[0.98]'
+            : 'border-transparent hover:border-primary/40',
+          isColumnDragOver &&
+            'ring-2 ring-primary ring-offset-2 bg-primary/5 border-primary shadow-md',
+        )}
+      >
+        {isColumnDragOver && (
+          <div className="absolute inset-0 z-30 bg-primary/10 backdrop-blur-[1px] border-2 border-dashed border-primary rounded-xl flex items-center justify-center pointer-events-none">
+            <span className="px-3 py-1.5 bg-primary text-white text-xs font-semibold rounded-md shadow-sm">
+              Soltar coluna aqui
+            </span>
+          </div>
+        )}
+
         <div className="flex flex-col border-b border-transparent group-hover:border-primary/20 hover:border-primary/20 transition-colors bg-white/50 backdrop-blur-sm shrink-0">
-          <div className="flex items-center justify-between p-3 pb-2">
-            <div className="flex items-center gap-2 min-w-0">
+          <div
+            draggable
+            onDragStart={handleHeaderDragStart}
+            onDragEnd={handleHeaderDragEnd}
+            className="flex items-center justify-between p-3 pb-2 cursor-grab active:cursor-grabbing hover:bg-slate-100/70 select-none transition-colors rounded-t-xl"
+            title="Arraste pelo cabeçalho para reordenar esta etapa"
+          >
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <GripHorizontal className="h-4 w-4 text-slate-400 group-hover:text-primary transition-colors shrink-0" />
               <div className={cn('w-2.5 h-2.5 rounded-full shrink-0', stage.color)} />
               <h3 className="font-semibold text-slate-700 text-sm truncate" title={stage.name}>
                 {stage.name}
@@ -273,26 +366,32 @@ export function KanbanColumn({
                 {candidates.length}
               </span>
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-slate-400 hover:text-slate-600 shrink-0"
-                >
-                  <MoreHorizontal size={16} />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-40">
-                <DropdownMenuItem onClick={handleEditClick}>Editar Etapa</DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={handleDeleteClick}
-                  className="text-red-600 focus:bg-red-50 focus:text-red-700"
-                >
-                  Deletar Etapa
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <div
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              className="shrink-0"
+            >
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-slate-400 hover:text-slate-600 shrink-0"
+                  >
+                    <MoreHorizontal size={16} />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-40">
+                  <DropdownMenuItem onClick={handleEditClick}>Editar Etapa</DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={handleDeleteClick}
+                    className="text-red-600 focus:bg-red-50 focus:text-red-700"
+                  >
+                    Deletar Etapa
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
 
           {nextStage && (
@@ -353,12 +452,12 @@ export function KanbanColumn({
         <div
           className={cn(
             'flex-1 min-h-0 overflow-y-auto p-3 space-y-3 transition-colors duration-200',
-            isDragOver &&
+            isCardDragOver &&
               'bg-blue-50/50 outline-dashed outline-2 outline-blue-200 outline-offset-[-4px] rounded-b-xl',
           )}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
+          onDragOver={handleCardAreaDragOver}
+          onDragLeave={handleCardAreaDragLeave}
+          onDrop={handleCardAreaDrop}
         >
           {candidates.map((candidate) => (
             <KanbanCard

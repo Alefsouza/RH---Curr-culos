@@ -1,7 +1,12 @@
 import { useState, useCallback, useEffect } from 'react'
 import { Candidate, Stage } from '@/types/kanban'
 import { useToast } from '@/hooks/use-toast'
-import { fetchStages, fetchCandidates, updateCandidateStage } from '@/services/kanban'
+import {
+  fetchStages,
+  fetchCandidates,
+  updateCandidateStage,
+  reorderStages,
+} from '@/services/kanban'
 import { useAuth } from '@/hooks/use-auth'
 import { supabase } from '@/lib/supabase/client'
 
@@ -42,17 +47,61 @@ export function useKanban() {
 
     const configCandidatos = { event: '*', schema: 'public', table: 'candidatos' }
     const configAnalises = { event: '*', schema: 'public', table: 'analises' }
+    const configEtapas = { event: '*', schema: 'public', table: 'etapas' }
 
     const channel = supabase
       .channel('kanban-updates')
       .on('postgres_changes', configCandidatos as any, () => loadData(false))
       .on('postgres_changes', configAnalises as any, () => loadData(false))
+      .on('postgres_changes', configEtapas as any, () => loadData(false))
       .subscribe()
 
     return () => {
       supabase.removeChannel(channel)
     }
   }, [loadData, user])
+
+  const moveStage = useCallback(
+    async (sourceStageId: string, targetStageId: string) => {
+      if (!sourceStageId || !targetStageId || sourceStageId === targetStageId) return
+
+      const sortedCurrentStages = [...stages].sort((a, b) => a.order - b.order)
+      const sourceIndex = sortedCurrentStages.findIndex((s) => s.id === sourceStageId)
+      const targetIndex = sortedCurrentStages.findIndex((s) => s.id === targetStageId)
+
+      if (sourceIndex === -1 || targetIndex === -1) return
+
+      const previousStages = [...stages]
+      const newOrderedStages = [...sortedCurrentStages]
+      const [movedStage] = newOrderedStages.splice(sourceIndex, 1)
+      newOrderedStages.splice(targetIndex, 0, movedStage)
+
+      // Atualiza ordens no array
+      const updatedStagesWithOrder = newOrderedStages.map((st, idx) => ({
+        ...st,
+        order: idx,
+      }))
+
+      // Optimistic update
+      setStages(updatedStagesWithOrder)
+
+      try {
+        await reorderStages(updatedStagesWithOrder.map((s) => s.id))
+        toast({
+          title: 'Ordem das etapas salva',
+          duration: 2000,
+        })
+      } catch (err: any) {
+        setStages(previousStages)
+        toast({
+          variant: 'destructive',
+          title: 'Erro ao reordenar etapas',
+          description: err.message || 'Não foi possível salvar a nova ordem das etapas.',
+        })
+      }
+    },
+    [stages, toast],
+  )
 
   useEffect(() => {
     const handleCandidateDelete = (event: any) => {
@@ -189,6 +238,7 @@ export function useKanban() {
     stages,
     draggedCandidateId,
     moveCandidate,
+    moveStage,
     handleDragStart,
     handleDragEnd,
     loading,

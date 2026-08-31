@@ -29,6 +29,7 @@ export default function Index() {
     candidates,
     draggedCandidateId,
     moveCandidate,
+    moveStage,
     handleDragStart,
     handleDragEnd,
     loadData,
@@ -220,6 +221,7 @@ export default function Index() {
             onDropCandidate={moveCandidate}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
+            onDropStage={moveStage}
           />
         </div>
       )}
