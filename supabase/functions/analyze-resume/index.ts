@@ -353,9 +353,9 @@ ${extractedText.substring(0, 20000)}`
                 },
                 {
                   type: 'file',
-                  file_data: `data:application/pdf;base64,${base64Data}`,
                   file: {
                     filename: originalFileName,
+                    file_data: `data:application/pdf;base64,${base64Data}`,
                   },
                 },
               ] as any,
