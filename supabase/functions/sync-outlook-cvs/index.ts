@@ -838,20 +838,24 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
     }
 
     if (syncRunId) {
-      await supabase
-        .from('sync_runs')
-        .update({
-          finished_at: new Date().toISOString(),
-          status: finalRunStatus,
-          emails_scanned: emailsScanned,
-          cvs_imported: cvsImported,
-          cvs_skipped_no_match: cvsSkippedNoMatch,
-          cvs_skipped_duplicate: cvsSkippedDuplicate,
-          cvs_skipped_internal: cvsSkippedInternal,
-          errors: errors.length > 0 ? errors : null,
-          last_synced_at: new Date().toISOString(),
-        })
-        .eq('id', syncRunId)
+      try {
+        await supabase
+          .from('sync_runs')
+          .update({
+            finished_at: new Date().toISOString(),
+            status: finalRunStatus,
+            emails_scanned: emailsScanned,
+            cvs_imported: cvsImported,
+            cvs_skipped_no_match: cvsSkippedNoMatch,
+            cvs_skipped_duplicate: cvsSkippedDuplicate,
+            cvs_skipped_internal: cvsSkippedInternal,
+            errors: errors.length > 0 ? errors : null,
+            last_synced_at: new Date().toISOString(),
+          })
+          .eq('id', syncRunId)
+      } catch (updateErr: any) {
+        console.error('Erro ao atualizar sync_runs no finally:', updateErr)
+      }
     }
 
     console.log('Outlook Sync finalizado:', {
@@ -863,6 +867,17 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
       cvsSkippedNoMatch,
       errorsCount: errors.length,
     })
+
+    return {
+      status: finalRunStatus,
+      emails_scanned: emailsScanned,
+      cvs_imported: cvsImported,
+      cvs_skipped_duplicate: cvsSkippedDuplicate,
+      cvs_skipped_no_match: cvsSkippedNoMatch,
+      cvs_skipped_internal: cvsSkippedInternal,
+      errors_count: errors.length,
+      errors,
+    }
   }
 }
 
@@ -919,22 +934,20 @@ Deno.serve(async (req: Request) => {
 
     const syncRunId = syncRun?.id || null
 
-    // Processamento assíncrono em background via EdgeRuntime.waitUntil
-    const isEdgeRuntime = typeof (globalThis as any).EdgeRuntime !== 'undefined'
-    if (isEdgeRuntime && typeof (globalThis as any).EdgeRuntime.waitUntil === 'function') {
-      ;(globalThis as any).EdgeRuntime.waitUntil(performSync(supabase, syncRunId, userId))
-    } else {
-      performSync(supabase, syncRunId, userId).catch((e) =>
-        console.error('Background sync failed:', e),
-      )
-    }
+    const syncResult = await performSync(supabase, syncRunId, userId)
 
     return new Response(
       JSON.stringify({
-        success: true,
-        message: 'Sincronização do Outlook iniciada em segundo plano.',
+        success: syncResult.status !== 'error',
+        message: 'Sincronização do Outlook concluída.',
         sync_run_id: syncRunId,
-        status: 'running',
+        status: syncResult.status,
+        emails_scanned: syncResult.emails_scanned,
+        cvs_imported: syncResult.cvs_imported,
+        cvs_skipped_duplicate: syncResult.cvs_skipped_duplicate,
+        cvs_skipped_no_match: syncResult.cvs_skipped_no_match,
+        cvs_skipped_internal: syncResult.cvs_skipped_internal,
+        errors_count: syncResult.errors_count,
       }),
       {
         status: 200,
