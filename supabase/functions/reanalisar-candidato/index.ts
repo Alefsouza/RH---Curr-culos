@@ -212,7 +212,7 @@ ${extractedText.substring(0, 18000)}`
               newlyExtracted = JSON.parse(rawContent)
             }
 
-            // Tentativa 2: Se texto foi insuficiente ou nome ainda veio nulo e não é docx, usar GPT-4o com visão
+            // Tentativa 2: Se texto foi insuficiente ou nome ainda veio nulo e não é docx, usar modelo compatível com PDF via file_data
             const parsedName = sanitizeAndValidateName(newlyExtracted?.nome)
             if (
               !parsedName &&
@@ -222,10 +222,9 @@ ${extractedText.substring(0, 18000)}`
             ) {
               try {
                 console.log(
-                  `[reanalisar-candidato] Tentando extração avançada com visão para o candidato ${candidato.id}...`,
+                  `[reanalisar-candidato] Tentando extração avançada com visão PDF (gpt-5-mini) para o candidato ${candidato.id}...`,
                 )
                 // Converter os bytes do PDF em base64 data URL
-                // Obs: OpenAI aceita PDFs e imagens diretamente no GPT-4o
                 let binaryStr = ''
                 const len = fileBytes.byteLength
                 for (let i = 0; i < len; i++) {
@@ -237,7 +236,7 @@ ${extractedText.substring(0, 18000)}`
                   storagePath.split('/').pop()?.split('\\').pop() || 'curriculo.pdf'
 
                 const visionResponse = await openai.chat.completions.create({
-                  model: 'gpt-4o',
+                  model: 'gpt-5-mini',
                   messages: [
                     {
                       role: 'system',

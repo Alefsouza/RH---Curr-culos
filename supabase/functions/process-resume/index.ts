@@ -286,7 +286,9 @@ ${extractedText.substring(0, 18000)}`
 
     if (!cleanName && !isDocx && fileBytes.length > 0 && fileBytes.length < 15 * 1024 * 1024) {
       try {
-        console.log(`[process-resume] Tentando visão computacional GPT-4o para ${filePath}...`)
+        console.log(
+          `[process-resume] Tentando leitura visual de PDF via gpt-5-mini para ${filePath}...`,
+        )
         let binaryStr = ''
         const len = fileBytes.byteLength
         for (let i = 0; i < len; i++) {
@@ -297,7 +299,7 @@ ${extractedText.substring(0, 18000)}`
         const originalFileName = filePath.split('/').pop()?.split('\\').pop() || 'curriculo.pdf'
 
         const visionResponse = await openai.chat.completions.create({
-          model: 'gpt-4o',
+          model: 'gpt-5-mini',
           messages: [
             {
               role: 'system',
@@ -345,7 +347,7 @@ ${extractedText.substring(0, 18000)}`
           cleanName = sanitizeAndValidateName(visionData.nome) || cleanName
         }
       } catch (visionErr: any) {
-        console.warn(`[process-resume] Visão GPT-4o falhou:`, visionErr?.message)
+        console.warn(`[process-resume] Leitura visual do PDF falhou:`, visionErr?.message)
       }
     }
 

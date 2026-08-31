@@ -310,13 +310,15 @@ ${extractedText.substring(0, 20000)}`
       }
     }
 
-    // Se o texto era insuficiente ou se o nome não foi identificado via texto, tentar GPT-4o com visão (se for PDF e < 15MB)
+    // Se o texto era insuficiente ou se o nome não foi identificado via texto, tentar modelo compatível com PDF via file_data (se for PDF e < 15MB)
     let cleanName = sanitizeAndValidateName(extractedData?.nome || nome)
     const isDocx = filePath.toLowerCase().endsWith('.docx')
 
     if (!cleanName && !isDocx && fileBytes.length > 0 && fileBytes.length < 15 * 1024 * 1024) {
       try {
-        console.log(`[analyze-resume] Tentando visão computacional GPT-4o para ${filePath}...`)
+        console.log(
+          `[analyze-resume] Tentando leitura visual de PDF via gpt-5-mini para ${filePath}...`,
+        )
         let binaryStr = ''
         const len = fileBytes.byteLength
         for (let i = 0; i < len; i++) {
@@ -327,7 +329,7 @@ ${extractedText.substring(0, 20000)}`
         const originalFileName = filePath.split('/').pop()?.split('\\').pop() || 'curriculo.pdf'
 
         const visionResponse = await openai.chat.completions.create({
-          model: 'gpt-4o',
+          model: 'gpt-5-mini',
           messages: [
             {
               role: 'system',
@@ -376,7 +378,10 @@ ${extractedText.substring(0, 20000)}`
           cleanName = sanitizeAndValidateName(visionData.nome) || cleanName
         }
       } catch (visionErr: any) {
-        console.warn(`[analyze-resume] Visão GPT-4o não pôde processar:`, visionErr?.message)
+        console.warn(
+          `[analyze-resume] Leitura visual do PDF não pôde processar:`,
+          visionErr?.message,
+        )
       }
     }
 
