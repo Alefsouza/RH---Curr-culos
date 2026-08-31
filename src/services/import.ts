@@ -17,7 +17,20 @@ export async function processResume(filePath: string, userId: string) {
   const { data, error } = await supabase.functions.invoke('process-resume', {
     body: { filePath, user_id: userId },
   })
-  if (error) throw error
+  if (error) {
+    let message = error.message || 'Falha ao processar o currículo.'
+    try {
+      if (error.context && typeof error.context.json === 'function') {
+        const body = await error.context.json()
+        if (body?.error) message = body.error
+      } else if (error.context?.error) {
+        message = error.context.error
+      }
+    } catch {
+      // fallback
+    }
+    throw new Error(message)
+  }
   if (data?.error) throw new Error(data.error)
   return data
 }
@@ -26,7 +39,23 @@ export async function analyzeResumePublic(filePath: string, userId: string) {
   const { data, error } = await supabase.functions.invoke('analyze-resume', {
     body: { filePath, user_id: userId },
   })
-  if (error) throw error
+
+  // Trata erros de invocação do Supabase Functions (como HTTP 4xx ou 5xx)
+  if (error) {
+    let message = error.message || 'Falha ao processar o currículo.'
+    try {
+      if (error.context && typeof error.context.json === 'function') {
+        const body = await error.context.json()
+        if (body?.error) message = body.error
+      } else if (error.context?.error) {
+        message = error.context.error
+      }
+    } catch {
+      // mantém a mensagem original caso não consiga extrair JSON
+    }
+    throw new Error(message)
+  }
+
   if (data?.error) throw new Error(data.error)
   return data
 }

@@ -10,7 +10,7 @@ import {
 } from '../_shared/validation.ts'
 import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
 
-// Extrai texto bruto contido em streams/objetos do PDF via regex com suporte a UTF-8
+// Extrai texto bruto contido em streams/objetos do PDF via regex com suporte a UTF-8 e filtros adicionais
 function extractAsciiTextFromPdfBytes(bytes: Uint8Array): string {
   let raw = ''
   try {
@@ -67,6 +67,60 @@ function extractAsciiTextFromPdfBytes(bytes: Uint8Array): string {
   }
 
   return textChunks.join(' ').replace(/\s+/g, ' ').trim()
+}
+
+// Extrai e limpa nome a partir do nome do arquivo (ex: "curriculo_joao_silva.pdf" -> "Joao Silva")
+function extractNameFromFileName(filePath: string): string | null {
+  if (!filePath) return null
+  const baseName = filePath.split('/').pop()?.split('\\').pop() || filePath
+  // Remove extensão
+  const nameWithoutExt = baseName.replace(/\.[^/.]+$/, '')
+  // Remove sufixos como timestamp, hashes ou identificadores tipo 1788205749600-87afhn
+  let cleaned = nameWithoutExt
+    .replace(/^\d+[-_]?/, '') // remove timestamp no início
+    .replace(/[-_]\d+$/, '') // remove timestamp no fim
+    .replace(/[-_][a-z0-9]{4,10}$/i, '') // remove hash curta no fim
+    .replace(/[._-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  // Se o nome do arquivo for apenas números/hash ou palavras genéricas
+  if (/^(curriculo|curriculos|cv|resume|documento|doc|scan|arquivo|\d+)$/i.test(cleaned)) {
+    return null
+  }
+
+  // Remove termos como "curriculo de", "cv -", etc.
+  cleaned = cleaned.replace(/^(curr[ií]culo|cv|resume)(\s+de)?\s+/i, '').trim()
+
+  if (cleaned.length >= 3 && /[a-zA-ZÀ-ÿ]/.test(cleaned) && !/^\d+$/.test(cleaned)) {
+    // Formata capitalização
+    return cleaned.replace(/\b\w/g, (l) => l.toUpperCase())
+  }
+  return null
+}
+
+// Extrai e formata nome a partir de e-mail (ex: "joao.silva@gmail.com" -> "Joao Silva")
+function extractNameFromEmail(email: string | null | undefined): string | null {
+  if (!email || !email.includes('@')) return null
+  const local = email.split('@')[0].trim()
+  if (
+    !local ||
+    /^(contato|rh|admin|financeiro|curriculo|candidato|user|usuario|info|jobs)$/i.test(local)
+  ) {
+    return null
+  }
+
+  // Substitui pontos, underscores, traços, números no final
+  const cleaned = local
+    .replace(/\d+$/, '')
+    .replace(/[._-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (cleaned.length >= 2 && /[a-zA-ZÀ-ÿ]/.test(cleaned)) {
+    return cleaned.replace(/\b\w/g, (l) => l.toUpperCase())
+  }
+  return null
 }
 
 Deno.serve(async (req: Request) => {
@@ -152,15 +206,7 @@ Deno.serve(async (req: Request) => {
       extractedText = extractAsciiTextFromPdfBytes(fileBytes)
     }
 
-    if (!extractedText || extractedText.trim().length < 50) {
-      return new Response(
-        JSON.stringify({
-          error:
-            'O arquivo não contém texto legível suficiente (< 50 caracteres ou documento escaneado/imagem).',
-        }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      )
-    }
+    const hasSufficientText = extractedText && extractedText.trim().length >= 40
 
     // 3. OpenAI Extraction
     const openai = new OpenAI({ apiKey: openaiKey })
@@ -208,7 +254,19 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const extractionPrompt = `Analise o texto do currículo e extraia:
+    let extractedData: any = {
+      nome: null,
+      email: null,
+      telefones_celulares: [],
+      telefone: null,
+      endereco: null,
+      experiencia_profissional: [],
+      skills: [],
+      formacao_academica: [],
+    }
+
+    if (hasSufficientText) {
+      const extractionPrompt = `Analise o texto do currículo e extraia:
 - nome: Nome completo REAL extraído do currículo, ou null se não identificado
 - email: Endereço de e-mail REAL válido, ou null se não identificado
 - telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11987654321"]) ou [] se nenhum
@@ -237,29 +295,108 @@ Formato JSON estrito esperado:
 Texto extraído do currículo:
 ${extractedText.substring(0, 20000)}`
 
-    let extractedData: any
-    try {
-      extractedData = await callOpenAIWithRetry(extractionPrompt)
-    } catch (err: any) {
-      return new Response(
-        JSON.stringify({
-          error: 'Serviço de Inteligência Artificial indisponível no momento.',
-          detalhes: err.message,
-        }),
-        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      )
+      try {
+        extractedData = await callOpenAIWithRetry(extractionPrompt)
+      } catch (err: any) {
+        console.warn('Falha na chamada OpenAI padrão:', err?.message)
+      }
     }
 
-    const cleanName = sanitizeAndValidateName(extractedData.nome || nome)
-    const cleanEmail = sanitizeAndValidateEmail(extractedData.email || email)
+    // Se o texto era insuficiente ou se o nome não foi identificado via texto, tentar GPT-4o com visão (se for PDF e < 15MB)
+    let cleanName = sanitizeAndValidateName(extractedData?.nome || nome)
+    const isDocx = filePath.toLowerCase().endsWith('.docx')
 
-    if (!cleanName) {
-      return new Response(
-        JSON.stringify({
-          error: 'Não foi possível extrair um nome de candidato válido do currículo.',
-        }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      )
+    if (!cleanName && !isDocx && fileBytes.length > 0 && fileBytes.length < 15 * 1024 * 1024) {
+      try {
+        console.log(`[analyze-resume] Tentando visão computacional GPT-4o para ${filePath}...`)
+        let binaryStr = ''
+        const len = fileBytes.byteLength
+        for (let i = 0; i < len; i++) {
+          binaryStr += String.fromCharCode(fileBytes[i])
+        }
+        const base64Data = btoa(binaryStr)
+
+        const visionResponse = await openai.chat.completions.create({
+          model: 'gpt-4o',
+          messages: [
+            {
+              role: 'system',
+              content:
+                'Você é um assistente de RH especializado em leitura de currículos visuais, fotos e PDFs escaneados. Preserve a acentuação original brasileira. NUNCA invente dados. Se não identificar, retorne null. Responda em JSON.',
+            },
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: `Analise visualmente este currículo/documento e extraia:
+{
+  "nome": "Nome completo REAL do candidato ou null",
+  "email": "Email ou null",
+  "telefones_celulares": ["telefones"],
+  "telefone": "telefone ou null",
+  "endereco": "endereço ou null",
+  "experiencia_profissional": ["experiências"],
+  "skills": ["habilidades"],
+  "formacao_academica": ["formações"]
+}`,
+                },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: `data:application/pdf;base64,${base64Data}`,
+                  },
+                },
+              ] as any,
+            },
+          ],
+          response_format: { type: 'json_object' },
+        })
+
+        const visionContent = visionResponse.choices[0]?.message?.content || '{}'
+        const visionData = JSON.parse(visionContent)
+        if (visionData) {
+          extractedData = {
+            ...extractedData,
+            ...visionData,
+            ...(visionData.nome ? { nome: visionData.nome } : {}),
+            ...(visionData.email ? { email: visionData.email } : {}),
+          }
+          cleanName = sanitizeAndValidateName(visionData.nome) || cleanName
+        }
+      } catch (visionErr: any) {
+        console.warn(`[analyze-resume] Visão GPT-4o não pôde processar:`, visionErr?.message)
+      }
+    }
+
+    // Extração e validação do e-mail
+    const cleanEmail = sanitizeAndValidateEmail(extractedData?.email || email)
+
+    // Estratégia de Fallback em cascata para NUNCA retornar 400 por falta de nome:
+    // 1. Nome validado pela IA (texto ou visão) ou fornecido no body
+    // 2. Extração pelo prefixo do e-mail (ex: "maria.souza@..." -> "Maria Souza")
+    // 3. Extração pelo nome do arquivo (ex: "cv_marcos_silva.pdf" -> "Marcos Silva")
+    // 4. Fallback padrão "Candidato"
+    let finalNome = cleanName
+
+    if (!finalNome) {
+      const emailDerivedName = extractNameFromEmail(cleanEmail)
+      const validEmailDerived = sanitizeAndValidateName(emailDerivedName)
+      if (validEmailDerived) {
+        finalNome = validEmailDerived
+      }
+    }
+
+    if (!finalNome) {
+      const fileDerivedName = extractNameFromFileName(filePath)
+      const validFileDerived = sanitizeAndValidateName(fileDerivedName)
+      if (validFileDerived) {
+        finalNome = validFileDerived
+      }
+    }
+
+    if (!finalNome) {
+      finalNome = 'Candidato'
     }
 
     // Normalização de telefone
@@ -289,10 +426,9 @@ ${extractedText.substring(0, 20000)}`
       finalTelefone = uniqueParts.length > 0 ? uniqueParts.join(',') : null
     }
 
-    const finalNome = cleanName
     const finalEmail = cleanEmail
 
-    // Deduplicação
+    // Deduplicação (apenas se tiver e-mail ou telefone válido)
     const orConditions = []
     if (finalEmail) {
       orConditions.push(`email.eq."${finalEmail.replace(/"/g, '')}"`)
@@ -316,7 +452,7 @@ ${extractedText.substring(0, 20000)}`
         const identifyRes = await supabase.functions.invoke('identify-vaga-from-cv', {
           body: {
             user_id: user_id,
-            texto_cv: extractedText,
+            texto_cv: extractedText || '',
             dados_extraidos: extractedData,
           },
         })
@@ -435,7 +571,13 @@ ${extractedText.substring(0, 20000)}`
       JSON.stringify({
         success: true,
         candidato_id: candidatoId,
-        dados_extraidos: extractedData,
+        candidato_nome: finalNome,
+        dados_extraidos: {
+          ...extractedData,
+          nome: finalNome,
+          email: finalEmail,
+          telefone: finalTelefone,
+        },
         analises: analisesRealizadas,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },

@@ -127,10 +127,14 @@ export default function ApplyPage() {
 
         updateItem(item.id, {
           status: 'success',
-          candidateName: result.dados_extraidos?.nome || item.file.name,
+          candidateName: result.candidato_nome || result.dados_extraidos?.nome || item.file.name,
         })
       } catch (err: any) {
-        updateItem(item.id, { status: 'error', error: err.message || 'Erro ao processar' })
+        console.error('Erro no processamento do currículo:', err)
+        updateItem(item.id, {
+          status: 'error',
+          error: err.message || 'Erro ao processar o currículo',
+        })
       }
     }
 

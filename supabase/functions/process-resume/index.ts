@@ -69,6 +69,54 @@ function extractAsciiTextFromPdfBytes(bytes: Uint8Array): string {
   return textChunks.join(' ').replace(/\s+/g, ' ').trim()
 }
 
+// Extrai e limpa nome a partir do nome do arquivo (ex: "curriculo_joao_silva.pdf" -> "Joao Silva")
+function extractNameFromFileName(filePath: string): string | null {
+  if (!filePath) return null
+  const baseName = filePath.split('/').pop()?.split('\\').pop() || filePath
+  const nameWithoutExt = baseName.replace(/\.[^/.]+$/, '')
+  let cleaned = nameWithoutExt
+    .replace(/^\d+[-_]?/, '')
+    .replace(/[-_]\d+$/, '')
+    .replace(/[-_][a-z0-9]{4,10}$/i, '')
+    .replace(/[._-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (/^(curriculo|curriculos|cv|resume|documento|doc|scan|arquivo|\d+)$/i.test(cleaned)) {
+    return null
+  }
+
+  cleaned = cleaned.replace(/^(curr[ií]culo|cv|resume)(\s+de)?\s+/i, '').trim()
+
+  if (cleaned.length >= 3 && /[a-zA-ZÀ-ÿ]/.test(cleaned) && !/^\d+$/.test(cleaned)) {
+    return cleaned.replace(/\b\w/g, (l) => l.toUpperCase())
+  }
+  return null
+}
+
+// Extrai e formata nome a partir de e-mail (ex: "joao.silva@gmail.com" -> "Joao Silva")
+function extractNameFromEmail(email: string | null | undefined): string | null {
+  if (!email || !email.includes('@')) return null
+  const local = email.split('@')[0].trim()
+  if (
+    !local ||
+    /^(contato|rh|admin|financeiro|curriculo|candidato|user|usuario|info|jobs)$/i.test(local)
+  ) {
+    return null
+  }
+
+  const cleaned = local
+    .replace(/\d+$/, '')
+    .replace(/[._-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (cleaned.length >= 2 && /[a-zA-ZÀ-ÿ]/.test(cleaned)) {
+    return cleaned.replace(/\b\w/g, (l) => l.toUpperCase())
+  }
+  return null
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -126,17 +174,7 @@ Deno.serve(async (req: Request) => {
       extractedText = extractAsciiTextFromPdfBytes(fileBytes)
     }
 
-    if (!extractedText.trim() || extractedText.trim().length < 50) {
-      return new Response(
-        JSON.stringify({
-          error: 'O arquivo está vazio ou não contém texto legível (< 50 caracteres).',
-        }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
-      )
-    }
+    const hasSufficientText = extractedText && extractedText.trim().length >= 40
 
     // 3. OpenAI Extraction
     const openaiKey = Deno.env.get('OPENAI_KEY') || Deno.env.get('OPENIA_KEY')
@@ -188,7 +226,18 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const extractionPrompt = `Extraia os seguintes dados do currículo:
+    let extractedData: any = {
+      nome: null,
+      email: null,
+      telefones_celulares: [],
+      endereco: null,
+      experiencia_profissional: [],
+      skills: [],
+      formacao_academica: [],
+    }
+
+    if (hasSufficientText) {
+      const extractionPrompt = `Extraia os seguintes dados do currículo:
 - nome: Nome completo REAL do candidato, ou null se não identificado
 - email: Endereço de e-mail REAL, ou null se não identificado
 - telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11987654321"]) ou [] se nenhum
@@ -216,30 +265,97 @@ Formato JSON estrito esperado:
 Texto extraído do currículo:
 ${extractedText.substring(0, 18000)}`
 
-    let extractedData
-    try {
-      extractedData = await callOpenAIWithRetry(extractionPrompt)
-    } catch (err: any) {
-      console.error('Erro na chamada da OpenAI:', err)
-      return new Response(
-        JSON.stringify({
-          error: 'Erro ao analisar os dados do currículo com Inteligência Artificial.',
-        }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
-      )
+      try {
+        extractedData = await callOpenAIWithRetry(extractionPrompt)
+      } catch (err: any) {
+        console.error('Erro na chamada da OpenAI:', err)
+      }
     }
 
-    const cleanName = sanitizeAndValidateName(extractedData.nome || nome)
-    const cleanEmail = sanitizeAndValidateEmail(extractedData.email || email)
+    let cleanName = sanitizeAndValidateName(extractedData?.nome || nome)
+    const isDocx = filePath.toLowerCase().endsWith('.docx')
 
-    if (!cleanName) {
-      return new Response(
-        JSON.stringify({ error: 'Nome de candidato não identificado com segurança no documento.' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      )
+    if (!cleanName && !isDocx && fileBytes.length > 0 && fileBytes.length < 15 * 1024 * 1024) {
+      try {
+        console.log(`[process-resume] Tentando visão computacional GPT-4o para ${filePath}...`)
+        let binaryStr = ''
+        const len = fileBytes.byteLength
+        for (let i = 0; i < len; i++) {
+          binaryStr += String.fromCharCode(fileBytes[i])
+        }
+        const base64Data = btoa(binaryStr)
+
+        const visionResponse = await openai.chat.completions.create({
+          model: 'gpt-4o',
+          messages: [
+            {
+              role: 'system',
+              content:
+                'Você é um assistente de RH especializado em leitura de currículos visuais, fotos e PDFs escaneados. Preserve a acentuação original brasileira. NUNCA invente dados. Se não identificar, retorne null. Responda em JSON.',
+            },
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: `Analise visualmente este currículo/documento e extraia:
+{
+  "nome": "Nome completo REAL do candidato ou null",
+  "email": "Email ou null",
+  "telefones_celulares": ["telefones"],
+  "endereco": "endereço ou null",
+  "experiencia_profissional": ["experiências"],
+  "skills": ["habilidades"],
+  "formacao_academica": ["formações"]
+}`,
+                },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: `data:application/pdf;base64,${base64Data}`,
+                  },
+                },
+              ] as any,
+            },
+          ],
+          response_format: { type: 'json_object' },
+        })
+
+        const visionContent = visionResponse.choices[0]?.message?.content || '{}'
+        const visionData = JSON.parse(visionContent)
+        if (visionData) {
+          extractedData = {
+            ...extractedData,
+            ...visionData,
+            ...(visionData.nome ? { nome: visionData.nome } : {}),
+            ...(visionData.email ? { email: visionData.email } : {}),
+          }
+          cleanName = sanitizeAndValidateName(visionData.nome) || cleanName
+        }
+      } catch (visionErr: any) {
+        console.warn(`[process-resume] Visão GPT-4o falhou:`, visionErr?.message)
+      }
+    }
+
+    const cleanEmail = sanitizeAndValidateEmail(extractedData?.email || email)
+
+    let finalNome = cleanName
+    if (!finalNome) {
+      const emailDerived = extractNameFromEmail(cleanEmail)
+      const validEmailDerived = sanitizeAndValidateName(emailDerived)
+      if (validEmailDerived) {
+        finalNome = validEmailDerived
+      }
+    }
+    if (!finalNome) {
+      const fileDerived = extractNameFromFileName(filePath)
+      const validFileDerived = sanitizeAndValidateName(fileDerived)
+      if (validFileDerived) {
+        finalNome = validFileDerived
+      }
+    }
+    if (!finalNome) {
+      finalNome = 'Candidato'
     }
 
     let telefonesArr: string[] = []
@@ -268,7 +384,6 @@ ${extractedText.substring(0, 18000)}`
       finalTelefone = uniqueParts.length > 0 ? uniqueParts.join(',') : null
     }
 
-    const finalNome = cleanName
     const finalEmail = cleanEmail
 
     // 4. Deduplication
@@ -402,7 +517,13 @@ ${extractedText.substring(0, 18000)}`
       JSON.stringify({
         success: true,
         candidato_id: candidatoId,
-        dados_extraidos: extractedData,
+        candidato_nome: finalNome,
+        dados_extraidos: {
+          ...extractedData,
+          nome: finalNome,
+          email: finalEmail,
+          telefone: finalTelefone,
+        },
         analises: analisesRealizadas,
       }),
       {
