@@ -75,16 +75,20 @@ function extractNameFromFileName(filePath: string): string | null {
   const baseName = filePath.split('/').pop()?.split('\\').pop() || filePath
   // Remove extensão
   const nameWithoutExt = baseName.replace(/\.[^/.]+$/, '')
-  // Remove sufixos como timestamp, hashes ou identificadores tipo 1788205749600-87afhn
+  // Remove prefixos e sufixos de timestamp, hashes ou identificadores tipo 1788205749600-87afhn ou 1788206596330-1h6kms
   let cleaned = nameWithoutExt
     .replace(/^\d+[-_]?/, '') // remove timestamp no início
     .replace(/[-_]\d+$/, '') // remove timestamp no fim
-    .replace(/[-_][a-z0-9]{4,10}$/i, '') // remove hash curta no fim
+    .replace(/[-_][a-z0-9]{4,12}$/i, '') // remove hash curta no fim
     .replace(/[._-]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 
-  // Se o nome do arquivo for apenas números/hash ou palavras genéricas
+  // Se o nome resultante contiver dígitos ou for apenas números/hash/termos genéricos
+  if (/\d/.test(cleaned)) {
+    return null
+  }
+
   if (/^(curriculo|curriculos|cv|resume|documento|doc|scan|arquivo|\d+)$/i.test(cleaned)) {
     return null
   }
@@ -92,7 +96,11 @@ function extractNameFromFileName(filePath: string): string | null {
   // Remove termos como "curriculo de", "cv -", etc.
   cleaned = cleaned.replace(/^(curr[ií]culo|cv|resume)(\s+de)?\s+/i, '').trim()
 
-  if (cleaned.length >= 3 && /[a-zA-ZÀ-ÿ]/.test(cleaned) && !/^\d+$/.test(cleaned)) {
+  if (/\d/.test(cleaned)) {
+    return null
+  }
+
+  if (cleaned.length >= 3 && /[a-zA-ZÀ-ÿ]/.test(cleaned)) {
     // Formata capitalização
     return cleaned.replace(/\b\w/g, (l) => l.toUpperCase())
   }
@@ -316,6 +324,8 @@ ${extractedText.substring(0, 20000)}`
         }
         const base64Data = btoa(binaryStr)
 
+        const originalFileName = filePath.split('/').pop()?.split('\\').pop() || 'curriculo.pdf'
+
         const visionResponse = await openai.chat.completions.create({
           model: 'gpt-4o',
           messages: [
@@ -342,9 +352,10 @@ ${extractedText.substring(0, 20000)}`
 }`,
                 },
                 {
-                  type: 'image_url',
-                  image_url: {
-                    url: `data:application/pdf;base64,${base64Data}`,
+                  type: 'file',
+                  file_data: `data:application/pdf;base64,${base64Data}`,
+                  file: {
+                    filename: originalFileName,
                   },
                 },
               ] as any,

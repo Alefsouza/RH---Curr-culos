@@ -233,6 +233,9 @@ ${extractedText.substring(0, 18000)}`
                 }
                 const base64Data = btoa(binaryStr)
 
+                const originalFileName =
+                  storagePath.split('/').pop()?.split('\\').pop() || 'curriculo.pdf'
+
                 const visionResponse = await openai.chat.completions.create({
                   model: 'gpt-4o',
                   messages: [
@@ -259,9 +262,10 @@ ${extractedText.substring(0, 18000)}`
 }`,
                         },
                         {
-                          type: 'image_url',
-                          image_url: {
-                            url: `data:application/pdf;base64,${base64Data}`,
+                          type: 'file',
+                          file_data: `data:application/pdf;base64,${base64Data}`,
+                          file: {
+                            filename: originalFileName,
                           },
                         },
                       ] as any,

@@ -66,8 +66,11 @@ export const sanitizeAndValidateName = (name: string | null | undefined): string
   // Se o nome virou apenas uma única palavra muito curta ou inválida
   if (trimmed.length < 2) return null
 
-  // Se é só números ou caracteres especiais
+  // Se é só caracteres especiais ou não tem letras
   if (!/[a-zA-ZÀ-ÿ]/.test(trimmed)) return null
+
+  // Um nome de pessoa válido NÃO pode conter dígitos (rejeita "1h6kms", "87afhn", "1788206596330", etc.)
+  if (/\d/.test(trimmed)) return null
 
   return trimmed
 }

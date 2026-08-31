@@ -77,10 +77,15 @@ function extractNameFromFileName(filePath: string): string | null {
   let cleaned = nameWithoutExt
     .replace(/^\d+[-_]?/, '')
     .replace(/[-_]\d+$/, '')
-    .replace(/[-_][a-z0-9]{4,10}$/i, '')
+    .replace(/[-_][a-z0-9]{4,12}$/i, '')
     .replace(/[._-]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+
+  // Se o nome resultante contiver dígitos ou for apenas números/hash/termos genéricos
+  if (/\d/.test(cleaned)) {
+    return null
+  }
 
   if (/^(curriculo|curriculos|cv|resume|documento|doc|scan|arquivo|\d+)$/i.test(cleaned)) {
     return null
@@ -88,7 +93,11 @@ function extractNameFromFileName(filePath: string): string | null {
 
   cleaned = cleaned.replace(/^(curr[ií]culo|cv|resume)(\s+de)?\s+/i, '').trim()
 
-  if (cleaned.length >= 3 && /[a-zA-ZÀ-ÿ]/.test(cleaned) && !/^\d+$/.test(cleaned)) {
+  if (/\d/.test(cleaned)) {
+    return null
+  }
+
+  if (cleaned.length >= 3 && /[a-zA-ZÀ-ÿ]/.test(cleaned)) {
     return cleaned.replace(/\b\w/g, (l) => l.toUpperCase())
   }
   return null
@@ -285,6 +294,8 @@ ${extractedText.substring(0, 18000)}`
         }
         const base64Data = btoa(binaryStr)
 
+        const originalFileName = filePath.split('/').pop()?.split('\\').pop() || 'curriculo.pdf'
+
         const visionResponse = await openai.chat.completions.create({
           model: 'gpt-4o',
           messages: [
@@ -310,9 +321,10 @@ ${extractedText.substring(0, 18000)}`
 }`,
                 },
                 {
-                  type: 'image_url',
-                  image_url: {
-                    url: `data:application/pdf;base64,${base64Data}`,
+                  type: 'file',
+                  file_data: `data:application/pdf;base64,${base64Data}`,
+                  file: {
+                    filename: originalFileName,
                   },
                 },
               ] as any,
