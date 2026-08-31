@@ -8,6 +8,7 @@ import {
   sanitizeAndValidateName,
   sanitizeAndValidateEmail,
 } from '../_shared/validation.ts'
+import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
 
 // Extrai texto bruto contido em streams/objetos do PDF via regex com suporte a UTF-8
 function extractAsciiTextFromPdfBytes(bytes: Uint8Array): string {
@@ -71,30 +72,6 @@ function extractAsciiTextFromPdfBytes(bytes: Uint8Array): string {
   return textChunks.join(' ').replace(/\s+/g, ' ').trim()
 }
 
-// Extrai texto legível de arquivo DOCX (XML bruto dentro do zip) sem bibliotecas externas
-function extractRawTextFromDocxBytes(bytes: Uint8Array): string {
-  try {
-    const decoder = new TextDecoder('utf-8', { fatal: false })
-    const content = decoder.decode(bytes)
-    // Procura tags <w:t>...</w:t> ou <w:t xml:space="...">...</w:t> comuns em docx
-    const textMatches = content.matchAll(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/gi)
-    const chunks: string[] = []
-    for (const match of textMatches) {
-      if (match[1] && match[1].trim()) {
-        chunks.push(match[1])
-      }
-    }
-    if (chunks.length > 0) {
-      return chunks.join(' ').replace(/\s+/g, ' ').trim()
-    }
-    // Fallback: remover todas as tags xml
-    const stripped = content.replace(/<[^>]+>/g, ' ').replace(/[^\x20-\x7E\xC0-\xFF\n\r\t]/g, ' ')
-    return stripped.replace(/\s+/g, ' ').trim()
-  } catch {
-    return ''
-  }
-}
-
 interface ExtractedCandidateData {
   nome: string | null
   email: string | null
@@ -118,7 +95,7 @@ async function extractCandidateData(
   let extractedRawText = ''
 
   if (ext === 'docx') {
-    extractedRawText = extractRawTextFromDocxBytes(fileBytes)
+    extractedRawText = await extractRawTextFromDocxBytes(fileBytes)
   } else {
     extractedRawText = extractAsciiTextFromPdfBytes(fileBytes)
   }
@@ -709,7 +686,9 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
           })
 
         if (uploadError) {
-          console.warn(`Aviso de upload do currículo ${storagePath}:`, uploadError.message)
+          throw new Error(
+            `Falha no upload do arquivo para o Storage (${storagePath}): ${uploadError.message}`,
+          )
         }
 
         const {

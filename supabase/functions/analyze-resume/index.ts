@@ -8,6 +8,7 @@ import {
   sanitizeAndValidateName,
   sanitizeAndValidateEmail,
 } from '../_shared/validation.ts'
+import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
 
 // Extrai texto bruto contido em streams/objetos do PDF via regex com suporte a UTF-8
 function extractAsciiTextFromPdfBytes(bytes: Uint8Array): string {
@@ -66,28 +67,6 @@ function extractAsciiTextFromPdfBytes(bytes: Uint8Array): string {
   }
 
   return textChunks.join(' ').replace(/\s+/g, ' ').trim()
-}
-
-// Extrai texto legível de arquivo DOCX sem bibliotecas externas
-function extractRawTextFromDocxBytes(bytes: Uint8Array): string {
-  try {
-    const decoder = new TextDecoder('utf-8', { fatal: false })
-    const content = decoder.decode(bytes)
-    const textMatches = content.matchAll(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/gi)
-    const chunks: string[] = []
-    for (const match of textMatches) {
-      if (match[1] && match[1].trim()) {
-        chunks.push(match[1])
-      }
-    }
-    if (chunks.length > 0) {
-      return chunks.join(' ').replace(/\s+/g, ' ').trim()
-    }
-    const stripped = content.replace(/<[^>]+>/g, ' ').replace(/[^\x20-\x7E\xC0-\xFF\n\r\t]/g, ' ')
-    return stripped.replace(/\s+/g, ' ').trim()
-  } catch {
-    return ''
-  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -168,7 +147,7 @@ Deno.serve(async (req: Request) => {
     let extractedText = ''
 
     if (filePath.toLowerCase().endsWith('.docx')) {
-      extractedText = extractRawTextFromDocxBytes(fileBytes)
+      extractedText = await extractRawTextFromDocxBytes(fileBytes)
     } else {
       extractedText = extractAsciiTextFromPdfBytes(fileBytes)
     }
