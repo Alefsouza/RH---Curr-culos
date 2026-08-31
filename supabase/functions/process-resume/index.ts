@@ -9,65 +9,7 @@ import {
   sanitizeAndValidateEmail,
 } from '../_shared/validation.ts'
 import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
-
-// Extrai texto bruto contido em streams/objetos do PDF via regex com suporte a UTF-8
-function extractAsciiTextFromPdfBytes(bytes: Uint8Array): string {
-  let raw = ''
-  try {
-    const textDecoderUtf8 = new TextDecoder('utf-8', { fatal: false })
-    raw = textDecoderUtf8.decode(bytes)
-  } catch {
-    const textDecoderLatin1 = new TextDecoder('latin1')
-    raw = textDecoderLatin1.decode(bytes)
-  }
-
-  const textChunks: string[] = []
-
-  const btMatches = raw.matchAll(/BT[\s\S]*?ET/g)
-  for (const match of btMatches) {
-    const block = match[0]
-    const literalMatches = block.matchAll(/\((.*?)\)/g)
-    for (const lit of literalMatches) {
-      const decoded = lit[1]
-        .replace(/\\n/g, '\n')
-        .replace(/\\r/g, '\r')
-        .replace(/\\t/g, '\t')
-        .replace(/\\([()\\])/g, '$1')
-      if (decoded.trim().length > 0) {
-        textChunks.push(decoded)
-      }
-    }
-    const hexMatches = block.matchAll(/<([0-9a-fA-F\s]+)>/g)
-    for (const hex of hexMatches) {
-      const cleanHex = hex[1].replace(/\s+/g, '')
-      if (cleanHex.length % 2 === 0 && cleanHex.length >= 2) {
-        try {
-          const hexBytes = new Uint8Array(cleanHex.length / 2)
-          for (let k = 0; k < cleanHex.length; k += 2) {
-            hexBytes[k / 2] = parseInt(cleanHex.substring(k, k + 2), 16)
-          }
-          const decodedHexStr = new TextDecoder('utf-8', { fatal: false }).decode(hexBytes)
-          if (decodedHexStr.trim().length > 0) {
-            textChunks.push(decodedHexStr)
-          }
-        } catch {
-          let str = ''
-          for (let k = 0; k < cleanHex.length; k += 2) {
-            const code = parseInt(cleanHex.substring(k, k + 2), 16)
-            if (code >= 32) {
-              str += String.fromCharCode(code)
-            }
-          }
-          if (str.trim().length > 0) {
-            textChunks.push(str)
-          }
-        }
-      }
-    }
-  }
-
-  return textChunks.join(' ').replace(/\s+/g, ' ').trim()
-}
+import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
 
 // Extrai e limpa nome a partir do nome do arquivo (ex: "curriculo_joao_silva.pdf" -> "Joao Silva")
 function extractNameFromFileName(filePath: string): string | null {
@@ -180,7 +122,7 @@ Deno.serve(async (req: Request) => {
     if (filePath.toLowerCase().endsWith('.docx')) {
       extractedText = await extractRawTextFromDocxBytes(fileBytes)
     } else {
-      extractedText = extractAsciiTextFromPdfBytes(fileBytes)
+      extractedText = await extractTextFromPdfBytes(fileBytes)
     }
 
     const hasSufficientText = extractedText && extractedText.trim().length >= 40
@@ -246,19 +188,20 @@ Deno.serve(async (req: Request) => {
     }
 
     if (hasSufficientText) {
-      const extractionPrompt = `Extraia os seguintes dados do currículo:
-- nome: Nome completo REAL do candidato, ou null se não identificado
-- email: Endereço de e-mail REAL, ou null se não identificado
-- telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11987654321"]) ou [] se nenhum
-- endereco: Cidade e estado ou endereço completo, ou null se não identificado
+      const extractionPrompt = `Extraia com máxima atenção e precisão os seguintes dados do currículo:
+- nome: Nome completo REAL do candidato em destaque no cabeçalho ou topo (ex: "VALDINÉIA DOMINGUES", "Valdinéia Domingues"). Preserve rigorosamente todos os acentos e grafia em português brasileiro (á, é, í, ó, ú, ã, õ, ç, etc.). Retorne null apenas se for impossível identificar o nome de uma pessoa física.
+- email: Endereço de e-mail REAL (ex: "valdineiadomingues82@gmail.com"), ou null se não identificado
+- telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11974697877"]) ou [] se nenhum
+- endereco: Cidade e estado ou endereço completo (ex: "São Bernardo do Campo - SP"), ou null se não identificado
 - experiencia_profissional: Lista de experiências anteriores com cargos e empresas, ou []
 - skills: Lista de habilidades técnicas e competências, ou []
 - formacao_academica: Lista de cursos e escolaridade, ou []
 
 IMPORTANTE:
-1. NUNCA invente dados (evite "Candidato Desconhecido", "João da Silva", "11999999999", "exemplo@email.com"). Se não constar com clareza, use null.
-2. Evite duplicação de palavras no nome (ex: "Lucas Lucas").
-3. NUNCA use a string "string ou null" ou "string". Use null real.
+1. NUNCA invente dados fictícios (evite "Candidato Desconhecido", "João da Silva", "11999999999", "exemplo@email.com"). Se constar no documento, capture com precisão.
+2. O nome do candidato frequentemente aparece no cabeçalho/primeiras linhas do documento (ex: "VALDINÉIA DOMINGUES").
+3. Evite duplicação de palavras no nome (ex: "Lucas Lucas").
+4. NUNCA use a string "string ou null" ou "string". Use null real.
 
 Formato JSON estrito esperado:
 {
@@ -284,10 +227,15 @@ ${extractedText.substring(0, 18000)}`
     let cleanName = sanitizeAndValidateName(extractedData?.nome || nome)
     const isDocx = filePath.toLowerCase().endsWith('.docx')
 
-    if (!cleanName && !isDocx && fileBytes.length > 0 && fileBytes.length < 15 * 1024 * 1024) {
+    const needsVision =
+      !cleanName ||
+      !hasSufficientText ||
+      (!extractedData?.email && (!extractedData?.skills || extractedData.skills.length === 0))
+
+    if (needsVision && !isDocx && fileBytes.length > 0 && fileBytes.length < 15 * 1024 * 1024) {
       try {
         console.log(
-          `[process-resume] Tentando leitura visual de PDF via gpt-5-mini para ${filePath}...`,
+          `[process-resume] Tentando leitura visual de PDF via gpt-4o para ${filePath}...`,
         )
         let binaryStr = ''
         const len = fileBytes.byteLength
@@ -299,27 +247,27 @@ ${extractedText.substring(0, 18000)}`
         const originalFileName = filePath.split('/').pop()?.split('\\').pop() || 'curriculo.pdf'
 
         const visionResponse = await openai.chat.completions.create({
-          model: 'gpt-5-mini',
+          model: 'gpt-4o',
           messages: [
             {
               role: 'system',
               content:
-                'Você é um assistente de RH especializado em leitura de currículos visuais, fotos e PDFs escaneados. Preserve a acentuação original brasileira. NUNCA invente dados. Se não identificar, retorne null. Responda em JSON.',
+                'Você é um assistente de RH altamente especializado em leitura visual de currículos, fotos e PDFs escaneados. O nome completo do candidato sempre se encontra em destaque no topo/cabeçalho do currículo (ex: "VALDINÉIA DOMINGUES", "MARIA APARECIDA"). Preserve rigorosamente todos os acentos e grafia em português brasileiro (É, é, á, ã, ç, etc.). NUNCA invente dados fictícios nem retorne "Candidato Desconhecido" ou "Candidato". Responda em JSON válido.',
             },
             {
               role: 'user',
               content: [
                 {
                   type: 'text',
-                  text: `Analise visualmente este currículo/documento e extraia:
+                  text: `Analise cuidadosamente este currículo/documento em anexo e extraia todas as informações. ATENÇÃO: Identifique o nome completo do candidato localizado no topo/cabeçalho do documento (preserve acentuação, ex: "VALDINÉIA DOMINGUES" -> "Valdinéia Domingues"):
 {
-  "nome": "Nome completo REAL do candidato ou null",
-  "email": "Email ou null",
-  "telefones_celulares": ["telefones"],
-  "endereco": "endereço ou null",
-  "experiencia_profissional": ["experiências"],
-  "skills": ["habilidades"],
-  "formacao_academica": ["formações"]
+  "nome": "Nome completo REAL do candidato presente no cabeçalho/documento",
+  "email": "Email real ou null",
+  "telefones_celulares": ["telefones reais encontrados"],
+  "endereco": "endereço, cidade e estado ou null",
+  "experiencia_profissional": ["experiências anteriores"],
+  "skills": ["habilidades e competências"],
+  "formacao_academica": ["formações e escolaridade"]
 }`,
                 },
                 {

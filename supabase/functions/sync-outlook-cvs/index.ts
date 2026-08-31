@@ -9,68 +9,7 @@ import {
   sanitizeAndValidateEmail,
 } from '../_shared/validation.ts'
 import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
-
-// Extrai texto bruto contido em streams/objetos do PDF via regex com suporte a UTF-8
-function extractAsciiTextFromPdfBytes(bytes: Uint8Array): string {
-  let raw = ''
-  try {
-    const textDecoderUtf8 = new TextDecoder('utf-8', { fatal: false })
-    raw = textDecoderUtf8.decode(bytes)
-  } catch {
-    const textDecoderLatin1 = new TextDecoder('latin1')
-    raw = textDecoderLatin1.decode(bytes)
-  }
-
-  const textChunks: string[] = []
-
-  // Procura blocos BT ... ET no PDF
-  const btMatches = raw.matchAll(/BT[\s\S]*?ET/g)
-  for (const match of btMatches) {
-    const block = match[0]
-    // Procura strings literais (texto)
-    const literalMatches = block.matchAll(/\((.*?)\)/g)
-    for (const lit of literalMatches) {
-      const decoded = lit[1]
-        .replace(/\\n/g, '\n')
-        .replace(/\\r/g, '\r')
-        .replace(/\\t/g, '\t')
-        .replace(/\\([()\\])/g, '$1')
-      if (decoded.trim().length > 0) {
-        textChunks.push(decoded)
-      }
-    }
-    // Procura strings hex <48656c6c6f>
-    const hexMatches = block.matchAll(/<([0-9a-fA-F\s]+)>/g)
-    for (const hex of hexMatches) {
-      const cleanHex = hex[1].replace(/\s+/g, '')
-      if (cleanHex.length % 2 === 0 && cleanHex.length >= 2) {
-        try {
-          const hexBytes = new Uint8Array(cleanHex.length / 2)
-          for (let k = 0; k < cleanHex.length; k += 2) {
-            hexBytes[k / 2] = parseInt(cleanHex.substring(k, k + 2), 16)
-          }
-          const decodedHexStr = new TextDecoder('utf-8', { fatal: false }).decode(hexBytes)
-          if (decodedHexStr.trim().length > 0) {
-            textChunks.push(decodedHexStr)
-          }
-        } catch {
-          let str = ''
-          for (let k = 0; k < cleanHex.length; k += 2) {
-            const code = parseInt(cleanHex.substring(k, k + 2), 16)
-            if (code >= 32) {
-              str += String.fromCharCode(code)
-            }
-          }
-          if (str.trim().length > 0) {
-            textChunks.push(str)
-          }
-        }
-      }
-    }
-  }
-
-  return textChunks.join(' ').replace(/\s+/g, ' ').trim()
-}
+import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
 
 interface ExtractedCandidateData {
   nome: string | null
@@ -97,7 +36,7 @@ async function extractCandidateData(
   if (ext === 'docx') {
     extractedRawText = await extractRawTextFromDocxBytes(fileBytes)
   } else {
-    extractedRawText = extractAsciiTextFromPdfBytes(fileBytes)
+    extractedRawText = await extractTextFromPdfBytes(fileBytes)
   }
 
   // Se o texto extraído for vazio ou muito curto (< 50 caracteres), arquivo escaneado/imagem/sem texto legível

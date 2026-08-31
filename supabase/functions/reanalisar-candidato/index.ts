@@ -9,65 +9,7 @@ import {
   sanitizeAndValidateEmail,
 } from '../_shared/validation.ts'
 import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
-
-// Extrai texto bruto contido em streams/objetos do PDF via regex com suporte a UTF-8
-function extractAsciiTextFromPdfBytes(bytes: Uint8Array): string {
-  let raw = ''
-  try {
-    const textDecoderUtf8 = new TextDecoder('utf-8', { fatal: false })
-    raw = textDecoderUtf8.decode(bytes)
-  } catch {
-    const textDecoderLatin1 = new TextDecoder('latin1')
-    raw = textDecoderLatin1.decode(bytes)
-  }
-
-  const textChunks: string[] = []
-
-  const btMatches = raw.matchAll(/BT[\s\S]*?ET/g)
-  for (const match of btMatches) {
-    const block = match[0]
-    const literalMatches = block.matchAll(/\((.*?)\)/g)
-    for (const lit of literalMatches) {
-      const decoded = lit[1]
-        .replace(/\\n/g, '\n')
-        .replace(/\\r/g, '\r')
-        .replace(/\\t/g, '\t')
-        .replace(/\\([()\\])/g, '$1')
-      if (decoded.trim().length > 0) {
-        textChunks.push(decoded)
-      }
-    }
-    const hexMatches = block.matchAll(/<([0-9a-fA-F\s]+)>/g)
-    for (const hex of hexMatches) {
-      const cleanHex = hex[1].replace(/\s+/g, '')
-      if (cleanHex.length % 2 === 0 && cleanHex.length >= 2) {
-        try {
-          const hexBytes = new Uint8Array(cleanHex.length / 2)
-          for (let k = 0; k < cleanHex.length; k += 2) {
-            hexBytes[k / 2] = parseInt(cleanHex.substring(k, k + 2), 16)
-          }
-          const decodedHexStr = new TextDecoder('utf-8', { fatal: false }).decode(hexBytes)
-          if (decodedHexStr.trim().length > 0) {
-            textChunks.push(decodedHexStr)
-          }
-        } catch {
-          let str = ''
-          for (let k = 0; k < cleanHex.length; k += 2) {
-            const code = parseInt(cleanHex.substring(k, k + 2), 16)
-            if (code >= 32) {
-              str += String.fromCharCode(code)
-            }
-          }
-          if (str.trim().length > 0) {
-            textChunks.push(str)
-          }
-        }
-      }
-    }
-  }
-
-  return textChunks.join(' ').replace(/\s+/g, ' ').trim()
-}
+import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
 
 // Extrai caminho relativo do storage a partir de URL pública ou storage path
 function extractStoragePathFromCurriculoUrl(urlOrPath: string): string | null {
@@ -174,7 +116,7 @@ Deno.serve(async (req: Request) => {
             const isDocx = storagePath.toLowerCase().endsWith('.docx')
             let extractedText = isDocx
               ? await extractRawTextFromDocxBytes(fileBytes)
-              : extractAsciiTextFromPdfBytes(fileBytes)
+              : await extractTextFromPdfBytes(fileBytes)
 
             const openai = new OpenAI({ apiKey: openaiKey })
 
@@ -183,14 +125,14 @@ Deno.serve(async (req: Request) => {
             // Tentativa 1: Via texto bruto extraído
             if (extractedText && extractedText.trim().length >= 30) {
               const systemPrompt =
-                'Você é um assistente sênior de RH especialista em análise de currículos em português brasileiro. NUNCA invente dados fictícios ou use placeholders como "Candidato Desconhecido", "Nome Completo Exemplo", "João da Silva", "string ou null". Se não identificar o nome real do candidato, retorne null. Preserve rigorosamente acentos e grafia original. Retorne SEMPRE JSON válido.'
+                'Você é um assistente sênior de RH especialista em análise de currículos em português brasileiro. O nome do candidato frequentemente está no topo/cabeçalho do documento (ex: "VALDINÉIA DOMINGUES"). NUNCA invente dados fictícios ou use placeholders como "Candidato Desconhecido", "Nome Completo Exemplo", "João da Silva", "string ou null". Preserve rigorosamente acentos (á, é, í, ó, ú, ã, õ, ç, etc.) e grafia original. Retorne SEMPRE JSON válido.'
 
-              const promptText = `Extraia todos os dados cadastrais e profissionais do currículo:
-- nome: Nome completo REAL do candidato, ou null se não identificado
-- email: E-mail REAL do candidato, ou null se não identificado
-- telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11987654321"]) ou [] se nenhum
+              const promptText = `Extraia com máxima atenção todos os dados cadastrais e profissionais do currículo:
+- nome: Nome completo REAL do candidato em destaque no cabeçalho ou topo (ex: "VALDINÉIA DOMINGUES", "Valdinéia Domingues"). Preserve todos os acentos e retorne null apenas se não houver nome de pessoa física.
+- email: E-mail REAL do candidato (ex: "valdineiadomingues82@gmail.com"), ou null se não identificado
+- telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11974697877"]) ou [] se nenhum
 - telefone: Telefone principal ou null
-- endereco: Endereço completo ou cidade/estado, ou null se não identificado
+- endereco: Endereço completo ou cidade/estado (ex: "São Bernardo do Campo - SP"), ou null se não identificado
 - resumo_cv: Resumo das qualificações, ou null
 - experiencia_profissional: Lista de experiências anteriores, ou []
 - skills: Lista de habilidades técnicas e competências, ou []
@@ -222,7 +164,7 @@ ${extractedText.substring(0, 18000)}`
             ) {
               try {
                 console.log(
-                  `[reanalisar-candidato] Tentando extração avançada com visão PDF (gpt-5-mini) para o candidato ${candidato.id}...`,
+                  `[reanalisar-candidato] Tentando extração avançada com visão PDF (gpt-4o) para o candidato ${candidato.id}...`,
                 )
                 // Converter os bytes do PDF em base64 data URL
                 let binaryStr = ''
@@ -236,28 +178,28 @@ ${extractedText.substring(0, 18000)}`
                   storagePath.split('/').pop()?.split('\\').pop() || 'curriculo.pdf'
 
                 const visionResponse = await openai.chat.completions.create({
-                  model: 'gpt-5-mini',
+                  model: 'gpt-4o',
                   messages: [
                     {
                       role: 'system',
                       content:
-                        'Você é um assistente de RH de alta precisão. Analise o documento em anexo (currículo) e extraia todos os dados reais. NUNCA invente nomes nem use placeholders (como "Candidato Desconhecido" ou "Nome Exemplo"). Se não encontrar o nome no documento, retorne null. Retorne SEMPRE JSON válido.',
+                        'Você é um assistente de RH de alta precisão especializado em leitura visual de currículos e PDFs. O nome completo do candidato sempre se encontra em destaque no topo/cabeçalho do currículo (ex: "VALDINÉIA DOMINGUES"). Preserve rigorosamente todos os acentos e grafia em português brasileiro (É, é, á, ã, ç, etc.). NUNCA invente dados fictícios nem use placeholders (como "Candidato Desconhecido" ou "Nome Exemplo"). Retorne SEMPRE JSON válido.',
                     },
                     {
                       role: 'user',
                       content: [
                         {
                           type: 'text',
-                          text: `Analise visualmente este currículo e extraia rigorosamente:
+                          text: `Analise visualmente este currículo em anexo e extraia com prioridade o nome no topo/cabeçalho (ex: "VALDINÉIA DOMINGUES" -> "Valdinéia Domingues"):
 {
-  "nome": "Nome completo REAL da pessoa ou null",
+  "nome": "Nome completo REAL da pessoa no cabeçalho ou null",
   "email": "email real ou null",
-  "telefones_celulares": ["telefones REAIS"],
+  "telefones_celulares": ["telefones REAIS com DDD"],
   "endereco": "endereço ou cidade/estado ou null",
-  "resumo_cv": "resumo ou null",
-  "experiencia_profissional": ["experiências"],
-  "skills": ["habilidades"],
-  "formacao_academica": ["formações"]
+  "resumo_cv": "resumo profissional ou null",
+  "experiencia_profissional": ["experiências anteriores"],
+  "skills": ["habilidades e competências"],
+  "formacao_academica": ["formações e escolaridade"]
 }`,
                         },
                         {
