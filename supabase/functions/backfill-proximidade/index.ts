@@ -35,9 +35,7 @@ Deno.serve(async (req: Request) => {
       // payload vazio ou inválido ok para trigger geral
     }
 
-    const batchLimit = body.limit || 50
-    const offset = body.offset || 0
-    const forceAll = Boolean(body.forceAll)
+    const forceAll = true
 
     // Geocodificar os dois endereços de referência para obter coordenadas exatas do Google Maps
     let cursinoCoords: Coordinates = REFERENCE_LOCATIONS.cursino.approxCoords
@@ -65,7 +63,7 @@ Deno.serve(async (req: Request) => {
       query = query.is('proximidade', null)
     }
 
-    const { data: candidates, error: fetchErr } = await query.range(offset, offset + batchLimit - 1)
+    const { data: candidates, error: fetchErr } = await query
 
     if (fetchErr) {
       throw fetchErr
