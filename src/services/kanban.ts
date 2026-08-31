@@ -22,6 +22,7 @@ type CandidateWithRelations = {
   fonte: string | null
   etapa_id: string | null
   criado_em: string
+  proximidade?: 'cursino' | 'sapopemba' | 'nenhum' | null
   vagas: { titulo: string } | { titulo: string }[] | null
   analises: { resultado: string | null; detalhes: any; criado_em: string }[] | null
 }
@@ -69,6 +70,7 @@ export async function fetchCandidates() {
         criado_em: d.criado_em,
         analysisResult: latestIa?.resultado || null,
         analysisDetails: latestIa?.detalhes || null,
+        proximidade: (d as any).proximidade || null,
       }
     })
 }

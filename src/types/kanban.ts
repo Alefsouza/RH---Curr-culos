@@ -12,6 +12,7 @@ export interface Candidate {
   analysisResult?: string | null
   analysisDetails?: any
   ultima_resposta_whatsapp?: string | null
+  proximidade?: 'cursino' | 'sapopemba' | 'nenhum' | null
 }
 
 export interface Stage {

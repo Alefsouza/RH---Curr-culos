@@ -11,6 +11,7 @@ import {
   CheckCircle,
   XCircle,
   Users,
+  MapPin,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
@@ -162,7 +163,23 @@ export function KanbanCard({
                 {candidate.phone.split(',').filter(Boolean).length} números
               </span>
             )}
-          </div>{' '}
+          </div>
+          {candidate.proximidade === 'cursino' && (
+            <div className="flex items-center">
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200/60 rounded px-1.5 py-0.5">
+                <MapPin className="h-3 w-3 text-amber-600" />
+                Próximo à Cursino
+              </span>
+            </div>
+          )}
+          {candidate.proximidade === 'sapopemba' && (
+            <div className="flex items-center">
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-sky-700 bg-sky-50 border border-sky-200/60 rounded px-1.5 py-0.5">
+                <MapPin className="h-3 w-3 text-sky-600" />
+                Próxima à Sapopemba
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-between pt-1">
