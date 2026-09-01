@@ -211,10 +211,7 @@ export default function CandidateDetails() {
   }
 
   const handleReanalyze = async () => {
-    if (!candidate?.vaga_id) {
-      toast.error('Candidato não possui vaga associada.')
-      return
-    }
+    if (!candidate?.id) return
     setReanalyzing(true)
     try {
       const { data, error } = await supabase.functions.invoke('reanalisar-candidato', {

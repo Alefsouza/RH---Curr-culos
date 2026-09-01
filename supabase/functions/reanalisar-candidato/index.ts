@@ -86,15 +86,18 @@ Deno.serve(async (req: Request) => {
         ? { ...candidato.dados_extraidos }
         : {}
 
-    // 1. Verificar se o nome é inválido, se falta objetivo ou se foi forçada a reextração completa
+    // 1. Verificar se o nome é inválido, se falta objetivo (ausente ou vazio) ou se foi forçada a reextração completa
     const validCurrentName = sanitizeAndValidateName(currentNome)
     const validExtractedName = sanitizeAndValidateName(currentDadosExtraidos.nome)
+    const hasObjetivo =
+      typeof currentDadosExtraidos.objetivo === 'string' &&
+      currentDadosExtraidos.objetivo.trim().length > 0
     const needsReExtraction =
       force_reextract ||
       !validCurrentName ||
       !validExtractedName ||
       !currentDadosExtraidos.skills ||
-      !currentDadosExtraidos.objetivo ||
+      !hasObjetivo ||
       (Array.isArray(currentDadosExtraidos.skills) &&
         currentDadosExtraidos.skills.length === 0 &&
         !currentEmail)
@@ -320,30 +323,28 @@ ${extractedText.substring(0, 18000)}`
 
     let vagaId = candidato.vaga_id
 
-    // Se o candidato não tiver vaga OU se foi solicitada reextração forçada (ou se a vaga atual precisa ser reavaliada com o novo objetivo)
-    const shouldReidentifyVaga = !vagaId || force_reextract
+    // Reanálise SEMPRE reidentifica a vaga compatível com base no currículo atualizado
+    const identifyRes = await fetch(`${supabaseUrl}/functions/v1/identify-vaga-from-cv`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${supabaseKey}` },
+      body: JSON.stringify({
+        candidato_id: candidato.id,
+        user_id: effectiveUserId,
+        dados_extraidos: currentDadosExtraidos,
+      }),
+    })
 
-    if (shouldReidentifyVaga) {
-      const identifyRes = await fetch(`${supabaseUrl}/functions/v1/identify-vaga-from-cv`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${supabaseKey}` },
-        body: JSON.stringify({
-          candidato_id: candidato.id,
-          user_id: effectiveUserId,
-          dados_extraidos: currentDadosExtraidos,
-        }),
+    const identifyData = await identifyRes.json()
+
+    if (identifyData.error) {
+      return new Response(JSON.stringify({ error: identifyData.error }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
+    }
 
-      const identifyData = await identifyRes.json()
-
-      if (identifyData.error) {
-        return new Response(JSON.stringify({ error: identifyData.error }), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
-      }
-
-      if (identifyData.vaga_id) {
+    if (identifyData.vaga_id) {
+      if (identifyData.vaga_id !== candidato.vaga_id) {
         const { error: updateError } = await supabase
           .from('candidatos')
           .update({ vaga_id: identifyData.vaga_id })
@@ -355,27 +356,27 @@ ${extractedText.substring(0, 18000)}`
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           })
         }
+      }
 
-        vagaId = identifyData.vaga_id
-      } else if (!vagaId) {
-        // Se nenhuma vaga for compatível e ainda não tiver vaga, busca a primeira vaga aberta como fallback para pontuar ou criar analise
-        const { data: fallbackVaga } = await supabase
-          .from('vagas')
-          .select('id')
-          .order('criado_em', { ascending: true })
-          .limit(1)
-          .maybeSingle()
+      vagaId = identifyData.vaga_id
+    } else if (!vagaId) {
+      // Se nenhuma vaga for compatível e ainda não tiver vaga, busca a primeira vaga aberta como fallback para pontuar ou criar analise
+      const { data: fallbackVaga } = await supabase
+        .from('vagas')
+        .select('id')
+        .order('criado_em', { ascending: true })
+        .limit(1)
+        .maybeSingle()
 
-        if (fallbackVaga?.id) {
-          vagaId = fallbackVaga.id
-        } else {
-          return new Response(
-            JSON.stringify({
-              error: 'Nenhuma vaga cadastrada no sistema para realizar a análise.',
-            }),
-            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-          )
-        }
+      if (fallbackVaga?.id) {
+        vagaId = fallbackVaga.id
+      } else {
+        return new Response(
+          JSON.stringify({
+            error: 'Nenhuma vaga cadastrada no sistema para realizar a análise.',
+          }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
       }
     }
 
