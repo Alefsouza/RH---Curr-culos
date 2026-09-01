@@ -60,17 +60,8 @@ function StatusBadge({ status }: { status: string | null }) {
   }
   return <span className="text-xs text-slate-500">-</span>
 }
-import { useAuth } from '@/hooks/use-auth'
-import { reanalyzeCandidate, updateCandidateVaga } from '@/services/candidates'
+import { reanalyzeCandidateEdge } from '@/services/candidates'
 import { toast } from 'sonner'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import {
   Select,
   SelectContent,
@@ -81,7 +72,6 @@ import {
 
 export function CandidateTable({
   candidates,
-  vagas = [],
   totalCount = 0,
   page = 1,
   pageSize = 30,
@@ -114,10 +104,7 @@ export function CandidateTable({
   dateSortOrder?: 'desc' | 'asc' | null
   onToggleDateSort?: () => void
 }) {
-  const { user } = useAuth()
   const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set())
-  const [reanalyzeCandidateModal, setReanalyzeCandidateModal] = useState<any | null>(null)
-  const [selectedVagaId, setSelectedVagaId] = useState<string>('')
 
   const allSelected = candidates.length > 0 && candidates.every((c) => selectedIds?.has(c.id))
   const someSelected = candidates.some((c) => selectedIds?.has(c.id))
@@ -127,29 +114,17 @@ export function CandidateTable({
       ? 'indeterminate'
       : false
 
-  const handleReanalyze = async (candidate: any, overrideVagaId?: string) => {
+  const handleReanalyze = async (candidate: any) => {
     if (!candidate.curriculo_url) {
       toast.error('Este candidato não possui currículo anexado.')
       return
     }
 
-    const targetVagaId = overrideVagaId || candidate.vaga_id
-    if (!targetVagaId) {
-      setReanalyzeCandidateModal(candidate)
-      setSelectedVagaId('')
-      return
-    }
-
-    if (!user) return
-
     setAnalyzingIds((prev) => new Set(prev).add(candidate.id))
 
     try {
-      if (overrideVagaId && candidate.vaga_id !== overrideVagaId) {
-        await updateCandidateVaga(candidate.id, overrideVagaId)
-      }
-      await reanalyzeCandidate(candidate.id, targetVagaId, user.id)
-      toast.success('Análise concluída com sucesso!')
+      await reanalyzeCandidateEdge(candidate.id)
+      toast.success('Reanálise concluída com sucesso!')
       if (onRefresh) onRefresh()
       else window.location.reload()
     } catch (error: any) {
@@ -162,17 +137,6 @@ export function CandidateTable({
         next.delete(candidate.id)
         return next
       })
-    }
-  }
-
-  const handleConfirmReanalyze = () => {
-    if (!selectedVagaId) {
-      toast.error('Selecione uma vaga para continuar.')
-      return
-    }
-    if (reanalyzeCandidateModal) {
-      handleReanalyze(reanalyzeCandidateModal, selectedVagaId)
-      setReanalyzeCandidateModal(null)
     }
   }
 
@@ -375,53 +339,6 @@ export function CandidateTable({
           </TableBody>
         </Table>
       </div>
-
-      <Dialog
-        open={!!reanalyzeCandidateModal}
-        onOpenChange={(open) => !open && setReanalyzeCandidateModal(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Selecionar Vaga para Análise</DialogTitle>
-            <DialogDescription>
-              O candidato <strong>{reanalyzeCandidateModal?.nome}</strong> não possui uma vaga
-              vinculada. Selecione uma vaga abaixo para que a Inteligência Artificial possa avaliar
-              a aderência do currículo.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <Select value={selectedVagaId} onValueChange={setSelectedVagaId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione uma vaga..." />
-              </SelectTrigger>
-              <SelectContent>
-                {vagas.length === 0 ? (
-                  <SelectItem value="none" disabled>
-                    Nenhuma vaga cadastrada
-                  </SelectItem>
-                ) : (
-                  vagas.map((vaga) => (
-                    <SelectItem key={vaga.id} value={vaga.id}>
-                      {vaga.titulo}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setReanalyzeCandidateModal(null)}>
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleConfirmReanalyze}
-              disabled={!selectedVagaId || selectedVagaId === 'none'}
-            >
-              Confirmar e Analisar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Mobile Cards */}
       <div className="grid grid-cols-1 gap-4 md:hidden">

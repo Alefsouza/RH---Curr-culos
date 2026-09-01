@@ -213,6 +213,15 @@ Deno.serve(async (req: Request) => {
 Dados completos do currículo:
 ${JSON.stringify(cvData)}
 
+DIRETRIZES CRÍTICAS PARA AVALIAÇÃO DE CRITÉRIOS:
+1. ESCOLARIDADE É REQUISITO MÍNIMO:
+   - Todo critério de escolaridade (ex: "Ensino Fundamental", "Ensino Médio") expressa a ESCOLARIDADE MÍNIMA exigida. NUNCA penalize um candidato por ter escolaridade superior à exigida.
+   - Se o critério exigir "Ensino Fundamental" (incompleto ou completo), candidatos com Ensino Fundamental, Ensino Médio (incompleto/completo) ou Ensino Superior (incompleto/completo) ATENDEM PLENAMENTE ao requisito. Coloque em 'matched_criteria' (ex: "Requerido Ensino Fundamental mínimo, candidato possui Ensino Médio/Superior") e NUNCA em 'unmatched_criteria'.
+   - Se o critério exigir "Ensino Médio", candidatos com Ensino Médio ou Superior atendem ao requisito.
+
+2. AVALIAÇÃO GERAL:
+   - Verifique a aderência real às atividades da vaga e requisitos mandatórios vs desejáveis informados nos critérios.
+
 Retorne ESTRITAMENTE um JSON com as seguintes chaves:
 - resultado (qualificado, nao_qualificado ou revisar)
 - detalhes (objeto com score (número inteiro de 0 a 100 representando a compatibilidade geral do candidato), matched_criteria (array de objetos com nome (string) e evidencia (string)), unmatched_criteria (array de objetos com nome (string) e motivo (string)), summary (string com resumo conciso da análise), pontos_fortes (array de strings), pontos_fracos (array de strings), aderencia (string ex: '85%') e motivo (string, explicação breve sobre a decisão, focando na localização se for reprovado))`
