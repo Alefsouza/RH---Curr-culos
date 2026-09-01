@@ -352,6 +352,13 @@ export default function CandidatesPage() {
     }
   }
 
+  const handleUpdateCandidateLocal = useCallback(
+    (candidateId: string, updates: Partial<CandidateItem>) => {
+      setCandidates((prev) => prev.map((c) => (c.id === candidateId ? { ...c, ...updates } : c)))
+    },
+    [],
+  )
+
   const handleBulkReanalyze = () => {
     const selectedCandidates = candidates
       .filter((c) => selectedIds.has(c.id))
@@ -512,6 +519,7 @@ export default function CandidatesPage() {
           onDelete={setDeleteId}
           onToggleStatus={handleToggleStatus}
           onRefresh={loadData}
+          onUpdateCandidateLocal={handleUpdateCandidateLocal}
           selectedIds={selectedIds}
           onToggleSelect={handleToggleSelect}
           onToggleSelectAll={handleToggleSelectAll}

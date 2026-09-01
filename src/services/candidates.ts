@@ -261,7 +261,12 @@ export async function updateCandidate(
   if (error) throw error
 }
 
-export async function updateCandidateVaga(id: string, vagaId: string) {
+export async function updateCandidateNome(id: string, nome: string) {
+  const { error } = await supabase.from('candidatos').update({ nome }).eq('id', id)
+  if (error) throw error
+}
+
+export async function updateCandidateVaga(id: string, vagaId: string | null) {
   const { error } = await supabase.from('candidatos').update({ vaga_id: vagaId }).eq('id', id)
   if (error) throw error
 }

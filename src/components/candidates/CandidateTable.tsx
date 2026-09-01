@@ -31,7 +31,22 @@ import {
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import { Check, Pencil, X as CloseIcon } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import {
+  updateCandidateNome,
+  updateCandidateVaga,
+  reanalyzeCandidateEdge,
+} from '@/services/candidates'
+import { toast } from 'sonner'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 function StatusBadge({ status }: { status: string | null }) {
   if (status === 'revisar') {
@@ -60,18 +75,10 @@ function StatusBadge({ status }: { status: string | null }) {
   }
   return <span className="text-xs text-slate-500">-</span>
 }
-import { reanalyzeCandidateEdge } from '@/services/candidates'
-import { toast } from 'sonner'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 
 export function CandidateTable({
   candidates,
+  vagas = [],
   totalCount = 0,
   page = 1,
   pageSize = 30,
@@ -81,6 +88,7 @@ export function CandidateTable({
   onDelete,
   onToggleStatus,
   onRefresh,
+  onUpdateCandidateLocal,
   selectedIds,
   onToggleSelect,
   onToggleSelectAll,
@@ -98,6 +106,7 @@ export function CandidateTable({
   onDelete: (id: string) => void
   onToggleStatus: (id: string, status: string | null, vagaId: string | null) => void
   onRefresh?: () => void
+  onUpdateCandidateLocal?: (candidateId: string, updates: Partial<any>) => void
   selectedIds?: Set<string>
   onToggleSelect?: (id: string) => void
   onToggleSelectAll?: () => void
@@ -105,6 +114,84 @@ export function CandidateTable({
   onToggleDateSort?: () => void
 }) {
   const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set())
+  const [editingNameId, setEditingNameId] = useState<string | null>(null)
+  const [nameInputValue, setNameInputValue] = useState('')
+  const [savingNameId, setSavingNameId] = useState<string | null>(null)
+  const [savingVagaId, setSavingVagaId] = useState<string | null>(null)
+  const nameInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (editingNameId && nameInputRef.current) {
+      nameInputRef.current.focus()
+      nameInputRef.current.select()
+    }
+  }, [editingNameId])
+
+  const startEditingName = (c: any) => {
+    setEditingNameId(c.id)
+    setNameInputValue(c.nome || '')
+  }
+
+  const cancelEditingName = () => {
+    setEditingNameId(null)
+    setNameInputValue('')
+  }
+
+  const handleSaveName = async (candidateId: string, currentName: string) => {
+    const trimmed = nameInputValue.trim()
+    if (!trimmed) {
+      toast.error('O nome não pode ficar vazio.')
+      return
+    }
+
+    if (trimmed === currentName) {
+      setEditingNameId(null)
+      return
+    }
+
+    setSavingNameId(candidateId)
+    try {
+      await updateCandidateNome(candidateId, trimmed)
+      toast.success('Nome atualizado com sucesso!')
+      if (onUpdateCandidateLocal) {
+        onUpdateCandidateLocal(candidateId, { nome: trimmed })
+      }
+      setEditingNameId(null)
+      onRefresh?.()
+    } catch (error: any) {
+      console.error('Erro ao atualizar nome:', error)
+      toast.error(error?.message || 'Erro ao atualizar nome do candidato.')
+    } finally {
+      setSavingNameId(null)
+    }
+  }
+
+  const handleVagaChange = async (
+    candidateId: string,
+    newVagaId: string,
+    currentVagaId: string | null,
+  ) => {
+    const resolvedVagaId = newVagaId === 'none' ? null : newVagaId
+    if (resolvedVagaId === currentVagaId) return
+
+    setSavingVagaId(candidateId)
+    try {
+      await updateCandidateVaga(candidateId, resolvedVagaId)
+      const selectedVaga = vagas.find((v) => v.id === resolvedVagaId)
+      const newVagaTitle = selectedVaga ? selectedVaga.titulo : 'Sem vaga'
+
+      toast.success('Vaga atualizada com sucesso!')
+      if (onUpdateCandidateLocal) {
+        onUpdateCandidateLocal(candidateId, { vaga_id: resolvedVagaId, vaga: newVagaTitle })
+      }
+      onRefresh?.()
+    } catch (error: any) {
+      console.error('Erro ao atualizar vaga:', error)
+      toast.error(error?.message || 'Erro ao atualizar vaga do candidato.')
+    } finally {
+      setSavingVagaId(null)
+    }
+  }
 
   const allSelected = candidates.length > 0 && candidates.every((c) => selectedIds?.has(c.id))
   const someSelected = candidates.some((c) => selectedIds?.has(c.id))
@@ -291,19 +378,82 @@ export function CandidateTable({
                     aria-label={`Selecionar ${c.nome}`}
                   />
                 </TableCell>
-                <TableCell>
+                <TableCell className="max-w-[280px]">
                   <div className="flex flex-col">
-                    <span className="font-medium text-slate-900 flex items-center gap-2">
-                      {c.nome}
-                      {analyzingIds.has(c.id) && (
-                        <Badge
-                          variant="secondary"
-                          className="h-5 text-[10px] px-1.5 animate-pulse bg-blue-100 text-blue-800"
+                    {editingNameId === c.id ? (
+                      <div className="flex items-center gap-1.5 py-1">
+                        <Input
+                          ref={nameInputRef}
+                          value={nameInputValue}
+                          disabled={savingNameId === c.id}
+                          onChange={(e) => setNameInputValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              handleSaveName(c.id, c.nome)
+                            } else if (e.key === 'Escape') {
+                              cancelEditingName()
+                            }
+                          }}
+                          className="h-8 text-sm px-2 py-1 font-medium text-slate-900 bg-white"
+                          placeholder="Nome do candidato"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          disabled={savingNameId === c.id}
+                          onClick={() => handleSaveName(c.id, c.nome)}
+                          className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 shrink-0"
+                          title="Salvar (Enter)"
                         >
-                          Processando...
-                        </Badge>
-                      )}
-                    </span>
+                          {savingNameId === c.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Check className="h-4 w-4" />
+                          )}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          disabled={savingNameId === c.id}
+                          onClick={cancelEditingName}
+                          className="h-8 w-8 text-slate-400 hover:text-slate-600 shrink-0"
+                          title="Cancelar (Esc)"
+                        >
+                          <CloseIcon className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="group/name flex items-center gap-1.5">
+                        <span
+                          onClick={() => startEditingName(c)}
+                          title="Clique para editar o nome"
+                          className="font-medium text-slate-900 hover:text-primary cursor-pointer truncate transition-colors"
+                        >
+                          {c.nome}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => startEditingName(c)}
+                          className="h-6 w-6 opacity-0 group-hover/name:opacity-100 transition-opacity text-slate-400 hover:text-slate-700 shrink-0"
+                          title="Editar nome"
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                        {analyzingIds.has(c.id) && (
+                          <Badge
+                            variant="secondary"
+                            className="h-5 text-[10px] px-1.5 animate-pulse bg-blue-100 text-blue-800"
+                          >
+                            Processando...
+                          </Badge>
+                        )}
+                      </div>
+                    )}
                     <span className="text-xs text-slate-500">{c.email}</span>
                   </div>
                   {c.duplicado_de && (
@@ -315,7 +465,32 @@ export function CandidateTable({
                     </Badge>
                   )}
                 </TableCell>
-                <TableCell className="text-sm text-slate-600">{c.vaga}</TableCell>
+                <TableCell className="min-w-[180px] max-w-[240px]">
+                  <div className="flex items-center gap-1.5">
+                    <Select
+                      value={c.vaga_id || 'none'}
+                      disabled={savingVagaId === c.id}
+                      onValueChange={(val) => handleVagaChange(c.id, val, c.vaga_id)}
+                    >
+                      <SelectTrigger className="h-8 text-xs bg-white border-slate-200 hover:bg-slate-50/80 transition-colors w-full">
+                        <SelectValue placeholder="Selecionar vaga" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none" className="text-xs text-slate-500 italic">
+                          Sem vaga
+                        </SelectItem>
+                        {vagas.map((vaga) => (
+                          <SelectItem key={vaga.id} value={vaga.id} className="text-xs">
+                            {vaga.titulo}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {savingVagaId === c.id && (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
+                    )}
+                  </div>
+                </TableCell>
                 <TableCell>
                   <Badge variant="outline" className="font-normal bg-slate-50">
                     {c.etapa}
@@ -352,19 +527,81 @@ export function CandidateTable({
                     onCheckedChange={() => onToggleSelect?.(c.id)}
                     aria-label={`Selecionar ${c.nome}`}
                   />
-                  <div>
-                    <h3 className="font-semibold text-slate-900 flex items-center gap-2">
-                      {c.nome}
-                      {analyzingIds.has(c.id) && (
-                        <Badge
-                          variant="secondary"
-                          className="h-5 text-[10px] px-1.5 animate-pulse bg-blue-100 text-blue-800"
+                  <div className="flex-1 min-w-0">
+                    {editingNameId === c.id ? (
+                      <div className="flex items-center gap-1.5 my-1">
+                        <Input
+                          ref={nameInputRef}
+                          value={nameInputValue}
+                          disabled={savingNameId === c.id}
+                          onChange={(e) => setNameInputValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              handleSaveName(c.id, c.nome)
+                            } else if (e.key === 'Escape') {
+                              cancelEditingName()
+                            }
+                          }}
+                          className="h-8 text-sm px-2 py-1 font-semibold text-slate-900 bg-white"
+                          placeholder="Nome do candidato"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          disabled={savingNameId === c.id}
+                          onClick={() => handleSaveName(c.id, c.nome)}
+                          className="h-8 w-8 text-emerald-600 hover:text-emerald-700 shrink-0"
+                          title="Salvar"
                         >
-                          Processando...
-                        </Badge>
-                      )}
-                    </h3>
-                    <p className="text-xs text-slate-500">{c.email}</p>
+                          {savingNameId === c.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Check className="h-4 w-4" />
+                          )}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          disabled={savingNameId === c.id}
+                          onClick={cancelEditingName}
+                          className="h-8 w-8 text-slate-400 hover:text-slate-600 shrink-0"
+                          title="Cancelar"
+                        >
+                          <CloseIcon className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <h3
+                          onClick={() => startEditingName(c)}
+                          className="font-semibold text-slate-900 hover:text-primary cursor-pointer truncate transition-colors flex items-center gap-2"
+                        >
+                          {c.nome}
+                        </h3>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => startEditingName(c)}
+                          className="h-6 w-6 text-slate-400 hover:text-slate-700 shrink-0"
+                          title="Editar nome"
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                        {analyzingIds.has(c.id) && (
+                          <Badge
+                            variant="secondary"
+                            className="h-5 text-[10px] px-1.5 animate-pulse bg-blue-100 text-blue-800"
+                          >
+                            Processando...
+                          </Badge>
+                        )}
+                      </div>
+                    )}
+                    <p className="text-xs text-slate-500 truncate">{c.email}</p>
                     {c.duplicado_de && (
                       <Badge
                         variant="secondary"
@@ -377,19 +614,50 @@ export function CandidateTable({
                 </div>
                 <ActionMenu candidate={c} />
               </div>
-              <div className="grid grid-cols-2 gap-2 text-sm border-t border-border pt-3">
+              <div className="space-y-2 text-sm border-t border-border pt-3">
                 <div>
-                  <p className="text-xs text-slate-500 mb-1">Vaga</p>
-                  <p className="truncate font-medium text-slate-700">{c.vaga}</p>
+                  <p className="text-xs text-slate-500 mb-1 font-medium">Vaga</p>
+                  <div className="flex items-center gap-1.5">
+                    <Select
+                      value={c.vaga_id || 'none'}
+                      disabled={savingVagaId === c.id}
+                      onValueChange={(val) => handleVagaChange(c.id, val, c.vaga_id)}
+                    >
+                      <SelectTrigger className="h-8 text-xs bg-white border-slate-200 hover:bg-slate-50/80 transition-colors w-full">
+                        <SelectValue placeholder="Selecionar vaga" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none" className="text-xs text-slate-500 italic">
+                          Sem vaga
+                        </SelectItem>
+                        {vagas.map((vaga) => (
+                          <SelectItem key={vaga.id} value={vaga.id} className="text-xs">
+                            {vaga.titulo}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {savingVagaId === c.id && (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
+                    )}
+                  </div>
                 </div>
-                <div className="flex flex-col">
-                  <p className="text-xs text-slate-500 mb-1">Qualificado</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Switch
-                      checked={c.status_analise === 'qualificado'}
-                      onCheckedChange={() => onToggleStatus(c.id, c.status_analise, c.vaga_id)}
-                    />
-                    <StatusBadge status={c.status_analise} />
+                <div className="flex items-center justify-between pt-1">
+                  <div>
+                    <p className="text-xs text-slate-500 mb-1">Etapa</p>
+                    <Badge variant="outline" className="font-normal bg-slate-50 text-xs">
+                      {c.etapa}
+                    </Badge>
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <p className="text-xs text-slate-500 mb-1">Qualificado</p>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={c.status_analise === 'qualificado'}
+                        onCheckedChange={() => onToggleStatus(c.id, c.status_analise, c.vaga_id)}
+                      />
+                      <StatusBadge status={c.status_analise} />
+                    </div>
                   </div>
                 </div>
               </div>
