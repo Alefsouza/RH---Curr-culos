@@ -223,14 +223,16 @@ Dados completos do currículo:
 ${JSON.stringify(cvData)}
 
 DIRETRIZES CRÍTICAS PARA AVALIAÇÃO DE CRITÉRIOS:
-1. REGRA DE FAIXA ETÁRIA (ELIMINATÓRIA):
-   - Quando a vaga tiver critério de faixa etária especificado (ex: "18 a 22 anos", "entre 18 e 24 anos", "maior de 18 anos", "jovem aprendiz 18 a 22 anos"):
-   - Este critério de faixa etária é ESTRITAMENTE ELIMINATÓRIO.
-   - Se a idade do candidato (ou calculada pela data de nascimento) for identificada e estiver FORA da faixa exigida (ex: candidato com 31 anos para vaga de 18 a 22 anos):
-     * O candidato DEVE obrigatoriamente receber resultado = "nao_qualificado".
-     * O campo score DEVE ser penalizado e refletir a desqualificação (ex: score abaixo de 50 ou zero).
-     * O motivo DEVE explicitar a reprovação por idade (ex: "Reprovado por faixa etária: Candidato possui X anos, fora da faixa exigida de Y a Z anos.").
-     * Inclua o requisito de faixa etária em 'unmatched_criteria' com o motivo claro.
+1. REGRA DE FAIXA ETÁRIA / IDADE (ATENÇÃO MÁXIMA):
+   - A idade SÓ É CRITÉRIO quando os critérios da vaga MENCIONAREM EXPLICITAMENTE uma exigência de faixa etária ou idade (exemplos de vagas COM critério de idade: "18 a 22 anos", "entre 18 e 24 anos", "mínimo 18 anos", "até 30 anos", "jovem aprendiz 18 a 22 anos").
+   - SE A VAGA NÃO MENCIONAR EXPLICITAMENTE NENHUMA EXIGÊNCIA DE IDADE / FAIXA ETÁRIA NOS CRITÉRIOS:
+     * A idade ou data de nascimento do candidato DEVE SER COMPLETAMENTE IGNORADA na avaliação.
+     * NUNCA reprove, desqualifique, penalize a pontuação nem envie para revisão um candidato por ausência de idade informada, falta de data de nascimento ou pela idade que possui quando a vaga não estipula idade.
+     * NUNCA mencione falta de informação de idade como motivo de reprovação ou desqualificação quando a vaga não tiver critério de idade.
+   - SOMENTE quando a vaga EXIGIR EXPLICITAMENTE uma faixa etária:
+     * O critério passa a ser eliminatório.
+     * Se a idade do candidato (ou calculada pela data de nascimento) for identificada e estiver COMPROVADAMENTE FORA da faixa exigida (ex: candidato com 31 anos para vaga que exige expressamente 18 a 22 anos): o candidato DEVE receber resultado = "nao_qualificado", score penalizado e o motivo DEVE explicitar a reprovação por idade ("Reprovado por faixa etária: Candidato possui X anos, fora da faixa exigida de Y a Z anos."). Inclua em 'unmatched_criteria'.
+     * Se a vaga exigir faixa etária mas o currículo não contiver idade/data de nascimento, marque para 'revisar' com observação clara.
 
 2. ESCOLARIDADE É REQUISITO MÍNIMO:
    - Todo critério de escolaridade (ex: "Ensino Fundamental", "Ensino Médio") expressa a ESCOLARIDADE MÍNIMA exigida. NUNCA penalize um candidato por ter escolaridade superior à exigida.
@@ -239,6 +241,7 @@ DIRETRIZES CRÍTICAS PARA AVALIAÇÃO DE CRITÉRIOS:
 
 3. AVALIAÇÃO GERAL:
    - Verifique a aderência real às atividades da vaga e requisitos mandatórios vs desejáveis informados nos critérios.
+   - Não invente critérios eliminatórios que não constem na descrição ou critérios da vaga.
 
 Retorne ESTRITAMENTE um JSON com as seguintes chaves:
 - resultado (qualificado, nao_qualificado ou revisar)

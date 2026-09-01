@@ -401,6 +401,11 @@ Qualificado por localização: ${qualificadoPorLocalizacao}
 Dados estruturados do currículo:
 ${JSON.stringify(extractedData)}
 
+DIRETRIZES DE AVALIAÇÃO:
+1. IDADE / FAIXA ETÁRIA: A idade só é critério eliminatório se a vaga MENCIONAR EXPLICITAMENTE uma exigência de faixa etária nos critérios (ex: "18 a 22 anos"). Se a vaga não exigir idade, IGNORE a idade completamente — NUNCA reprove por falta de idade informada nem por idade quando a vaga não estipula idade.
+2. ESCOLARIDADE: Ensino Fundamental/Médio representa o requisito mínimo. Escolaridade superior nunca reprova.
+3. Não invente requisitos que não estejam expressos na vaga.
+
 Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
 {
   "resultado": "qualificado" | "nao_qualificado" | "revisar",
