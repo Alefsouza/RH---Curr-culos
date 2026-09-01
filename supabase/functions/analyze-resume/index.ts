@@ -364,7 +364,7 @@ ${combinedText.substring(0, 25000)}`
       }
     }
 
-    // 3.2 Fallback de visão OpenAI existente como último recurso (se ainda faltar dados e for PDF < 15MB)
+    // 3.2 Fallback de visão OpenAI via Responses API como último recurso (se ainda faltar dados e for PDF < 15MB)
     const stillNeedsVision =
       !cleanName ||
       !hasTelefone ||
@@ -379,7 +379,7 @@ ${combinedText.substring(0, 25000)}`
     ) {
       try {
         console.log(
-          `[analyze-resume] Tentando fallback de visão PDF via gpt-4.1 para ${filePath}...`,
+          `[analyze-resume] Tentando fallback de visão PDF via Responses API (gpt-4o) para ${filePath}...`,
         )
         let binaryStr = ''
         const len = fileBytes.byteLength
@@ -390,57 +390,130 @@ ${combinedText.substring(0, 25000)}`
 
         const originalFileName = filePath.split('/').pop()?.split('\\').pop() || 'curriculo.pdf'
 
-        const visionResponse = await openai.chat.completions.create({
-          model: 'gpt-4.1',
-          messages: [
-            {
-              role: 'system',
-              content:
-                'Você é um assistente de RH altamente especializado em leitura visual de currículos, documentos e PDFs escaneados. O nome completo do candidato sempre se encontra em destaque no cabeçalho ou topo do currículo (ex: "VALDINÉIA DOMINGUES", "MARIA APARECIDA"). Preserve rigorosamente todos os acentos e grafia original em português brasileiro (É, é, á, ã, ç, etc.). NUNCA invente dados fictícios nem retorne "Candidato Desconhecido" ou "Candidato". Extraia o nome real com prioridade absoluta. Responda em JSON válido.',
-            },
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'text',
-                  text: `Analise cuidadosamente este currículo/documento em anexo e extraia todas as informações. ATENÇÃO: Identifique o nome completo do candidato localizado no topo/cabeçalho do documento (preserve acentuação, ex: "VALDINÉIA DOMINGUES" -> "Valdinéia Domingues" ou "VALDINÉIA DOMINGUES"), idade e data de nascimento:
+        const promptText = `Você é um assistente sênior de RH altamente especializado em leitura visual e estruturação de currículos em formato PDF.
+O nome completo do candidato sempre se encontra em destaque no cabeçalho ou topo do currículo (ex: "VALDINÉIA DOMINGUES", "MARIA APARECIDA DA SILVA").
+Preserve rigorosamente todos os acentos e grafia original em português brasileiro (á, é, í, ó, ú, ã, õ, ç, etc.).
+NUNCA invente dados fictícios, nunca use "Candidato Desconhecido", "João da Silva" ou dados de exemplo. Se não constar com certeza, use null.
+Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicional fora do JSON) com a estrutura:
 {
-  "nome": "Nome completo REAL do candidato presente no cabeçalho/documento",
-  "email": "Email real ou null",
-  "telefones_celulares": ["telefones reais encontrados"],
-  "telefone": "telefone celular principal ou null",
-  "endereco": "endereço, cidade e estado ou null",
-  "idade": "número inteiro da idade ou null",
-  "data_nascimento": "data de nascimento ou null",
-  "objetivo": "cargo pretendido ou objetivo profissional expresso no currículo ou null",
-  "experiencia_profissional": ["experiências anteriores"],
-  "skills": ["habilidades e competências"],
-  "formacao_academica": ["formações e escolaridade"]
-}`,
-                },
-                {
-                  type: 'file',
-                  file: {
+  "nome": "Nome completo REAL do candidato em destaque no cabeçalho ou null",
+  "email": "Endereço de e-mail real do candidato ou null",
+  "telefones_celulares": ["telefones celulares reais encontrados com DDD"],
+  "telefone": "Telefone principal com DDD ou null",
+  "endereco": "Endereço completo, logradouro, bairro, cidade ou estado ou null",
+  "idade": "Número inteiro da idade ou null",
+  "data_nascimento": "Data de nascimento informada ou null",
+  "objetivo": "Cargo pretendido, objetivo profissional ou área de interesse informada no currículo ou null",
+  "experiencia_profissional": ["experiências anteriores com cargo e empresa"],
+  "skills": ["habilidades e competências identificadas"],
+  "formacao_academica": ["formações, cursos e escolaridade"]
+}`
+
+        const responseApiRes = await fetch('https://api.openai.com/v1/responses', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${openaiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o',
+            input: [
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'input_file',
                     filename: originalFileName,
                     file_data: `data:application/pdf;base64,${base64Data}`,
+                    detail: 'high',
                   },
-                },
-              ] as any,
-            },
-          ],
-          response_format: { type: 'json_object' },
+                  {
+                    type: 'input_text',
+                    text: promptText,
+                  },
+                ],
+              },
+            ],
+          }),
         })
 
-        const visionContent = visionResponse.choices[0]?.message?.content || '{}'
-        const visionData = JSON.parse(visionContent)
-        if (visionData) {
-          extractedData = {
-            ...extractedData,
-            ...visionData,
-            ...(visionData.nome ? { nome: visionData.nome } : {}),
-            ...(visionData.email ? { email: visionData.email } : {}),
+        if (!responseApiRes.ok) {
+          const errBody = await responseApiRes.text()
+          console.error(
+            `[analyze-resume] Falha na chamada OpenAI Responses API: status=${responseApiRes.status}, corpo=${errBody}`,
+          )
+        } else {
+          const resData = await responseApiRes.json()
+          let rawText = ''
+          if (typeof resData?.output_text === 'string' && resData.output_text.trim().length > 0) {
+            rawText = resData.output_text
+          } else if (Array.isArray(resData?.output)) {
+            for (const outItem of resData.output) {
+              if (Array.isArray(outItem?.content)) {
+                for (const cnt of outItem.content) {
+                  if (cnt?.type === 'output_text' && typeof cnt.text === 'string') {
+                    rawText += cnt.text
+                  } else if (typeof cnt?.text === 'string') {
+                    rawText += cnt.text
+                  }
+                }
+              }
+            }
           }
-          cleanName = sanitizeAndValidateName(visionData.nome) || cleanName
+
+          if (rawText) {
+            let visionData: any = null
+            try {
+              visionData = JSON.parse(rawText)
+            } catch {
+              const firstBrace = rawText.indexOf('{')
+              const lastBrace = rawText.lastIndexOf('}')
+              if (firstBrace !== -1 && lastBrace > firstBrace) {
+                try {
+                  visionData = JSON.parse(rawText.substring(firstBrace, lastBrace + 1))
+                } catch (parseErr: any) {
+                  console.error(
+                    `[analyze-resume] Erro ao fazer parse do JSON da Responses API:`,
+                    parseErr?.message,
+                    `Texto:`,
+                    rawText,
+                  )
+                }
+              }
+            }
+
+            if (visionData && typeof visionData === 'object') {
+              extractedData = {
+                ...extractedData,
+                ...visionData,
+                ...(visionData.nome ? { nome: visionData.nome } : {}),
+                ...(visionData.email ? { email: visionData.email } : {}),
+                experiencia_profissional:
+                  Array.isArray(visionData.experiencia_profissional) &&
+                  visionData.experiencia_profissional.length > 0
+                    ? visionData.experiencia_profissional
+                    : extractedData.experiencia_profissional,
+                skills:
+                  Array.isArray(visionData.skills) && visionData.skills.length > 0
+                    ? visionData.skills
+                    : extractedData.skills,
+                formacao_academica:
+                  Array.isArray(visionData.formacao_academica) &&
+                  visionData.formacao_academica.length > 0
+                    ? visionData.formacao_academica
+                    : extractedData.formacao_academica,
+              }
+              cleanName = sanitizeAndValidateName(visionData.nome) || cleanName
+              console.log(
+                `[analyze-resume] Sucesso no fallback Responses API: nome=${visionData.nome || 'N/A'}, email=${visionData.email || 'N/A'}`,
+              )
+            }
+          } else {
+            console.warn(
+              `[analyze-resume] Responses API retornou sem output_text. Resposta completa:`,
+              JSON.stringify(resData),
+            )
+          }
         }
       } catch (visionErr: any) {
         console.error(
