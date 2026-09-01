@@ -86,7 +86,7 @@ Deno.serve(async (req: Request) => {
         ? { ...candidato.dados_extraidos }
         : {}
 
-    // 1. Verificar se o nome é inválido ou se foi forçada a reextração completa
+    // 1. Verificar se o nome é inválido, se falta objetivo ou se foi forçada a reextração completa
     const validCurrentName = sanitizeAndValidateName(currentNome)
     const validExtractedName = sanitizeAndValidateName(currentDadosExtraidos.nome)
     const needsReExtraction =
@@ -94,6 +94,7 @@ Deno.serve(async (req: Request) => {
       !validCurrentName ||
       !validExtractedName ||
       !currentDadosExtraidos.skills ||
+      !currentDadosExtraidos.objetivo ||
       (Array.isArray(currentDadosExtraidos.skills) &&
         currentDadosExtraidos.skills.length === 0 &&
         !currentEmail)
@@ -133,6 +134,7 @@ Deno.serve(async (req: Request) => {
 - telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11974697877"]) ou [] se nenhum
 - telefone: Telefone principal ou null
 - endereco: Endereço completo ou cidade/estado (ex: "São Bernardo do Campo - SP"), ou null se não identificado
+- objetivo: Cargo pretendido, objetivo profissional ou área informada no currículo (ex: "Cobrador de Ônibus", "Motorista", "Auxiliar Administrativo"), ou null se não identificado
 - resumo_cv: Resumo das qualificações, ou null
 - experiencia_profissional: Lista de experiências anteriores, ou []
 - skills: Lista de habilidades técnicas e competências, ou []
@@ -192,14 +194,15 @@ ${extractedText.substring(0, 18000)}`
                           type: 'text',
                           text: `Analise visualmente este currículo em anexo e extraia com prioridade o nome no topo/cabeçalho (ex: "VALDINÉIA DOMINGUES" -> "Valdinéia Domingues"):
 {
-  "nome": "Nome completo REAL da pessoa no cabeçalho ou null",
-  "email": "email real ou null",
-  "telefones_celulares": ["telefones REAIS com DDD"],
-  "endereco": "endereço ou cidade/estado ou null",
-  "resumo_cv": "resumo profissional ou null",
-  "experiencia_profissional": ["experiências anteriores"],
-  "skills": ["habilidades e competências"],
-  "formacao_academica": ["formações e escolaridade"]
+ "nome": "Nome completo REAL da pessoa no cabeçalho ou null",
+ "email": "email real ou null",
+ "telefones_celulares": ["telefones REAIS com DDD"],
+ "endereco": "endereço ou cidade/estado ou null",
+ "objetivo": "cargo pretendido ou objetivo profissional expresso no currículo ou null",
+ "resumo_cv": "resumo profissional ou null",
+ "experiencia_profissional": ["experiências anteriores"],
+ "skills": ["habilidades e competências"],
+ "formacao_academica": ["formações e escolaridade"]
 }`,
                         },
                         {
@@ -317,7 +320,10 @@ ${extractedText.substring(0, 18000)}`
 
     let vagaId = candidato.vaga_id
 
-    if (!vagaId) {
+    // Se o candidato não tiver vaga OU se foi solicitada reextração forçada (ou se a vaga atual precisa ser reavaliada com o novo objetivo)
+    const shouldReidentifyVaga = !vagaId || force_reextract
+
+    if (shouldReidentifyVaga) {
       const identifyRes = await fetch(`${supabaseUrl}/functions/v1/identify-vaga-from-cv`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${supabaseKey}` },
@@ -351,8 +357,8 @@ ${extractedText.substring(0, 18000)}`
         }
 
         vagaId = identifyData.vaga_id
-      } else {
-        // Se nenhuma vaga for compatível, busca a primeira vaga aberta como fallback para pontuar ou criar analise
+      } else if (!vagaId) {
+        // Se nenhuma vaga for compatível e ainda não tiver vaga, busca a primeira vaga aberta como fallback para pontuar ou criar analise
         const { data: fallbackVaga } = await supabase
           .from('vagas')
           .select('id')

@@ -34,6 +34,8 @@ Deno.serve(async (req: Request) => {
     const supabase = createClient(supabaseUrl, supabaseKey)
 
     let cvDataToAnalyze = dados_extraidos || texto_cv
+    let parsedDadosExtraidos: any =
+      typeof dados_extraidos === 'object' && dados_extraidos !== null ? dados_extraidos : null
 
     if (!cvDataToAnalyze && candidato_id) {
       const { data: candidato, error: candidatoError } = await supabase
@@ -46,6 +48,9 @@ Deno.serve(async (req: Request) => {
         throw new Error('Candidato não encontrado no banco de dados.')
       }
       cvDataToAnalyze = candidato.dados_extraidos
+      if (typeof candidato.dados_extraidos === 'object' && candidato.dados_extraidos !== null) {
+        parsedDadosExtraidos = candidato.dados_extraidos
+      }
     }
 
     // Busca todas as vagas disponíveis no sistema
@@ -67,6 +72,111 @@ Deno.serve(async (req: Request) => {
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
+    }
+
+    // Função de normalização para matching textual robusto (remove acentos, pontuação e espaços extras)
+    const normalizeString = (str: string): string => {
+      return str
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+    }
+
+    // Extrair o objetivo explícito (se existir nos dados estruturados)
+    const candidatoObjetivo =
+      parsedDadosExtraidos?.objetivo ||
+      parsedDadosExtraidos?.cargo_pretendido ||
+      parsedDadosExtraidos?.cargo ||
+      parsedDadosExtraidos?.objetivo_profissional ||
+      ''
+
+    // 1. Verificação direta em código: Se o objetivo do candidato tiver match forte com o TÍTULO da vaga
+    if (candidatoObjetivo && typeof candidatoObjetivo === 'string') {
+      const normObjetivo = normalizeString(candidatoObjetivo)
+      const stopWords = new Set([
+        'de',
+        'do',
+        'da',
+        'dos',
+        'das',
+        'e',
+        'em',
+        'para',
+        'com',
+        'um',
+        'uma',
+        'a',
+        'o',
+        'as',
+        'os',
+        'no',
+        'na',
+        'nos',
+        'nas',
+        'ou',
+        'por',
+        'que',
+      ])
+
+      const objWords = normObjetivo
+        .split(' ')
+        .map((w) => w.trim())
+        .filter((w) => w.length >= 3 && !stopWords.has(w))
+
+      if (objWords.length > 0) {
+        // Avaliar correspondência com o título de cada vaga
+        let bestMatchVaga: any = null
+        let maxMatchedWords = 0
+
+        for (const vaga of vagas) {
+          const normTitulo = normalizeString(vaga.titulo || '')
+          const tituloWords = new Set(
+            normTitulo
+              .split(' ')
+              .map((w) => w.trim())
+              .filter((w) => w.length >= 3 && !stopWords.has(w)),
+          )
+
+          // 1a. Match de frase exata (ex: "cobrador de onibus" dentro de "cobrador de onibus leste")
+          if (normTitulo.includes(normObjetivo) || normObjetivo.includes(normTitulo)) {
+            bestMatchVaga = vaga
+            maxMatchedWords = 999
+            break
+          }
+
+          // 1b. Contagem de palavras-chave coincidentes (ex: "cobrador" no objetivo e "cobrador" no título)
+          let matchCount = 0
+          for (const word of objWords) {
+            if (tituloWords.has(word) || normTitulo.includes(word)) {
+              matchCount++
+            }
+          }
+
+          // Se bateu todas as palavras significativas do objetivo (ou a principal palavra)
+          if (matchCount > 0 && matchCount > maxMatchedWords) {
+            maxMatchedWords = matchCount
+            bestMatchVaga = vaga
+          }
+        }
+
+        // Se encontrou vaga com correspondência forte com o objetivo informado
+        if (bestMatchVaga && maxMatchedWords > 0) {
+          console.log(
+            `[identify-vaga-from-cv] Match direto por objetivo "${candidatoObjetivo}" com vaga "${bestMatchVaga.titulo}" (ID: ${bestMatchVaga.id})`,
+          )
+          return new Response(
+            JSON.stringify({
+              vaga_id: bestMatchVaga.id,
+              confianca: 'alta',
+              justificativa: `Vaga identificada com alta prioridade devido à correspondência direta entre o objetivo do candidato ("${candidatoObjetivo}") e o título da vaga ("${bestMatchVaga.titulo}").`,
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          )
+        }
+      }
     }
 
     const openaiKey = Deno.env.get('OPENAI_KEY') || Deno.env.get('OPENIA_KEY')
@@ -104,7 +214,7 @@ Deno.serve(async (req: Request) => {
             {
               role: 'system',
               content:
-                'Você é um especialista em Recrutamento e Seleção de RH focado em análise técnica de currículos e Job Matching. Selecione a vaga solicitada ou a vaga mais compatível cadastrada.',
+                'Você é um especialista em Recrutamento e Seleção de RH focado em análise técnica de currículos e Job Matching. Selecione a vaga solicitada ou a vaga mais compatível cadastrada com base estrita no objetivo e experiências do candidato.',
             },
             { role: 'user', content: promptText },
           ],
@@ -131,18 +241,28 @@ Deno.serve(async (req: Request) => {
       E temos as seguintes vagas abertas (com seus IDs):
       ${JSON.stringify(vagas)}
 
-      Sua tarefa é analisar o currículo e identificar a vaga pretendida/solicitada OU em qual dessas vagas o candidato melhor se encaixa com base em suas habilidades e experiências.
+      Sua tarefa é analisar o currículo e identificar a vaga pretendida/solicitada OU em qual dessas vagas o candidato melhor se encaixa.
       
-      Regras:
-      1. Se houver menção explícita à vaga ou boa compatibilidade com uma das vagas listadas, preencha o "vaga_id" correspondente e defina a confiança ("alta" ou "media").
-      2. Se o candidato tiver perfil para uma das funções, indique a vaga mais provável.
-      3. Se nenhuma vaga fizer o menor sentido para o perfil, retorne vaga_id como null e confianca como "nenhuma".
+      REGRAS CRÍTICAS DE MATCHING (SIGA RIGOROSAMENTE NA ORDEM):
+      1. PRIORIDADE MÁXIMA - OBJETIVO / CARGO PRETENDIDO:
+         Se o candidato tiver um "objetivo", "cargo pretendido" ou menção no texto a uma função específica (ex: "cobrador", "cobrador de ônibus", "motorista", "mecânico", "porteiro", "jovem aprendiz", "auxiliar administrativo", etc.):
+         - Se existir qualquer vaga cujo TÍTULO corresponda a essa função (ex: objetivo "cobrador de ônibus" e vaga "Cobrador de Ônibus Leste"), ATRIBUA ESSA VAGA OBRIGATORIAMENTE com confiança "alta".
+         - NUNCA atribua vagas genéricas como "Jovem Aprendiz" ou "Banco de Talentos" para candidatos cujo objetivo ou experiência indiquem uma função específica (ex: Cobrador, Motorista), mesmo que o candidato seja jovem ou não tenha vasta experiência.
+      
+      2. EXPERIÊNCIA E HISTÓRICO PROFISSIONAL:
+         Se o objetivo não estiver explícito, analise os cargos das experiências anteriores. Se a maioria das experiências foi como "Cobrador", dê preferência à vaga de "Cobrador", e assim por diante.
+
+      3. COMPATIBILIDADE GERAL:
+         Somente use o critério genérico de "vaga mais compatível" quando NÃO existir vaga cujo título corresponda ao objetivo ou histórico de funções do candidato.
+
+      4. NENHUMA VAGA:
+         Se nenhuma vaga fizer sentido para a profissão/perfil do candidato, retorne vaga_id como null e confianca como "nenhuma".
       
       Retorne ESTRITAMENTE um JSON com a seguinte estrutura:
       {
-        "vaga_id": "UUID da vaga mais compatível ou null",
+        "vaga_id": "UUID da vaga correspondente ou null",
         "confianca": "alta", "media", "baixa" ou "nenhuma",
-        "justificativa": "Explicação concisa do porquê escolheu essa vaga."
+        "justificativa": "Explicação concisa do porquê escolheu essa vaga com base no objetivo ou experiências."
       }
     `
 

@@ -17,6 +17,7 @@ interface ExtractedCandidateData {
   telefones_celulares?: string[]
   telefone?: string | null
   endereco?: string | null
+  objetivo?: string | null
   resumo_cv?: string | null
   experiencia_profissional?: string[] | string
   skills?: string[] | string
@@ -57,6 +58,7 @@ Extraia com cuidado preservando a grafia correta com acentos em português:
 - telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11987654321"]) ou [] se nenhum
 - telefone: Telefone celular principal ou null se não identificado
 - endereco: Cidade, estado ou endereço completo, ou null se não identificado
+- objetivo: Cargo pretendido, objetivo profissional ou área de interesse informada no currículo (ex: "Cobrador de Ônibus", "Motorista", "Auxiliar Administrativo"), ou null se não identificado
 - resumo_cv: Resumo das qualificações e perfil profissional, ou null se não identificado
 - experiencia_profissional: Lista de experiências anteriores com cargos e empresas, ou [] se não houver
 - skills: Lista de habilidades técnicas e competências, ou [] se não houver
@@ -65,7 +67,8 @@ Extraia com cuidado preservando a grafia correta com acentos em português:
 IMPORTANTE:
 1. NUNCA invente dados ou placeholders como "Candidato Desconhecido", "João da Silva", "11999999999", "exemplo@email.com". Se não constar, use null ou [].
 2. NUNCA retorne o texto literal "string ou null", "string", ou "null". Use o valor JSON null real quando o dado não existir.
-3. Não duplique nomes (evite "Lucas Lucas" ou repetições).
+3. Capture o "objetivo" ou cargo pretendido com máxima atenção, pois ele define o direcionamento de vaga do candidato.
+4. Não duplique nomes (evite "Lucas Lucas" ou repetições).
 
 Formato JSON estrito esperado:
 {
@@ -74,6 +77,7 @@ Formato JSON estrito esperado:
   "telefones_celulares": [],
   "telefone": null,
   "endereco": null,
+  "objetivo": null,
   "resumo_cv": null,
   "experiencia_profissional": [],
   "skills": [],
@@ -127,6 +131,7 @@ Formato JSON estrito esperado:
   const parsedJson: ExtractedCandidateData = await callOpenAIWithRetry(messages)
 
   const rawTextToMatch = [
+    parsedJson.objetivo ? `Objetivo / Cargo Pretendido: ${parsedJson.objetivo}` : '',
     parsedJson.resumo_cv || '',
     Array.isArray(parsedJson.experiencia_profissional)
       ? parsedJson.experiencia_profissional.join('\n')

@@ -1,21 +1,21 @@
 {
   "_versions": {
-    "outlook-webhook": 31,
-    "process-resume": 102,
-    "analyze-resume": 68,
-    "enviar-whatsapp": 124,
-    "test-whatsapp": 115,
+    "outlook-webhook": 32,
+    "process-resume": 103,
+    "analyze-resume": 69,
+    "enviar-whatsapp": 125,
+    "test-whatsapp": 116,
     "manage-users": 19,
-    "analisar-cv-criterios": 58,
+    "analisar-cv-criterios": 59,
     "whatsapp-webhook": 37,
-    "identify-vaga-from-cv": 73,
-    "gmail-poll-curriculos": 74,
-    "enviar-mensagem-direta": 72,
-    "sync-outlook-cvs": 63,
-    "reanalisar-candidato": 65,
-    "recover-candidates": 37,
-    "fix-recovered-candidates": 33,
-    "batch-reanalyze-all": 18,
-    "backfill-proximidade": 12
+    "identify-vaga-from-cv": 74,
+    "gmail-poll-curriculos": 75,
+    "enviar-mensagem-direta": 73,
+    "sync-outlook-cvs": 64,
+    "reanalisar-candidato": 66,
+    "recover-candidates": 38,
+    "fix-recovered-candidates": 34,
+    "batch-reanalyze-all": 19,
+    "backfill-proximidade": 13
   }
 }

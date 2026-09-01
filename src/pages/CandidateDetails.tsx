@@ -275,6 +275,7 @@ export default function CandidateDetails() {
   }
 
   const extraidos = candidate.dados_extraidos || {}
+  const objetivo = extraidos.objetivo || extraidos.cargo_pretendido || null
   const experiencia = Array.isArray(extraidos.experiencia_profissional)
     ? extraidos.experiencia_profissional
     : []
@@ -319,6 +320,11 @@ export default function CandidateDetails() {
               <User className="w-4 h-4 mr-1.5 text-slate-400" /> Fonte:{' '}
               {candidate.fonte || 'Desconhecida'}
             </span>
+            {objetivo && (
+              <span className="flex items-center text-xs text-blue-700 border border-blue-200 rounded px-2 py-0.5 bg-blue-50 font-medium">
+                Objetivo pretendido: {safeText(objetivo)}
+              </span>
+            )}
             {endereco && (
               <span className="flex items-center text-xs text-slate-500 border rounded px-2 py-0.5 bg-slate-50">
                 Endereço extraído: {endereco}

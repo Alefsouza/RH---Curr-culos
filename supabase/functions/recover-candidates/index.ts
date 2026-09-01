@@ -16,6 +16,7 @@ interface ExtractedCandidateData {
   telefones_celulares?: string[]
   telefone?: string | null
   endereco?: string | null
+  objetivo?: string | null
   experiencia_profissional?: string[] | string
   skills?: string[] | string
   formacao_academica?: string[] | string
@@ -237,6 +238,7 @@ Deno.serve(async (req: Request) => {
 - telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11987654321"]) ou [] se nenhum
 - telefone: Telefone celular principal ou null
 - endereco: Cidade, estado ou endereço completo, ou null se não identificado
+- objetivo: Cargo pretendido, objetivo profissional ou área de interesse informada no currículo (ex: "Cobrador de Ônibus", "Motorista", "Auxiliar Administrativo"), ou null se não identificado
 - resumo_cv: Resumo das qualificações e perfil profissional, ou null se não identificado
 - experiencia_profissional: Lista de experiências anteriores, ou []
 - skills: Lista de habilidades e competências, ou []
@@ -245,6 +247,7 @@ Deno.serve(async (req: Request) => {
 IMPORTANTE:
 1. NUNCA invente dados fictícios.
 2. NUNCA use a string "string ou null" ou "string". Use null real.
+3. Capture o "objetivo" com prioridade para facilitar o matching de vagas.
 
 Formato JSON estrito esperado:
 {
@@ -253,6 +256,7 @@ Formato JSON estrito esperado:
   "telefones_celulares": [],
   "telefone": null,
   "endereco": null,
+  "objetivo": null,
   "resumo_cv": null,
   "experiencia_profissional": [],
   "skills": [],
@@ -270,6 +274,7 @@ Formato JSON estrito esperado:
       const parsedJson: ExtractedCandidateData = await callOpenAIWithRetry(messages)
 
       const rawTextToMatch = [
+        parsedJson.objetivo ? `Objetivo / Cargo Pretendido: ${parsedJson.objetivo}` : '',
         parsedJson.resumo_cv || '',
         Array.isArray(parsedJson.experiencia_profissional)
           ? parsedJson.experiencia_profissional.join('\n')

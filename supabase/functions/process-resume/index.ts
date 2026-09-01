@@ -182,6 +182,7 @@ Deno.serve(async (req: Request) => {
       email: null,
       telefones_celulares: [],
       endereco: null,
+      objetivo: null,
       experiencia_profissional: [],
       skills: [],
       formacao_academica: [],
@@ -193,6 +194,7 @@ Deno.serve(async (req: Request) => {
 - email: Endereço de e-mail REAL (ex: "valdineiadomingues82@gmail.com"), ou null se não identificado
 - telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11974697877"]) ou [] se nenhum
 - endereco: Cidade e estado ou endereço completo (ex: "São Bernardo do Campo - SP"), ou null se não identificado
+- objetivo: Cargo pretendido, objetivo profissional ou área de interesse expressamente informada no currículo (ex: "Cobrador de Ônibus", "Motorista", "Auxiliar Administrativo", "Mecânico"), ou null se não identificado
 - experiencia_profissional: Lista de experiências anteriores com cargos e empresas, ou []
 - skills: Lista de habilidades técnicas e competências, ou []
 - formacao_academica: Lista de cursos e escolaridade, ou []
@@ -200,8 +202,9 @@ Deno.serve(async (req: Request) => {
 IMPORTANTE:
 1. NUNCA invente dados fictícios (evite "Candidato Desconhecido", "João da Silva", "11999999999", "exemplo@email.com"). Se constar no documento, capture com precisão.
 2. O nome do candidato frequentemente aparece no cabeçalho/primeiras linhas do documento (ex: "VALDINÉIA DOMINGUES").
-3. Evite duplicação de palavras no nome (ex: "Lucas Lucas").
-4. NUNCA use a string "string ou null" ou "string". Use null real.
+3. Capture o "objetivo" ou cargo pretendido com máxima atenção, pois ele é fundamental para associar a vaga correta.
+4. Evite duplicação de palavras no nome (ex: "Lucas Lucas").
+5. NUNCA use a string "string ou null" ou "string". Use null real.
 
 Formato JSON estrito esperado:
 {
@@ -209,6 +212,7 @@ Formato JSON estrito esperado:
   "email": null,
   "telefones_celulares": [],
   "endereco": null,
+  "objetivo": null,
   "experiencia_profissional": [],
   "skills": [],
   "formacao_academica": []
@@ -265,6 +269,7 @@ ${extractedText.substring(0, 18000)}`
   "email": "Email real ou null",
   "telefones_celulares": ["telefones reais encontrados"],
   "endereco": "endereço, cidade e estado ou null",
+  "objetivo": "cargo pretendido ou objetivo profissional expresso no currículo ou null",
   "experiencia_profissional": ["experiências anteriores"],
   "skills": ["habilidades e competências"],
   "formacao_academica": ["formações e escolaridade"]
