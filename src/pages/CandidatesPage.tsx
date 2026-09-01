@@ -41,7 +41,7 @@ export default function CandidatesPage() {
   const [totalCount, setTotalCount] = useState(0)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(30)
-  const [vagas, setVagas] = useState<{ id: string; titulo: string }[]>([])
+  const [vagas, setVagas] = useState<{ id: string; titulo: string; ativa?: boolean }[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')

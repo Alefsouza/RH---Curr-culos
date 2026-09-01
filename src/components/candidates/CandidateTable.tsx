@@ -96,7 +96,7 @@ export function CandidateTable({
   onToggleDateSort,
 }: {
   candidates: any[]
-  vagas?: { id: string; titulo: string }[]
+  vagas?: { id: string; titulo: string; ativa?: boolean }[]
   totalCount?: number
   page?: number
   pageSize?: number
@@ -481,7 +481,14 @@ export function CandidateTable({
                         </SelectItem>
                         {vagas.map((vaga) => (
                           <SelectItem key={vaga.id} value={vaga.id} className="text-xs">
-                            {vaga.titulo}
+                            <span className="flex items-center gap-1.5">
+                              <span>{vaga.titulo}</span>
+                              {vaga.ativa === false && (
+                                <span className="text-[10px] text-slate-400 font-normal">
+                                  (desativada)
+                                </span>
+                              )}
+                            </span>
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -632,7 +639,14 @@ export function CandidateTable({
                         </SelectItem>
                         {vagas.map((vaga) => (
                           <SelectItem key={vaga.id} value={vaga.id} className="text-xs">
-                            {vaga.titulo}
+                            <span className="flex items-center gap-1.5">
+                              <span>{vaga.titulo}</span>
+                              {vaga.ativa === false && (
+                                <span className="text-[10px] text-slate-400 font-normal">
+                                  (desativada)
+                                </span>
+                              )}
+                            </span>
                           </SelectItem>
                         ))}
                       </SelectContent>

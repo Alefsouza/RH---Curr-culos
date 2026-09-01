@@ -117,7 +117,16 @@ export default function JobsPage() {
         </div>
       ) : (
         <div className="overflow-y-auto">
-          <VagasList vagas={vagas} onEdit={handleEdit} onDelete={handleDelete} />
+          <VagasList
+            vagas={vagas}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+            onToggleAtiva={(vagaId, novaAtiva) => {
+              setVagas((prev) =>
+                prev.map((v) => (v.id === vagaId ? { ...v, ativa: novaAtiva } : v)),
+              )
+            }}
+          />
         </div>
       )}
 

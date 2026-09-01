@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils'
 
 interface VagaSelectDialogProps {
   isOpen: boolean
-  vagas: { id: string; titulo: string }[]
+  vagas: { id: string; titulo: string; ativa?: boolean }[]
   onClose: () => void
   onConfirm: (vagaId: string) => void
 }
@@ -74,14 +74,29 @@ export function VagaSelectDialog({ isOpen, vagas, onClose, onConfirm }: VagaSele
                     type="button"
                     onClick={() => setSelectedId(vaga.id)}
                     className={cn(
-                      'w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-left text-sm transition-colors',
+                      'w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-md text-left text-sm transition-colors',
                       selectedId === vaga.id
                         ? 'bg-primary text-primary-foreground'
                         : 'hover:bg-slate-100 text-slate-700',
+                      vaga.ativa === false && selectedId !== vaga.id && 'opacity-60 bg-slate-50',
                     )}
                   >
-                    <Briefcase className="h-4 w-4 shrink-0" />
-                    <span className="truncate">{vaga.titulo}</span>
+                    <div className="flex items-center gap-3 truncate">
+                      <Briefcase className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{vaga.titulo}</span>
+                    </div>
+                    {vaga.ativa === false && (
+                      <span
+                        className={cn(
+                          'text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded border shrink-0',
+                          selectedId === vaga.id
+                            ? 'border-white/40 text-white'
+                            : 'border-slate-300 bg-slate-100 text-slate-500',
+                        )}
+                      >
+                        Desativada
+                      </span>
+                    )}
                   </button>
                 ))
               )}

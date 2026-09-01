@@ -303,8 +303,12 @@ ${pdfText.substring(0, 15000)}
       }
     }
 
-    // 9 & 10. Analisar contra vagas abertas
-    const { data: vagas } = await supabase.from('vagas').select('*').eq('user_id', userId)
+    // 9 & 10. Analisar contra vagas abertas e ATIVAS
+    const { data: vagas } = await supabase
+      .from('vagas')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('ativa', true)
     const analisesRealizadas = []
 
     if (vagas && vagas.length > 0) {

@@ -51,13 +51,17 @@ export async function fetchVagas() {
   try {
     const { data, error } = await supabase
       .from('vagas')
-      .select('id, titulo')
+      .select('id, titulo, ativa')
       .order('criado_em', { ascending: false })
     if (error) {
       console.error('Erro ao buscar vagas:', error)
       return []
     }
-    return data || []
+    return (data || []).map((v: any) => ({
+      id: v.id,
+      titulo: v.titulo,
+      ativa: v.ativa ?? true,
+    }))
   } catch (error) {
     console.error('Falha de rede ao buscar vagas:', error)
     return []

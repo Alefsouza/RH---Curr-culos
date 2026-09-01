@@ -53,10 +53,11 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Busca todas as vagas disponíveis no sistema
+    // Busca todas as vagas ATIVAS disponíveis no sistema
     const { data: vagas, error: vagasError } = await supabase
       .from('vagas')
       .select('id, titulo, descricao, criterios_qualificacao')
+      .eq('ativa', true)
       .order('criado_em', { ascending: false })
 
     if (vagasError) {
@@ -68,7 +69,7 @@ Deno.serve(async (req: Request) => {
         JSON.stringify({
           vaga_id: null,
           confianca: 'nenhuma',
-          justificativa: 'Nenhuma vaga cadastrada e aberta foi encontrada no sistema.',
+          justificativa: 'Nenhuma vaga ativa foi encontrada no sistema.',
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )

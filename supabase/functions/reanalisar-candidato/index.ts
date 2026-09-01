@@ -364,10 +364,11 @@ ${extractedText.substring(0, 18000)}`
 
       vagaId = identifyData.vaga_id
     } else if (!vagaId) {
-      // Se nenhuma vaga for compatível e ainda não tiver vaga, busca a primeira vaga aberta como fallback para pontuar ou criar analise
+      // Se nenhuma vaga for compatível e ainda não tiver vaga, busca a primeira vaga aberta ATIVA como fallback para pontuar ou criar analise
       const { data: fallbackVaga } = await supabase
         .from('vagas')
         .select('id')
+        .eq('ativa', true)
         .order('criado_em', { ascending: true })
         .limit(1)
         .maybeSingle()
@@ -377,7 +378,7 @@ ${extractedText.substring(0, 18000)}`
       } else {
         return new Response(
           JSON.stringify({
-            error: 'Nenhuma vaga cadastrada no sistema para realizar a análise.',
+            error: 'Nenhuma vaga ativa cadastrada no sistema para realizar a análise.',
           }),
           { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         )

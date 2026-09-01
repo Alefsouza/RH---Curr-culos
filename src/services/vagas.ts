@@ -26,10 +26,11 @@ export const vagasService = {
     const { data: analises, error: analisesError } = await analisesQuery
     if (analisesError) throw analisesError
 
-    return vagas.map((vaga) => {
+    return (vagas as (Vaga & { ativa?: boolean })[]).map((vaga) => {
       const analisesVaga = analises.filter((a) => a.vaga_id === vaga.id)
       return {
         ...vaga,
+        ativa: vaga.ativa ?? true,
         estatisticas: {
           total: analisesVaga.length,
           qualificados: analisesVaga.filter((a) => a.resultado === 'qualificado').length,
@@ -38,6 +39,17 @@ export const vagasService = {
         },
       }
     })
+  },
+
+  async toggleAtiva(id: string, ativa: boolean) {
+    const { data, error } = await supabase
+      .from('vagas')
+      .update({ ativa } as any)
+      .eq('id', id)
+      .select()
+      .single()
+    if (error) throw error
+    return data
   },
 
   async createVaga(vaga: VagaInsert) {
