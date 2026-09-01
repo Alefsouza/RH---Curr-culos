@@ -410,7 +410,9 @@ ${combinedText.substring(0, 25000)}`
           cleanName = sanitizeAndValidateName(visionData.nome) || cleanName
         }
       } catch (visionErr: any) {
-        console.warn(`[process-resume] Leitura visual do PDF falhou:`, visionErr?.message)
+        console.error(
+          `[process-resume] Leitura visual do PDF falhou: status=${visionErr?.status ?? 'N/A'}, mensagem=${visionErr?.message || visionErr}`,
+        )
       }
     }
 

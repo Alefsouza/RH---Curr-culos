@@ -344,9 +344,8 @@ ${combinedText.substring(0, 25000)}`
                   newlyExtracted = { ...newlyExtracted, ...visionExtracted }
                 }
               } catch (visionErr: any) {
-                console.warn(
-                  `[reanalisar-candidato] Erro na extração com visão:`,
-                  visionErr?.message,
+                console.error(
+                  `[reanalisar-candidato] Erro na extração com visão: status=${visionErr?.status ?? 'N/A'}, mensagem=${visionErr?.message || visionErr}`,
                 )
               }
             }

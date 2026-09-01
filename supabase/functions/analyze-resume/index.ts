@@ -443,9 +443,8 @@ ${combinedText.substring(0, 25000)}`
           cleanName = sanitizeAndValidateName(visionData.nome) || cleanName
         }
       } catch (visionErr: any) {
-        console.warn(
-          `[analyze-resume] Leitura visual do PDF não pôde processar:`,
-          visionErr?.message,
+        console.error(
+          `[analyze-resume] Leitura visual do PDF não pôde processar: status=${visionErr?.status ?? 'N/A'}, mensagem=${visionErr?.message || visionErr}`,
         )
       }
     }
