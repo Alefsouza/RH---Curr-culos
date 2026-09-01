@@ -598,6 +598,19 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
 
       if (fallbackVaga?.id) {
         vagaId = fallbackVaga.id
+
+        // Atualiza a vaga do candidato para que a vaga exibida em /candidatos fique consistente com a análise
+        const { error: updateFallbackError } = await supabase
+          .from('candidatos')
+          .update({ vaga_id: fallbackVaga.id })
+          .eq('id', candidato.id)
+
+        if (updateFallbackError) {
+          console.warn(
+            `[reanalisar-candidato] Falha ao atribuir fallbackVaga ao candidato ${candidato.id}:`,
+            updateFallbackError.message,
+          )
+        }
       } else {
         return new Response(
           JSON.stringify({
