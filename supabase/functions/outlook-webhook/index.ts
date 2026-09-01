@@ -134,7 +134,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const extractionPrompt = `Extraia os seguintes dados do currículo: nome, email, telefones celulares, experiencia profissional, skills, formacao academica, endereço (cidade e estado ou completo), objetivo / cargo pretendido.
+    const extractionPrompt = `Extraia os seguintes dados do currículo: nome, email, telefones celulares, experiencia profissional, skills, formacao academica, endereço (cidade e estado ou completo), idade, data de nascimento, objetivo / cargo pretendido.
 Extraia APENAS números de telefone celular brasileiros (DDD + 9 dígitos, começando com 9). Ignore telefones fixos. Formato: 11999999999.
 Se algum dado não for encontrado, retorne null ou um array vazio.
 Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
@@ -143,6 +143,8 @@ Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
   "email": "string ou null",
   "telefones_celulares": ["string"],
   "endereco": "string ou null",
+  "idade": "number ou null",
+  "data_nascimento": "string ou null",
   "objetivo": "string ou null",
   "experiencia_profissional": ["string"],
   "skills": ["string"],

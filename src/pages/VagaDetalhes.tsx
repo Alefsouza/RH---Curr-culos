@@ -204,6 +204,11 @@ function DesktopCVTable({
                 <TableCell>
                   <div className="font-medium text-slate-900">{candidato.nome}</div>
                   <div className="text-xs text-slate-500 mt-1 space-y-0.5">
+                    {dadosExtraidos?.idade && (
+                      <span className="inline-block text-purple-700 font-medium bg-purple-50 px-1.5 py-0.2 rounded border border-purple-200 mr-1 mb-0.5">
+                        {dadosExtraidos.idade} anos
+                      </span>
+                    )}
                     {candidato.email && <div>{candidato.email}</div>}
                     {candidato.telefone && <div>{candidato.telefone}</div>}
                   </div>

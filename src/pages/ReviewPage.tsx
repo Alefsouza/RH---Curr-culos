@@ -125,7 +125,16 @@ function ReviewDetail({ analise, etapas, onConfirm, onCancel, isSubmitting }: an
                 <span className="text-muted-foreground">Telefone:</span>{' '}
                 <p className="font-medium">{candidato?.telefone || '-'}</p>
               </div>
-              <div className="col-span-2">
+              <div>
+                <span className="text-muted-foreground">Idade / Nascimento:</span>{' '}
+                <p className="font-medium">
+                  {dados?.idade ? `${dados.idade} anos` : ''}
+                  {dados?.idade && dados?.data_nascimento
+                    ? ` (${dados.data_nascimento})`
+                    : dados?.data_nascimento || '-'}
+                </p>
+              </div>
+              <div>
                 <span className="text-muted-foreground">Vaga:</span>{' '}
                 <p className="font-medium">{analise.vagas?.titulo || '-'}</p>
               </div>

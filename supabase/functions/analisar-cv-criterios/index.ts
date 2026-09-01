@@ -92,8 +92,15 @@ Deno.serve(async (req: Request) => {
       nome: validName || 'Candidato',
       email: validEmail,
       telefone: candidato.telefone,
+      idade: extracted.idade ?? null,
+      data_nascimento: extracted.data_nascimento ?? null,
       ...extracted,
     }
+
+    // Identificar idade do candidato se disponível
+    const idadeCandidato =
+      extracted.idade !== undefined && extracted.idade !== null ? extracted.idade : null
+    const dataNascimentoCandidato = extracted.data_nascimento || null
 
     let criteriosText = 'Sem critérios definidos.'
     let localizacoesVaga: string[] = []
@@ -206,6 +213,8 @@ Deno.serve(async (req: Request) => {
 - Descrição da vaga: ${vaga.descricao || 'Não informada'}
 - Critérios textuais: ${criteriosText}
 - Localização do candidato: ${enderecoCV || 'Não informado'}
+- Idade do candidato: ${idadeCandidato !== null ? `${idadeCandidato} anos` : 'Não informada'}
+- Data de nascimento: ${dataNascimentoCandidato || 'Não informada'}
 - Distância até a vaga: ${distanciaCalculada ? menorDistanciaKm.toFixed(2) : 0} km
 - Raio aceito: ${raioKm} km
 - Qualificado por localização: ${qualificadoPorLocalizacao}
@@ -214,17 +223,26 @@ Dados completos do currículo:
 ${JSON.stringify(cvData)}
 
 DIRETRIZES CRÍTICAS PARA AVALIAÇÃO DE CRITÉRIOS:
-1. ESCOLARIDADE É REQUISITO MÍNIMO:
+1. REGRA DE FAIXA ETÁRIA (ELIMINATÓRIA):
+   - Quando a vaga tiver critério de faixa etária especificado (ex: "18 a 22 anos", "entre 18 e 24 anos", "maior de 18 anos", "jovem aprendiz 18 a 22 anos"):
+   - Este critério de faixa etária é ESTRITAMENTE ELIMINATÓRIO.
+   - Se a idade do candidato (ou calculada pela data de nascimento) for identificada e estiver FORA da faixa exigida (ex: candidato com 31 anos para vaga de 18 a 22 anos):
+     * O candidato DEVE obrigatoriamente receber resultado = "nao_qualificado".
+     * O campo score DEVE ser penalizado e refletir a desqualificação (ex: score abaixo de 50 ou zero).
+     * O motivo DEVE explicitar a reprovação por idade (ex: "Reprovado por faixa etária: Candidato possui X anos, fora da faixa exigida de Y a Z anos.").
+     * Inclua o requisito de faixa etária em 'unmatched_criteria' com o motivo claro.
+
+2. ESCOLARIDADE É REQUISITO MÍNIMO:
    - Todo critério de escolaridade (ex: "Ensino Fundamental", "Ensino Médio") expressa a ESCOLARIDADE MÍNIMA exigida. NUNCA penalize um candidato por ter escolaridade superior à exigida.
    - Se o critério exigir "Ensino Fundamental" (incompleto ou completo), candidatos com Ensino Fundamental, Ensino Médio (incompleto/completo) ou Ensino Superior (incompleto/completo) ATENDEM PLENAMENTE ao requisito. Coloque em 'matched_criteria' (ex: "Requerido Ensino Fundamental mínimo, candidato possui Ensino Médio/Superior") e NUNCA em 'unmatched_criteria'.
    - Se o critério exigir "Ensino Médio", candidatos com Ensino Médio ou Superior atendem ao requisito.
 
-2. AVALIAÇÃO GERAL:
+3. AVALIAÇÃO GERAL:
    - Verifique a aderência real às atividades da vaga e requisitos mandatórios vs desejáveis informados nos critérios.
 
 Retorne ESTRITAMENTE um JSON com as seguintes chaves:
 - resultado (qualificado, nao_qualificado ou revisar)
-- detalhes (objeto com score (número inteiro de 0 a 100 representando a compatibilidade geral do candidato), matched_criteria (array de objetos com nome (string) e evidencia (string)), unmatched_criteria (array de objetos com nome (string) e motivo (string)), summary (string com resumo conciso da análise), pontos_fortes (array de strings), pontos_fracos (array de strings), aderencia (string ex: '85%') e motivo (string, explicação breve sobre a decisão, focando na localização se for reprovado))`
+- detalhes (objeto com score (número inteiro de 0 a 100 representando a compatibilidade geral do candidato), matched_criteria (array de objetos com nome (string) e evidencia (string)), unmatched_criteria (array de objetos com nome (string) e motivo (string)), summary (string com resumo conciso da análise), pontos_fortes (array de strings), pontos_fracos (array de strings), aderencia (string ex: '85%') e motivo (string, explicação breve sobre a decisão, focando no critério eliminatório como idade ou localização se for reprovado))`
 
     const openaiKey =
       Deno.env.get('OPENAI_KEY') || Deno.env.get('OPENAI_API_KEY') || Deno.env.get('OPENIA_KEY')

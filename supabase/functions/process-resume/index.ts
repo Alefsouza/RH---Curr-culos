@@ -182,6 +182,8 @@ Deno.serve(async (req: Request) => {
       email: null,
       telefones_celulares: [],
       endereco: null,
+      idade: null,
+      data_nascimento: null,
       objetivo: null,
       experiencia_profissional: [],
       skills: [],
@@ -194,6 +196,8 @@ Deno.serve(async (req: Request) => {
 - email: Endereço de e-mail REAL (ex: "valdineiadomingues82@gmail.com"), ou null se não identificado
 - telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11974697877"]) ou [] se nenhum
 - endereco: Cidade e estado ou endereço completo (ex: "São Bernardo do Campo - SP"), ou null se não identificado
+- idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
+- data_nascimento: Data de nascimento informada (ex: "16/01/1993" ou "1993-01-16"), ou null se não constar
 - objetivo: Cargo pretendido, objetivo profissional ou área de interesse expressamente informada no currículo (ex: "Cobrador de Ônibus", "Motorista", "Auxiliar Administrativo", "Mecânico"), ou null se não identificado
 - experiencia_profissional: Lista de experiências anteriores com cargos e empresas, ou []
 - skills: Lista de habilidades técnicas e competências, ou []
@@ -202,9 +206,10 @@ Deno.serve(async (req: Request) => {
 IMPORTANTE:
 1. NUNCA invente dados fictícios (evite "Candidato Desconhecido", "João da Silva", "11999999999", "exemplo@email.com"). Se constar no documento, capture com precisão.
 2. O nome do candidato frequentemente aparece no cabeçalho/primeiras linhas do documento (ex: "VALDINÉIA DOMINGUES").
-3. Capture o "objetivo" ou cargo pretendido com máxima atenção, pois ele é fundamental para associar a vaga correta.
-4. Evite duplicação de palavras no nome (ex: "Lucas Lucas").
-5. NUNCA use a string "string ou null" ou "string". Use null real.
+3. Capture a idade ou data de nascimento com rigor se presente no documento.
+4. Capture o "objetivo" ou cargo pretendido com máxima atenção, pois ele é fundamental para associar a vaga correta.
+5. Evite duplicação de palavras no nome (ex: "Lucas Lucas").
+6. NUNCA use a string "string ou null" ou "string". Use null real.
 
 Formato JSON estrito esperado:
 {
@@ -212,6 +217,8 @@ Formato JSON estrito esperado:
   "email": null,
   "telefones_celulares": [],
   "endereco": null,
+  "idade": null,
+  "data_nascimento": null,
   "objetivo": null,
   "experiencia_profissional": [],
   "skills": [],
@@ -263,12 +270,14 @@ ${extractedText.substring(0, 18000)}`
               content: [
                 {
                   type: 'text',
-                  text: `Analise cuidadosamente este currículo/documento em anexo e extraia todas as informações. ATENÇÃO: Identifique o nome completo do candidato localizado no topo/cabeçalho do documento (preserve acentuação, ex: "VALDINÉIA DOMINGUES" -> "Valdinéia Domingues"):
+                  text: `Analise cuidadosamente este currículo/documento em anexo e extraia todas as informações. ATENÇÃO: Identifique o nome completo do candidato localizado no topo/cabeçalho do documento (preserve acentuação, ex: "VALDINÉIA DOMINGUES" -> "Valdinéia Domingues"), idade e data de nascimento:
 {
   "nome": "Nome completo REAL do candidato presente no cabeçalho/documento",
   "email": "Email real ou null",
   "telefones_celulares": ["telefones reais encontrados"],
   "endereco": "endereço, cidade e estado ou null",
+  "idade": "número inteiro da idade ou null",
+  "data_nascimento": "data de nascimento ou null",
   "objetivo": "cargo pretendido ou objetivo profissional expresso no currículo ou null",
   "experiencia_profissional": ["experiências anteriores"],
   "skills": ["habilidades e competências"],

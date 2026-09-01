@@ -281,6 +281,9 @@ export default function CandidateDetails() {
   const enderecoRaw =
     extraidos.endereco || extraidos.location || extraidos.cidade || extraidos.estado || null
   const endereco = enderecoRaw ? safeText(enderecoRaw) : null
+  const idade =
+    extraidos.idade !== undefined && extraidos.idade !== null ? safeText(extraidos.idade) : null
+  const dataNascimento = extraidos.data_nascimento ? safeText(extraidos.data_nascimento) : null
 
   return (
     <div className="container mx-auto p-4 md:p-6 max-w-6xl space-y-6 animate-fade-in">
@@ -317,6 +320,16 @@ export default function CandidateDetails() {
               <User className="w-4 h-4 mr-1.5 text-slate-400" /> Fonte:{' '}
               {candidate.fonte || 'Desconhecida'}
             </span>
+            {idade && (
+              <span className="flex items-center text-xs text-purple-700 border border-purple-200 rounded px-2 py-0.5 bg-purple-50 font-medium">
+                Idade: {idade} anos {dataNascimento ? `(${dataNascimento})` : ''}
+              </span>
+            )}
+            {!idade && dataNascimento && (
+              <span className="flex items-center text-xs text-purple-700 border border-purple-200 rounded px-2 py-0.5 bg-purple-50 font-medium">
+                Nascimento: {dataNascimento}
+              </span>
+            )}
             {objetivo && (
               <span className="flex items-center text-xs text-blue-700 border border-blue-200 rounded px-2 py-0.5 bg-blue-50 font-medium">
                 Objetivo pretendido: {safeText(objetivo)}

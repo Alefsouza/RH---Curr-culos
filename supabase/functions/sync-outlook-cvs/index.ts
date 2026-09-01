@@ -17,6 +17,8 @@ interface ExtractedCandidateData {
   telefones_celulares?: string[]
   telefone?: string | null
   endereco?: string | null
+  idade?: number | string | null
+  data_nascimento?: string | null
   objetivo?: string | null
   resumo_cv?: string | null
   experiencia_profissional?: string[] | string
@@ -58,6 +60,8 @@ Extraia com cuidado preservando a grafia correta com acentos em português:
 - telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11987654321"]) ou [] se nenhum
 - telefone: Telefone celular principal ou null se não identificado
 - endereco: Cidade, estado ou endereço completo, ou null se não identificado
+- idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
+- data_nascimento: Data de nascimento informada (ex: "16/01/1993" ou "1993-01-16"), ou null se não constar
 - objetivo: Cargo pretendido, objetivo profissional ou área de interesse informada no currículo (ex: "Cobrador de Ônibus", "Motorista", "Auxiliar Administrativo"), ou null se não identificado
 - resumo_cv: Resumo das qualificações e perfil profissional, ou null se não identificado
 - experiencia_profissional: Lista de experiências anteriores com cargos e empresas, ou [] se não houver
@@ -67,8 +71,9 @@ Extraia com cuidado preservando a grafia correta com acentos em português:
 IMPORTANTE:
 1. NUNCA invente dados ou placeholders como "Candidato Desconhecido", "João da Silva", "11999999999", "exemplo@email.com". Se não constar, use null ou [].
 2. NUNCA retorne o texto literal "string ou null", "string", ou "null". Use o valor JSON null real quando o dado não existir.
-3. Capture o "objetivo" ou cargo pretendido com máxima atenção, pois ele define o direcionamento de vaga do candidato.
-4. Não duplique nomes (evite "Lucas Lucas" ou repetições).
+3. Capture a idade ou data de nascimento com rigor se presente no documento.
+4. Capture o "objetivo" ou cargo pretendido com máxima atenção, pois ele define o direcionamento de vaga do candidato.
+5. Não duplique nomes (evite "Lucas Lucas" ou repetições).
 
 Formato JSON estrito esperado:
 {
@@ -77,6 +82,8 @@ Formato JSON estrito esperado:
   "telefones_celulares": [],
   "telefone": null,
   "endereco": null,
+  "idade": null,
+  "data_nascimento": null,
   "objetivo": null,
   "resumo_cv": null,
   "experiencia_profissional": [],

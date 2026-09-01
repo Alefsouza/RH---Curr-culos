@@ -137,6 +137,8 @@ Deno.serve(async (req: Request) => {
 - telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11974697877"]) ou [] se nenhum
 - telefone: Telefone principal ou null
 - endereco: Endereço completo ou cidade/estado (ex: "São Bernardo do Campo - SP"), ou null se não identificado
+- idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
+- data_nascimento: Data de nascimento informada (ex: "16/01/1993" ou "1993-01-16"), ou null se não constar
 - objetivo: Cargo pretendido, objetivo profissional ou área informada no currículo (ex: "Cobrador de Ônibus", "Motorista", "Auxiliar Administrativo"), ou null se não identificado
 - resumo_cv: Resumo das qualificações, ou null
 - experiencia_profissional: Lista de experiências anteriores, ou []
@@ -195,12 +197,14 @@ ${extractedText.substring(0, 18000)}`
                       content: [
                         {
                           type: 'text',
-                          text: `Analise visualmente este currículo em anexo e extraia com prioridade o nome no topo/cabeçalho (ex: "VALDINÉIA DOMINGUES" -> "Valdinéia Domingues"):
+                          text: `Analise visualmente este currículo em anexo e extraia com prioridade o nome no topo/cabeçalho (ex: "VALDINÉIA DOMINGUES" -> "Valdinéia Domingues"), idade e data de nascimento:
 {
  "nome": "Nome completo REAL da pessoa no cabeçalho ou null",
  "email": "email real ou null",
  "telefones_celulares": ["telefones REAIS com DDD"],
  "endereco": "endereço ou cidade/estado ou null",
+ "idade": "número inteiro da idade ou null",
+ "data_nascimento": "data de nascimento ou null",
  "objetivo": "cargo pretendido ou objetivo profissional expresso no currículo ou null",
  "resumo_cv": "resumo profissional ou null",
  "experiencia_profissional": ["experiências anteriores"],

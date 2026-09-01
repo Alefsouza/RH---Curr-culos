@@ -16,14 +16,15 @@ interface ExtractedCandidateData {
   telefones_celulares?: string[]
   telefone?: string | null
   endereco?: string | null
+  idade?: number | string | null
+  data_nascimento?: string | null
   objetivo?: string | null
+  resumo_cv?: string | null
   experiencia_profissional?: string[] | string
   skills?: string[] | string
   formacao_academica?: string[] | string
-  resumo_cv?: string | null
   [key: string]: any
 }
-
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -238,6 +239,8 @@ Deno.serve(async (req: Request) => {
 - telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11987654321"]) ou [] se nenhum
 - telefone: Telefone celular principal ou null
 - endereco: Cidade, estado ou endereço completo, ou null se não identificado
+- idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
+- data_nascimento: Data de nascimento informada (ex: "16/01/1993" ou "1993-01-16"), ou null se não constar
 - objetivo: Cargo pretendido, objetivo profissional ou área de interesse informada no currículo (ex: "Cobrador de Ônibus", "Motorista", "Auxiliar Administrativo"), ou null se não identificado
 - resumo_cv: Resumo das qualificações e perfil profissional, ou null se não identificado
 - experiencia_profissional: Lista de experiências anteriores, ou []
@@ -247,7 +250,8 @@ Deno.serve(async (req: Request) => {
 IMPORTANTE:
 1. NUNCA invente dados fictícios.
 2. NUNCA use a string "string ou null" ou "string". Use null real.
-3. Capture o "objetivo" com prioridade para facilitar o matching de vagas.
+3. Capture a idade ou data de nascimento se constar no documento.
+4. Capture o "objetivo" com prioridade para facilitar o matching de vagas.
 
 Formato JSON estrito esperado:
 {
@@ -256,6 +260,8 @@ Formato JSON estrito esperado:
   "telefones_celulares": [],
   "telefone": null,
   "endereco": null,
+  "idade": null,
+  "data_nascimento": null,
   "objetivo": null,
   "resumo_cv": null,
   "experiencia_profissional": [],
