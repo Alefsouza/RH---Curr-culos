@@ -89,8 +89,8 @@ export default function JobsPage() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto h-full flex flex-col">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+    <div className="p-6 max-w-7xl mx-auto w-full flex-1 flex flex-col min-h-0 space-y-6 pb-24">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Gestão de Vagas</h1>
           <p className="text-slate-500 text-sm mt-1">
@@ -116,7 +116,9 @@ export default function JobsPage() {
           </Button>
         </div>
       ) : (
-        <VagasList vagas={vagas} onEdit={handleEdit} onDelete={handleDelete} />
+        <div className="overflow-y-auto">
+          <VagasList vagas={vagas} onEdit={handleEdit} onDelete={handleDelete} />
+        </div>
       )}
 
       <VagaFormModal
