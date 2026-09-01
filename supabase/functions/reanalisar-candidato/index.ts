@@ -10,6 +10,7 @@ import {
 } from '../_shared/validation.ts'
 import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
 import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
+import { performGoogleVisionPdfOcr } from '../_shared/ocr.ts'
 
 // Extrai caminho relativo do storage a partir de URL pública ou storage path
 function extractStoragePathFromCurriculoUrl(urlOrPath: string): string | null {
@@ -171,34 +172,121 @@ ${extractedText.substring(0, 18000)}`
               newlyExtracted = JSON.parse(rawContent)
             }
 
-            // Tentativa 2: Se texto foi insuficiente, ou se nome/telefone/endereço vieram nulos/ausentes e não é docx, usar modelo compatível com PDF via file_data
-            const parsedName = sanitizeAndValidateName(newlyExtracted?.nome)
-            const hasNewTelefone =
+            // Tentativa 2: Google Vision OCR caso falte cabeçalho (nome, telefone, endereco ou email)
+            let parsedName = sanitizeAndValidateName(newlyExtracted?.nome)
+            let hasNewTelefone =
               Boolean(newlyExtracted?.telefone) ||
               (Array.isArray(newlyExtracted?.telefones_celulares) &&
                 newlyExtracted.telefones_celulares.length > 0)
-            const hasNewEndereco = Boolean(
+            let hasNewEndereco = Boolean(
               newlyExtracted?.endereco && String(newlyExtracted.endereco).trim().length > 0,
             )
+            let hasNewEmail = Boolean(newlyExtracted?.email)
 
-            const needsVisionReextract =
+            const isHeaderMissing =
               !parsedName ||
               !hasNewTelefone ||
               !hasNewEndereco ||
+              !hasNewEmail ||
               !extractedText ||
               extractedText.trim().length < 30
 
+            if (isHeaderMissing && !isDocx && fileBytes.length > 0) {
+              try {
+                console.log(
+                  `[reanalisar-candidato] Cabeçalho ausente/incompleto para candidato ${candidato.id}. Executando Google Vision OCR...`,
+                )
+                const ocrText = await performGoogleVisionPdfOcr(fileBytes)
+                if (ocrText && ocrText.trim().length > 20) {
+                  console.log(
+                    `[reanalisar-candidato] OCR obteve ${ocrText.length} caracteres. Concatenando e reextraindo com GPT-4o-mini...`,
+                  )
+                  const combinedText = `--- TEXTO EXTRAÍDO VIA OCR (DOCUMENT_TEXT_DETECTION) ---\n${ocrText}\n\n--- TEXTO NATIVO DO ARQUIVO ---\n${extractedText || ''}`
+
+                  const ocrPromptText = `Extraia com máxima atenção todos os dados cadastrais (especialmente cabeçalho/contatos) e profissionais do currículo com OCR:
+- nome: Nome completo REAL do candidato em destaque no cabeçalho ou topo (ex: "JOÃO BATISTA DA SILVA", "VALDINÉIA DOMINGUES"). Preserve todos os acentos e retorne null apenas se não houver nome de pessoa física.
+- email: E-mail REAL do candidato (ex: "exemplo@gmail.com"), ou null se não identificado
+- telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11974697877", "11988887777"]) ou [] se nenhum
+- telefone: Telefone principal ou null
+- endereco: Endereço completo, logradouro, bairro, cidade ou estado (ex: "Rua das Flores, 123 - São Bernardo do Campo - SP"), ou null se não identificado
+- idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
+- data_nascimento: Data de nascimento informada (ex: "16/01/1993" ou "1993-01-16"), ou null se não constar
+- objetivo: Cargo pretendido, objetivo profissional ou área informada no currículo, ou null se não identificado
+- resumo_cv: Resumo das qualificações, ou null
+- experiencia_profissional: Lista de experiências anteriores, ou []
+- skills: Lista de habilidades técnicas e competências, ou []
+- formacao_academica: Lista de cursos e escolaridade, ou []
+
+Texto do currículo com OCR:
+${combinedText.substring(0, 25000)}`
+
+                  const ocrResponse = await openai.chat.completions.create({
+                    model: 'gpt-4o-mini',
+                    messages: [
+                      {
+                        role: 'system',
+                        content:
+                          'Você é um assistente sênior de RH especialista em análise de currículos em português brasileiro. NUNCA invente dados fictícios. Preserve rigorosamente acentos (á, é, í, ó, ú, ã, õ, ç, etc.) e grafia original. Retorne SEMPRE JSON válido.',
+                      },
+                      { role: 'user', content: ocrPromptText },
+                    ],
+                    response_format: { type: 'json_object' },
+                  })
+
+                  const ocrContent = ocrResponse.choices[0]?.message?.content || '{}'
+                  const ocrExtracted = JSON.parse(ocrContent)
+                  if (ocrExtracted && typeof ocrExtracted === 'object') {
+                    newlyExtracted = {
+                      ...newlyExtracted,
+                      ...ocrExtracted,
+                      experiencia_profissional:
+                        Array.isArray(ocrExtracted.experiencia_profissional) &&
+                        ocrExtracted.experiencia_profissional.length > 0
+                          ? ocrExtracted.experiencia_profissional
+                          : newlyExtracted?.experiencia_profissional || [],
+                      skills:
+                        Array.isArray(ocrExtracted.skills) && ocrExtracted.skills.length > 0
+                          ? ocrExtracted.skills
+                          : newlyExtracted?.skills || [],
+                      formacao_academica:
+                        Array.isArray(ocrExtracted.formacao_academica) &&
+                        ocrExtracted.formacao_academica.length > 0
+                          ? ocrExtracted.formacao_academica
+                          : newlyExtracted?.formacao_academica || [],
+                    }
+                    parsedName = sanitizeAndValidateName(newlyExtracted.nome) || parsedName
+                    hasNewTelefone =
+                      Boolean(newlyExtracted?.telefone) ||
+                      (Array.isArray(newlyExtracted?.telefones_celulares) &&
+                        newlyExtracted.telefones_celulares.length > 0)
+                    hasNewEndereco = Boolean(
+                      newlyExtracted?.endereco && String(newlyExtracted.endereco).trim().length > 0,
+                    )
+                    hasNewEmail = Boolean(newlyExtracted?.email)
+                  }
+                }
+              } catch (ocrErr: any) {
+                console.warn(
+                  `[reanalisar-candidato] Falha no fluxo Google Vision OCR:`,
+                  ocrErr?.message,
+                )
+              }
+            }
+
+            // Tentativa 3: Fallback de visão OpenAI existente como último recurso
+            const stillNeedsVisionReextract =
+              !parsedName || !hasNewTelefone || !hasNewEndereco || !hasNewEmail
+
             if (
-              needsVisionReextract &&
+              stillNeedsVisionReextract &&
               !isDocx &&
               fileBytes.length > 0 &&
               fileBytes.length < 15 * 1024 * 1024
             ) {
               try {
                 console.log(
-                  `[reanalisar-candidato] Tentando extração avançada com visão PDF (gpt-4.1) para o candidato ${candidato.id}...`,
+                  `[reanalisar-candidato] Tentando fallback com visão PDF (gpt-4.1) para o candidato ${candidato.id}...`,
                 )
-                // Converter os bytes do PDF em base64 data URL
                 let binaryStr = ''
                 const len = fileBytes.byteLength
                 for (let i = 0; i < len; i++) {
@@ -224,17 +312,17 @@ ${extractedText.substring(0, 18000)}`
                           type: 'text',
                           text: `Analise visualmente este currículo em anexo e extraia com prioridade o nome no topo/cabeçalho (ex: "VALDINÉIA DOMINGUES" -> "Valdinéia Domingues"), idade e data de nascimento:
 {
- "nome": "Nome completo REAL da pessoa no cabeçalho ou null",
- "email": "email real ou null",
- "telefones_celulares": ["telefones REAIS com DDD"],
- "endereco": "endereço ou cidade/estado ou null",
- "idade": "número inteiro da idade ou null",
- "data_nascimento": "data de nascimento ou null",
- "objetivo": "cargo pretendido ou objetivo profissional expresso no currículo ou null",
- "resumo_cv": "resumo profissional ou null",
- "experiencia_profissional": ["experiências anteriores"],
- "skills": ["habilidades e competências"],
- "formacao_academica": ["formações e escolaridade"]
+"nome": "Nome completo REAL da pessoa no cabeçalho ou null",
+"email": "email real ou null",
+"telefones_celulares": ["telefones REAIS com DDD"],
+"endereco": "endereço ou cidade/estado ou null",
+"idade": "número inteiro da idade ou null",
+"data_nascimento": "data de nascimento ou null",
+"objetivo": "cargo pretendido ou objetivo profissional expresso no currículo ou null",
+"resumo_cv": "resumo profissional ou null",
+"experiencia_profissional": ["experiências anteriores"],
+"skills": ["habilidades e competências"],
+"formacao_academica": ["formações e escolaridade"]
 }`,
                         },
                         {
@@ -262,7 +350,6 @@ ${extractedText.substring(0, 18000)}`
                 )
               }
             }
-
             if (newlyExtracted) {
               const cleanName = sanitizeAndValidateName(newlyExtracted.nome)
               const cleanEmail = sanitizeAndValidateEmail(newlyExtracted.email)

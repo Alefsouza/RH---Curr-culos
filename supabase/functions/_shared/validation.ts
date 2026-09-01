@@ -72,6 +72,12 @@ export const sanitizeAndValidateName = (name: string | null | undefined): string
   // Um nome de pessoa válido NÃO pode conter dígitos (rejeita "1h6kms", "87afhn", "1788206596330", etc.)
   if (/\d/.test(trimmed)) return null
 
+  // Rejeita padrões alfanuméricos curtos tipo hash / ids (ex: "1h6kms", "tvw8ns", "87afhn", etc.)
+  if (/^[a-z0-9]{4,12}$/i.test(trimmed.replace(/\s+/g, ''))) return null
+
+  // Rejeita strings com termos conhecidos de hash ou arquivo
+  if (/^(tvw8ns|1h6kms|87afhn|blob|upload|file|temp)$/i.test(trimmed)) return null
+
   return trimmed
 }
 

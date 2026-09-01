@@ -10,6 +10,7 @@ import {
 } from '../_shared/validation.ts'
 import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
 import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
+import { performGoogleVisionPdfOcr } from '../_shared/ocr.ts'
 
 // Extrai e limpa nome a partir do nome do arquivo (ex: "curriculo_joao_silva.pdf" -> "Joao Silva")
 function extractNameFromFileName(filePath: string): string | null {
@@ -24,12 +25,21 @@ function extractNameFromFileName(filePath: string): string | null {
     .replace(/\s+/g, ' ')
     .trim()
 
-  // Se o nome resultante contiver dígitos ou for apenas números/hash/termos genéricos
+  // Se o nome resultante contiver QUALQUER dígito ou for apenas números/hash/termos genéricos
   if (/\d/.test(cleaned)) {
     return null
   }
 
-  if (/^(curriculo|curriculos|cv|resume|documento|doc|scan|arquivo|\d+)$/i.test(cleaned)) {
+  // Rejeita padrões tipo hash ou identificador alfanumérico curto
+  if (/^[a-z0-9]{3,12}$/i.test(cleaned.replace(/\s+/g, ''))) {
+    return null
+  }
+
+  if (
+    /^(curriculo|curriculos|cv|resume|documento|doc|scan|arquivo|upload|temp|file|\d+)$/i.test(
+      cleaned,
+    )
+  ) {
     return null
   }
 
@@ -39,8 +49,13 @@ function extractNameFromFileName(filePath: string): string | null {
     return null
   }
 
+  if (/^[a-z0-9]{3,12}$/i.test(cleaned.replace(/\s+/g, ''))) {
+    return null
+  }
+
   if (cleaned.length >= 3 && /[a-zA-ZÀ-ÿ]/.test(cleaned)) {
-    return cleaned.replace(/\b\w/g, (l) => l.toUpperCase())
+    const formatted = cleaned.replace(/\b\w/g, (l) => l.toUpperCase())
+    return sanitizeAndValidateName(formatted)
   }
   return null
 }
@@ -238,26 +253,101 @@ ${extractedText.substring(0, 18000)}`
     let cleanName = sanitizeAndValidateName(extractedData?.nome || nome)
     const isDocx = filePath.toLowerCase().endsWith('.docx')
 
-    const hasTelefone =
+    let hasTelefone =
       Boolean(extractedData?.telefone) ||
       (Array.isArray(extractedData?.telefones_celulares) &&
         extractedData.telefones_celulares.length > 0) ||
       Boolean(telefone)
-    const hasEndereco = Boolean(
+    let hasEndereco = Boolean(
       extractedData?.endereco && String(extractedData.endereco).trim().length > 0,
     )
+    let hasEmail = Boolean(extractedData?.email || email)
 
-    const needsVision =
-      !cleanName ||
-      !hasSufficientText ||
-      !hasTelefone ||
-      !hasEndereco ||
-      (!extractedData?.email && (!extractedData?.skills || extractedData.skills.length === 0))
+    const isHeaderIncomplete =
+      !cleanName || !hasTelefone || !hasEndereco || !hasEmail || !hasSufficientText
 
-    if (needsVision && !isDocx && fileBytes.length > 0 && fileBytes.length < 15 * 1024 * 1024) {
+    // 3.1 OCR via Google Cloud Vision como principal recurso quando falta cabeçalho
+    if (isHeaderIncomplete && !isDocx && fileBytes.length > 0) {
       try {
         console.log(
-          `[process-resume] Tentando leitura visual de PDF via gpt-4.1 para ${filePath}...`,
+          `[process-resume] Cabeçalho incompleto ou ausente. Executando Google Vision OCR para ${filePath}...`,
+        )
+        const ocrText = await performGoogleVisionPdfOcr(fileBytes)
+        if (ocrText && ocrText.trim().length > 20) {
+          console.log(
+            `[process-resume] OCR obteve ${ocrText.length} caracteres. Concatenando com texto existente e reextraindo...`,
+          )
+          const combinedText = `--- TEXTO EXTRAÍDO VIA OCR (DOCUMENT_TEXT_DETECTION) ---\n${ocrText}\n\n--- TEXTO NATIVO DO ARQUIVO ---\n${extractedText || ''}`
+
+          const reextractionPrompt = `Analise o texto completo do currículo (incluindo leitura de OCR de cabeçalho) e extraia com máxima precisão:
+- nome: Nome completo REAL do candidato em destaque no cabeçalho ou topo (ex: "JOÃO BATISTA DA SILVA", "VALDINÉIA DOMINGUES"). Preserve rigorosamente todos os acentos (á, é, í, ó, ú, ã, õ, ç, etc.). Retorne null apenas se for impossível identificar um nome de pessoa física.
+- email: Endereço de e-mail REAL válido (ex: "exemplo@gmail.com"), ou null se não identificado
+- telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11974697877", "11988887777"]) ou [] se nenhum
+- endereco: Endereço completo, logradouro, bairro, cidade ou estado (ex: "Rua das Flores, 123 - São Bernardo do Campo - SP"), ou null se não identificado
+- idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
+- data_nascimento: Data de nascimento informada (ex: "16/01/1993" ou "1993-01-16"), ou null se não constar
+- objetivo: Cargo pretendido, objetivo profissional ou área informada no currículo, ou null se não identificado
+- experiencia_profissional: Lista de experiências anteriores com cargos e empresas, ou []
+- skills: Lista de habilidades técnicas e competências, ou []
+- formacao_academica: Lista de cursos e escolaridade, ou []
+
+Texto do currículo com OCR:
+${combinedText.substring(0, 25000)}`
+
+          const reExtracted = await callOpenAIWithRetry(reextractionPrompt)
+          if (reExtracted && typeof reExtracted === 'object') {
+            extractedData = {
+              ...extractedData,
+              ...reExtracted,
+              experiencia_profissional:
+                Array.isArray(reExtracted.experiencia_profissional) &&
+                reExtracted.experiencia_profissional.length > 0
+                  ? reExtracted.experiencia_profissional
+                  : extractedData.experiencia_profissional,
+              skills:
+                Array.isArray(reExtracted.skills) && reExtracted.skills.length > 0
+                  ? reExtracted.skills
+                  : extractedData.skills,
+              formacao_academica:
+                Array.isArray(reExtracted.formacao_academica) &&
+                reExtracted.formacao_academica.length > 0
+                  ? reExtracted.formacao_academica
+                  : extractedData.formacao_academica,
+            }
+
+            cleanName = sanitizeAndValidateName(extractedData.nome) || cleanName
+            hasTelefone =
+              Boolean(extractedData?.telefone) ||
+              (Array.isArray(extractedData?.telefones_celulares) &&
+                extractedData.telefones_celulares.length > 0) ||
+              Boolean(telefone)
+            hasEndereco = Boolean(
+              extractedData?.endereco && String(extractedData.endereco).trim().length > 0,
+            )
+            hasEmail = Boolean(extractedData?.email || email)
+          }
+        }
+      } catch (ocrErr: any) {
+        console.warn(`[process-resume] Falha no fluxo de OCR Google Vision:`, ocrErr?.message)
+      }
+    }
+
+    // 3.2 Fallback de visão OpenAI existente como último recurso
+    const stillNeedsVision =
+      !cleanName ||
+      !hasTelefone ||
+      !hasEndereco ||
+      (!hasEmail && (!extractedData?.skills || extractedData.skills.length === 0))
+
+    if (
+      stillNeedsVision &&
+      !isDocx &&
+      fileBytes.length > 0 &&
+      fileBytes.length < 15 * 1024 * 1024
+    ) {
+      try {
+        console.log(
+          `[process-resume] Tentando fallback de visão PDF via gpt-4.1 para ${filePath}...`,
         )
         let binaryStr = ''
         const len = fileBytes.byteLength
