@@ -332,7 +332,7 @@ ${combinedText.substring(0, 25000)}`
       }
     }
 
-    // 3.2 Fallback de visão OpenAI via Responses API como último recurso (se ainda faltar dados e for PDF < 15MB)
+    // 3.2 Fallback de visão OpenAI via Files API + Responses API (gpt-4o) como último recurso (se ainda faltar dados e for PDF < 15MB)
     const stillNeedsVision =
       !cleanName ||
       !hasTelefone ||
@@ -347,18 +347,47 @@ ${combinedText.substring(0, 25000)}`
     ) {
       try {
         console.log(
-          `[process-resume] Tentando fallback de visão PDF via Responses API (gpt-4o) para ${filePath}...`,
+          `[process-resume] Tentando fallback de visão PDF via Files API + Responses API (gpt-4o) para ${filePath}...`,
         )
-        let binaryStr = ''
-        const len = fileBytes.byteLength
-        for (let i = 0; i < len; i++) {
-          binaryStr += String.fromCharCode(fileBytes[i])
-        }
-        const base64Data = btoa(binaryStr)
-
         const originalFileName = filePath.split('/').pop()?.split('\\').pop() || 'curriculo.pdf'
 
-        const promptText = `Você é um assistente sênior de RH altamente especializado em leitura visual e estruturação de currículos em formato PDF.
+        // 1. Upload do PDF via Files API usando FormData
+        const formData = new FormData()
+        formData.append('purpose', 'user_data')
+        formData.append(
+          'file',
+          new Blob([fileBytes], { type: 'application/pdf' }),
+          originalFileName,
+        )
+
+        const fileUploadRes = await fetch('https://api.openai.com/v1/files', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${openaiKey}`,
+          },
+          body: formData,
+        })
+
+        if (!fileUploadRes.ok) {
+          const uploadErrBody = await fileUploadRes.text()
+          console.error(
+            `[process-resume] Falha no upload de arquivo para OpenAI Files API: status=${fileUploadRes.status}, corpo=${uploadErrBody}`,
+          )
+        } else {
+          const fileData = await fileUploadRes.json()
+          const fileId = fileData?.id
+
+          if (!fileId) {
+            console.error(
+              `[process-resume] OpenAI Files API retornou sucesso mas sem file.id:`,
+              JSON.stringify(fileData),
+            )
+          } else {
+            console.log(
+              `[process-resume] Arquivo enviado para Files API com sucesso. File ID: ${fileId}`,
+            )
+
+            const promptText = `Você é um assistente sênior de RH altamente especializado em leitura visual e estruturação de currículos em formato PDF.
 O nome completo do candidato sempre se encontra em destaque no cabeçalho ou topo do currículo (ex: "VALDINÉIA DOMINGUES", "MARIA APARECIDA DA SILVA").
 Preserve rigorosamente todos os acentos e grafia original em português brasileiro (á, é, í, ó, ú, ã, õ, ç, etc.).
 NUNCA invente dados fictícios, nunca use "Candidato Desconhecido", "João da Silva" ou dados de exemplo. Se não constar com certeza, use null.
@@ -377,111 +406,114 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
   "formacao_academica": ["formações, cursos e escolaridade"]
 }`
 
-        const responseApiRes = await fetch('https://api.openai.com/v1/responses', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${openaiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o',
-            input: [
-              {
-                role: 'user',
-                content: [
+            const responseApiRes = await fetch('https://api.openai.com/v1/responses', {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${openaiKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                model: 'gpt-4o',
+                input: [
                   {
-                    type: 'input_file',
-                    filename: originalFileName,
-                    file_data: `data:application/pdf;base64,${base64Data}`,
-                    detail: 'high',
-                  },
-                  {
-                    type: 'input_text',
-                    text: promptText,
+                    role: 'user',
+                    content: [
+                      {
+                        type: 'input_file',
+                        file_id: fileId,
+                      },
+                      {
+                        type: 'input_text',
+                        text: promptText,
+                      },
+                    ],
                   },
                 ],
-              },
-            ],
-          }),
-        })
+              }),
+            })
 
-        if (!responseApiRes.ok) {
-          const errBody = await responseApiRes.text()
-          console.error(
-            `[process-resume] Falha na chamada OpenAI Responses API: status=${responseApiRes.status}, corpo=${errBody}`,
-          )
-        } else {
-          const resData = await responseApiRes.json()
-          let rawText = ''
-          if (typeof resData?.output_text === 'string' && resData.output_text.trim().length > 0) {
-            rawText = resData.output_text
-          } else if (Array.isArray(resData?.output)) {
-            for (const outItem of resData.output) {
-              if (Array.isArray(outItem?.content)) {
-                for (const cnt of outItem.content) {
-                  if (cnt?.type === 'output_text' && typeof cnt.text === 'string') {
-                    rawText += cnt.text
-                  } else if (typeof cnt?.text === 'string') {
-                    rawText += cnt.text
+            if (!responseApiRes.ok) {
+              const errBody = await responseApiRes.text()
+              console.error(
+                `[process-resume] Falha na chamada OpenAI Responses API: status=${responseApiRes.status}, corpo=${errBody}`,
+              )
+            } else {
+              const resData = await responseApiRes.json()
+              let rawText = ''
+              if (
+                typeof resData?.output_text === 'string' &&
+                resData.output_text.trim().length > 0
+              ) {
+                rawText = resData.output_text
+              } else if (Array.isArray(resData?.output)) {
+                for (const outItem of resData.output) {
+                  if (Array.isArray(outItem?.content)) {
+                    for (const cnt of outItem.content) {
+                      if (cnt?.type === 'output_text' && typeof cnt.text === 'string') {
+                        rawText += cnt.text
+                      } else if (typeof cnt?.text === 'string') {
+                        rawText += cnt.text
+                      }
+                    }
                   }
                 }
               }
-            }
-          }
 
-          if (rawText) {
-            let visionData: any = null
-            try {
-              visionData = JSON.parse(rawText)
-            } catch {
-              const firstBrace = rawText.indexOf('{')
-              const lastBrace = rawText.lastIndexOf('}')
-              if (firstBrace !== -1 && lastBrace > firstBrace) {
+              if (rawText) {
+                let visionData: any = null
                 try {
-                  visionData = JSON.parse(rawText.substring(firstBrace, lastBrace + 1))
-                } catch (parseErr: any) {
-                  console.error(
-                    `[process-resume] Erro ao fazer parse do JSON da Responses API:`,
-                    parseErr?.message,
-                    `Texto:`,
-                    rawText,
+                  visionData = JSON.parse(rawText)
+                } catch {
+                  const firstBrace = rawText.indexOf('{')
+                  const lastBrace = rawText.lastIndexOf('}')
+                  if (firstBrace !== -1 && lastBrace > firstBrace) {
+                    try {
+                      visionData = JSON.parse(rawText.substring(firstBrace, lastBrace + 1))
+                    } catch (parseErr: any) {
+                      console.error(
+                        `[process-resume] Erro ao fazer parse do JSON da Responses API:`,
+                        parseErr?.message,
+                        `Texto:`,
+                        rawText,
+                      )
+                    }
+                  }
+                }
+
+                if (visionData && typeof visionData === 'object') {
+                  extractedData = {
+                    ...extractedData,
+                    ...visionData,
+                    ...(visionData.nome ? { nome: visionData.nome } : {}),
+                    ...(visionData.email ? { email: visionData.email } : {}),
+                    ...(visionData.telefone ? { telefone: visionData.telefone } : {}),
+                    experiencia_profissional:
+                      Array.isArray(visionData.experiencia_profissional) &&
+                      visionData.experiencia_profissional.length > 0
+                        ? visionData.experiencia_profissional
+                        : extractedData.experiencia_profissional,
+                    skills:
+                      Array.isArray(visionData.skills) && visionData.skills.length > 0
+                        ? visionData.skills
+                        : extractedData.skills,
+                    formacao_academica:
+                      Array.isArray(visionData.formacao_academica) &&
+                      visionData.formacao_academica.length > 0
+                        ? visionData.formacao_academica
+                        : extractedData.formacao_academica,
+                  }
+                  cleanName = sanitizeAndValidateName(visionData.nome) || cleanName
+                  console.log(
+                    `[process-resume] Sucesso no fallback Responses API: nome=${visionData.nome || 'N/A'}, email=${visionData.email || 'N/A'}`,
                   )
                 }
+              } else {
+                console.warn(
+                  `[process-resume] Responses API retornou sem output_text. Resposta completa:`,
+                  JSON.stringify(resData),
+                )
               }
             }
-
-            if (visionData && typeof visionData === 'object') {
-              extractedData = {
-                ...extractedData,
-                ...visionData,
-                ...(visionData.nome ? { nome: visionData.nome } : {}),
-                ...(visionData.email ? { email: visionData.email } : {}),
-                ...(visionData.telefone ? { telefone: visionData.telefone } : {}),
-                experiencia_profissional:
-                  Array.isArray(visionData.experiencia_profissional) &&
-                  visionData.experiencia_profissional.length > 0
-                    ? visionData.experiencia_profissional
-                    : extractedData.experiencia_profissional,
-                skills:
-                  Array.isArray(visionData.skills) && visionData.skills.length > 0
-                    ? visionData.skills
-                    : extractedData.skills,
-                formacao_academica:
-                  Array.isArray(visionData.formacao_academica) &&
-                  visionData.formacao_academica.length > 0
-                    ? visionData.formacao_academica
-                    : extractedData.formacao_academica,
-              }
-              cleanName = sanitizeAndValidateName(visionData.nome) || cleanName
-              console.log(
-                `[process-resume] Sucesso no fallback Responses API: nome=${visionData.nome || 'N/A'}, email=${visionData.email || 'N/A'}`,
-              )
-            }
-          } else {
-            console.warn(
-              `[process-resume] Responses API retornou sem output_text. Resposta completa:`,
-              JSON.stringify(resData),
-            )
           }
         }
       } catch (visionErr: any) {
