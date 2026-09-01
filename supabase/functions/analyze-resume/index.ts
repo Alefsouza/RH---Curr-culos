@@ -268,16 +268,27 @@ ${extractedText.substring(0, 20000)}`
     let cleanName = sanitizeAndValidateName(extractedData?.nome || nome)
     const isDocx = filePath.toLowerCase().endsWith('.docx')
 
-    // Tentar visão se o nome não foi identificado, ou se os dados principais (nome, skills, email) estão insuficientes
+    // Tentar visão se o nome não foi identificado, ou se os dados principais (nome, skills, email, telefone, endereco) estão ausentes/insuficientes
+    const hasTelefone =
+      Boolean(extractedData?.telefone) ||
+      (Array.isArray(extractedData?.telefones_celulares) &&
+        extractedData.telefones_celulares.length > 0) ||
+      Boolean(telefone)
+    const hasEndereco = Boolean(
+      extractedData?.endereco && String(extractedData.endereco).trim().length > 0,
+    )
+
     const needsVision =
       !cleanName ||
       !hasSufficientText ||
+      !hasTelefone ||
+      !hasEndereco ||
       (!extractedData?.email && (!extractedData?.skills || extractedData.skills.length === 0))
 
     if (needsVision && !isDocx && fileBytes.length > 0 && fileBytes.length < 15 * 1024 * 1024) {
       try {
         console.log(
-          `[analyze-resume] Tentando leitura visual de PDF via gpt-4o para ${filePath}...`,
+          `[analyze-resume] Tentando leitura visual de PDF via gpt-4.1 para ${filePath}...`,
         )
         let binaryStr = ''
         const len = fileBytes.byteLength
@@ -289,7 +300,7 @@ ${extractedText.substring(0, 20000)}`
         const originalFileName = filePath.split('/').pop()?.split('\\').pop() || 'curriculo.pdf'
 
         const visionResponse = await openai.chat.completions.create({
-          model: 'gpt-4o',
+          model: 'gpt-4.1',
           messages: [
             {
               role: 'system',

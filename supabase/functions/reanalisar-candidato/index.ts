@@ -86,9 +86,17 @@ Deno.serve(async (req: Request) => {
         ? { ...candidato.dados_extraidos }
         : {}
 
-    // 1. Verificar se o nome é inválido, se falta objetivo (ausente ou vazio) ou se foi forçada a reextração completa
+    // 1. Verificar se o nome é inválido, se faltam telefone/endereço/objetivo ou se foi forçada a reextração completa
     const validCurrentName = sanitizeAndValidateName(currentNome)
     const validExtractedName = sanitizeAndValidateName(currentDadosExtraidos.nome)
+    const hasCurrentTelefone =
+      Boolean(currentTelefone) ||
+      Boolean(currentDadosExtraidos.telefone) ||
+      (Array.isArray(currentDadosExtraidos.telefones_celulares) &&
+        currentDadosExtraidos.telefones_celulares.length > 0)
+    const hasCurrentEndereco = Boolean(
+      currentDadosExtraidos.endereco && String(currentDadosExtraidos.endereco).trim().length > 0,
+    )
     const hasObjetivo =
       typeof currentDadosExtraidos.objetivo === 'string' &&
       currentDadosExtraidos.objetivo.trim().length > 0
@@ -96,6 +104,8 @@ Deno.serve(async (req: Request) => {
       force_reextract ||
       !validCurrentName ||
       !validExtractedName ||
+      !hasCurrentTelefone ||
+      !hasCurrentEndereco ||
       !currentDadosExtraidos.skills ||
       !hasObjetivo ||
       (Array.isArray(currentDadosExtraidos.skills) &&
@@ -161,17 +171,32 @@ ${extractedText.substring(0, 18000)}`
               newlyExtracted = JSON.parse(rawContent)
             }
 
-            // Tentativa 2: Se texto foi insuficiente ou nome ainda veio nulo e não é docx, usar modelo compatível com PDF via file_data
+            // Tentativa 2: Se texto foi insuficiente, ou se nome/telefone/endereço vieram nulos/ausentes e não é docx, usar modelo compatível com PDF via file_data
             const parsedName = sanitizeAndValidateName(newlyExtracted?.nome)
+            const hasNewTelefone =
+              Boolean(newlyExtracted?.telefone) ||
+              (Array.isArray(newlyExtracted?.telefones_celulares) &&
+                newlyExtracted.telefones_celulares.length > 0)
+            const hasNewEndereco = Boolean(
+              newlyExtracted?.endereco && String(newlyExtracted.endereco).trim().length > 0,
+            )
+
+            const needsVisionReextract =
+              !parsedName ||
+              !hasNewTelefone ||
+              !hasNewEndereco ||
+              !extractedText ||
+              extractedText.trim().length < 30
+
             if (
-              !parsedName &&
+              needsVisionReextract &&
               !isDocx &&
               fileBytes.length > 0 &&
               fileBytes.length < 15 * 1024 * 1024
             ) {
               try {
                 console.log(
-                  `[reanalisar-candidato] Tentando extração avançada com visão PDF (gpt-4o) para o candidato ${candidato.id}...`,
+                  `[reanalisar-candidato] Tentando extração avançada com visão PDF (gpt-4.1) para o candidato ${candidato.id}...`,
                 )
                 // Converter os bytes do PDF em base64 data URL
                 let binaryStr = ''
@@ -185,7 +210,7 @@ ${extractedText.substring(0, 18000)}`
                   storagePath.split('/').pop()?.split('\\').pop() || 'curriculo.pdf'
 
                 const visionResponse = await openai.chat.completions.create({
-                  model: 'gpt-4o',
+                  model: 'gpt-4.1',
                   messages: [
                     {
                       role: 'system',
@@ -227,7 +252,7 @@ ${extractedText.substring(0, 18000)}`
 
                 const visionContent = visionResponse.choices[0]?.message?.content || '{}'
                 const visionExtracted = JSON.parse(visionContent)
-                if (visionExtracted?.nome) {
+                if (visionExtracted) {
                   newlyExtracted = { ...newlyExtracted, ...visionExtracted }
                 }
               } catch (visionErr: any) {
