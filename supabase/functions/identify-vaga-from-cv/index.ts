@@ -346,6 +346,7 @@ Deno.serve(async (req: Request) => {
     // Quando houver correspondência, desempatar por endereço se houver múltiplas vagas do mesmo cargo.
     // Se o objetivo for específico e NÃO houver NENHUMA vaga ativa compatível:
     // Retornar vaga_id: null com confianca: 'nenhuma' (NÃO forçar em Cobrador nem passar para fallback IA genérico).
+    // REGRA DE MOTORISTA: Se o candidato tem objetivo/pretensão de MOTORISTA, NUNCA atribuir nem desviar para COBRADOR.
     // =========================================================================
     if (candidatoObjetivo && !isGenericObjective(candidatoObjetivo)) {
       const normObjetivo = normalizeString(candidatoObjetivo)
@@ -579,9 +580,11 @@ Deno.serve(async (req: Request) => {
          - NUNCA o atribua à vaga de Cobrador nem a nenhuma outra vaga diferente.
          - Retorne vaga_id como null, confianca como "nenhuma" e justificativa clara explicando que não há vaga disponível para o cargo pretendido pelo candidato.
 
-      3. PRIORIDADE MOTORISTA SOBRE COBRADOR:
-         - Se o perfil ou qualificações do candidato atenderem/forem aprovados tanto para a vaga de Motorista quanto para a vaga de Cobrador (ex: candidato com CNH D/E e experiência/curso de motorista), DÊ PRIORIDADE PARA A VAGA DE MOTORISTA (escolhendo a unidade de Motorista mais próxima do endereço do candidato).
-         - EXCEÇÃO: Apenas mantenha Cobrador se o candidato colocou expressamente como objetivo pretendido "Cobrador" ou objetivo genérico ("À disposição da empresa").
+      3. PRIORIDADE MOTORISTA SOBRE COBRADOR E REGRA DE NÃO RECLASSIFICAÇÃO / NÃO REBAIXAMENTO:
+         - Se o candidato expressar objetivo para MOTORISTA ou tiver perfil/histórico voltado para Motorista (ou possuir CNH D/E, experiência como motorista, etc.): ATRIBUA À VAGA DE MOTORISTA (escolhendo a unidade mais próxima).
+         - NUNCA reclassifique, desvie ou realoque um candidato a MOTORISTA para a vaga de COBRADOR caso ele necessite de revisão, falte algum comprovante ou o resultado seja "revisar". O candidato de Motorista DEVE permanecer vinculado à vaga de Motorista para revisão humana da Paola.
+         - Se o perfil ou qualificações do candidato atenderem/forem compatíveis tanto com a vaga de Motorista quanto com a vaga de Cobrador, DÊ RIGOROSA PRIORIDADE PARA A VAGA DE MOTORISTA (escolhendo a unidade de Motorista mais próxima do endereço do candidato).
+         - EXCEÇÃO: Apenas atribua Cobrador se o candidato colocou expressamente como objetivo único/pretendido "Cobrador" ou objetivo genérico ("À disposição da empresa").
 
       4. HISTÓRICO PROFISSIONAL, CRITÉRIOS DA VAGA E REGRAS DE ESCOLARIDADE / CURSOS:
          - ESCOLARIDADE: Ensino Fundamental incompleto ou completo considera também Ensino Médio e Superior. Se a vaga exige Ensino Fundamental, candidatos com Ensino Médio ou Superior atendem ao requisito.
@@ -603,6 +606,35 @@ Deno.serve(async (req: Request) => {
     // Se confiança for nenhuma, zera vaga_id
     if (result.confianca === 'nenhuma') {
       result.vaga_id = null
+    }
+
+    // GUARDA DE SEGURANÇA: Se o objetivo do candidato era de MOTORISTA mas a IA retornou Cobrador,
+    // impedir a realocação para Cobrador e redirecionar para a vaga de Motorista mais próxima.
+    if (result.vaga_id && candidatoObjetivo) {
+      const normObj = normalizeString(candidatoObjetivo)
+      const isMotoristaObjective = normObj.includes('motorista') || normObj.includes('condutor')
+      if (isMotoristaObjective) {
+        const targetVaga = vagas.find((v) => v.id === result.vaga_id)
+        const normTargetTitle = normalizeString(targetVaga?.titulo || '')
+        if (normTargetTitle.includes('cobrador')) {
+          console.log(
+            `[identify-vaga-from-cv] Salvaguarda acionada: candidato com objetivo de Motorista ("${candidatoObjetivo}") foi associado a Cobrador pela IA. Revertendo para Motorista por proximidade.`,
+          )
+          const motoristaVagas = vagas.filter((v) =>
+            normalizeString(v.titulo || '').includes('motorista'),
+          )
+          if (motoristaVagas.length > 0) {
+            const { vaga: motoristaVaga } = await pickBestVagaByProximity(
+              candidatoEndereco,
+              motoristaVagas,
+              googleApiKey,
+            )
+            result.vaga_id = motoristaVaga.id
+            result.confianca = 'alta'
+            result.justificativa = `Candidato possui objetivo de Motorista ("${candidatoObjetivo}"). Pela regra de negócio, permanece vinculado à vaga de Motorista ("${motoristaVaga.titulo}") para revisão humana caso necessário, sem realocação para Cobrador.`
+          }
+        }
+      }
     }
 
     return new Response(JSON.stringify(result), {

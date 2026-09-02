@@ -244,7 +244,11 @@ DIRETRIZES CRÍTICAS PARA AVALIAÇÃO DE CRITÉRIOS:
    - Quando a vaga exigir ou mencionar "Curso" ou "Curso de transporte coletivo de passageiros" (ex: vagas de Motorista): considere VÁLIDO QUALQUER curso relativo a transporte coletivo (ex: "Curso de Transporte Coletivo", "Condutor de Veículo de Transporte Coletivo de Passageiros", "Resolução 168 / 789 do CONTRAN transporte coletivo", etc.).
    - CONSIDERE TAMBÉM quando o candidato colocar/informar "Credencial de Transporte Coletivo", "Credencial de Motorista de Coletivo" ou "Credencial" nas formações, cursos, certificações ou observações da CNH como atendimento pleno a essa exigência de curso/formação.
 
-4. AVALIAÇÃO GERAL E RESPEITO AOS CRITÉRIOS EXPLÍCITOS:
+4. REGRA DE VAGAS DE MOTORISTA E STATUS "REVISAR" (IMPORTANTE):
+   - Para vagas de MOTORISTA: caso falte comprovação clara ou haja dúvidas sobre tempo de experiência, categoria da CNH ou cursos/credenciais que justifiquem validação humana, o resultado DEVE ser "revisar".
+   - Quando o resultado for "revisar", o candidato NÃO deve ser considerado desqualificado nem rebaixado para outra função — ele ficará pendente na vaga de Motorista para a Paola revisar manualmente.
+
+5. AVALIAÇÃO GERAL E RESPEITO AOS CRITÉRIOS EXPLÍCITOS:
    - Continue considerando e respeitando todos os critérios explícitos de cada vaga (ex: exigência de CNH D ou E, tempo de experiência mandatório vs desejável, etc.).
    - As regras de flexibilização de escolaridade e credencial de transporte NÃO sobrepõem critérios explícitos da vaga (por exemplo: se a vaga exige CNH D/E, o candidato ainda precisa ter CNH D/E).
    - Não invente critérios eliminatórios que não constem na descrição ou critérios da vaga.
