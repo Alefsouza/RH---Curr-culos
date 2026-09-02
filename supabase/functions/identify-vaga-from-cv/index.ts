@@ -109,7 +109,18 @@ async function pickBestVagaByProximity(
     let bestDist: number | null = null
 
     for (const vaga of vagasList) {
-      const vagaLocations = extractVagaLocations(vaga)
+      let vagaLocations = extractVagaLocations(vaga)
+
+      // Fallback: se a vaga não tiver localizacoes no criterios_qualificacao, inferir pelo título (Leste -> Sapopemba, Cursino -> Cursino)
+      if (vagaLocations.length === 0) {
+        const normTitulo = normalizeString(vaga.titulo || '')
+        if (normTitulo.includes('cursino')) {
+          vagaLocations = ['Av. do Cursino, 5797, São Paulo - SP']
+        } else if (normTitulo.includes('leste') || normTitulo.includes('sapopemba')) {
+          vagaLocations = ['Rua Leandro de Sevilha, 95, São Paulo - SP']
+        }
+      }
+
       if (vagaLocations.length === 0) {
         continue
       }
@@ -274,10 +285,12 @@ Deno.serve(async (req: Request) => {
     }
 
     // =========================================================================
-    // REGRA 2: MATCH DIRETO DE OBJETIVO -> TÍTULO DA VAGA
+    // REGRA 2: MATCH DIRETO DE OBJETIVO ESPECÍFICO -> TÍTULO DA VAGA
     // Quando houver correspondência, desempatar por endereço se houver múltiplas vagas do mesmo cargo.
+    // Se o objetivo for específico e NÃO houver NENHUMA vaga ativa compatível:
+    // Retornar vaga_id: null com confianca: 'nenhuma' (NÃO forçar em Cobrador nem passar para fallback IA genérico).
     // =========================================================================
-    if (candidatoObjetivo) {
+    if (candidatoObjetivo && !isGenericObjective(candidatoObjetivo)) {
       const normObjetivo = normalizeString(candidatoObjetivo)
       const stopWords = new Set([
         'de',
@@ -302,6 +315,14 @@ Deno.serve(async (req: Request) => {
         'ou',
         'por',
         'que',
+        'atuar',
+        'como',
+        'trabalhar',
+        'exercer',
+        'funcao',
+        'cargo',
+        'vaga',
+        'area',
       ])
 
       const objWords = normObjetivo
@@ -377,6 +398,20 @@ Deno.serve(async (req: Request) => {
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
           )
         }
+
+        // O candidato possui um objetivo específico e NÃO houve correspondência com os títulos das vagas ativas.
+        // Regra de negócio: Se o cargo pretendido é específico e não existe vaga aberta para ele, NÃO DEVE forçar em Cobrador nem em outra vaga incompatível.
+        console.log(
+          `[identify-vaga-from-cv] Objetivo específico "${candidatoObjetivo}" não possui vaga ativa correspondente no sistema. Retornando vaga_id: null.`,
+        )
+        return new Response(
+          JSON.stringify({
+            vaga_id: null,
+            confianca: 'nenhuma',
+            justificativa: `O objetivo informado pelo candidato é específico ("${candidatoObjetivo}"), mas atualmente não há vagas ativas disponíveis para este cargo no sistema.`,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
       }
     }
 
@@ -477,25 +512,23 @@ Deno.serve(async (req: Request) => {
       REGRAS CRÍTICAS DE MATCHING (SIGA RIGOROSAMENTE NA ORDEM):
 
       1. REGRA ESPECIAL DE OBJETIVO GENÉRICO ("A disposição da empresa" ou semelhante):
-         Se o candidato informar objetivo como "À disposição da empresa", "Disposição da empresa", "Qualquer vaga", "Sem preferência", "O que precisar" ou não definir um cargo específico:
-         - DÊ PREFERÊNCIA OBRIGATÓRIA PARA A VAGA DE COBRADOR (ex: "Cobrador de Ônibus Cursino" ou "Cobrador de Ônibus Leste").
-         - Escolha a unidade de Cobrador mais próxima da localização do candidato (se o candidato residir na Zona Leste/Sapopemba/São Mateus/Itaquera/etc., escolha Cobrador Leste; se residir próximo ao Cursino/Saúde/Ipiranga/Vila Mariana/ABC/Zona Sul, escolha Cobrador Cursino).
+         Se o candidato informar objetivo como "À disposição da empresa", "Disposição da empresa", "Qualquer vaga", "Sem preferência", "O que precisar" ou expressar genericamente disponibilidade:
+         - DÊ PREFERÊNCIA PARA A VAGA DE COBRADOR (ex: "Cobrador de Ônibus Cursino" ou "Cobrador de Ônibus Leste").
+         - Escolha a unidade de Cobrador mais próxima da localização do candidato (Zona Leste -> Cobrador Leste; Cursino/Saúde/Ipiranga/ABC/Sul -> Cobrador Cursino).
          - Confiança deve ser "alta".
 
-      2. OBJETIVO / CARGO PRETENDIDO ESPECÍFICO:
-         Se o candidato tiver um objetivo específico (ex: "motorista", "cobrador", "mecânico", "porteiro", "jovem aprendiz", "auxiliar administrativo", etc.):
-         - Se existirem vagas correspondentes a essa função, atribua essa função com confiança "alta".
-         - Se houver mais de uma unidade para a mesma função (ex: "Motorista Cursino" vs "Motorista Leste", "Mecânico Cursino" vs "Mecânico Leste"), escolha a unidade mais compatível com o endereço/região do candidato.
-         - NUNCA atribua vagas genéricas como "Jovem Aprendiz" para candidatos com perfil ou objetivo de Cobrador / Motorista / Mecânico, exceto se atenderem estritamente aos critérios da vaga.
+      2. OBJETIVO / CARGO PRETENDIDO ESPECÍFICO QUE NÃO TEM VAGA ABERTA:
+         - Se o candidato quer um cargo específico (ex: "Coordenador de Tráfego", "Enfermeiro", "Advogado", "Analista Financeiro", "Vendedor", etc.) e NENHUMA vaga aberta corresponde a esse cargo:
+         - NUNCA o atribua à vaga de Cobrador nem a nenhuma outra vaga diferente.
+         - Retorne vaga_id como null, confianca como "nenhuma" e justificativa clara explicando que não há vaga disponível para o cargo pretendido pelo candidato.
 
-      3. HISTÓRICO PROFISSIONAL E CRITÉRIOS DA VAGA:
-         Se o objetivo não estiver explícito:
+      3. HISTÓRICO PROFISSIONAL E CRITÉRIOS DA VAGA (quando objetivo não for declarado):
+         Se o objetivo não estiver explícito no currículo:
          - Compare as experiências anteriores e qualificações com os critérios textuais de cada vaga (exigências de CNH D/E para Motorista, cursos, escolaridade, etc.).
          - Avalie também a compatibilidade de endereço/localização com as unidades das vagas.
 
       4. NENHUMA VAGA COMPATÍVEL:
-         Se nenhuma vaga fizer sentido para a profissão/perfil do candidato, retorne vaga_id como null e confianca como "nenhuma".
-      
+         Se nenhuma vaga fizer sentido para a profissão/perfil do candidato, retorne vaga_id como null e confianca como "nenhuma".      
       Retorne ESTRITAMENTE um JSON com a seguinte estrutura:
       {
         "vaga_id": "UUID da vaga correspondente ou null",

@@ -548,8 +548,6 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
       currentNome = formattedPrefix
     }
 
-    let vagaId = candidato.vaga_id
-
     // Reanálise SEMPRE reidentifica a vaga compatível com base no currículo atualizado
     const identifyRes = await fetch(`${supabaseUrl}/functions/v1/identify-vaga-from-cv`, {
       method: 'POST',
@@ -570,54 +568,117 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
       })
     }
 
-    if (identifyData.vaga_id) {
-      if (identifyData.vaga_id !== candidato.vaga_id) {
-        const { error: updateError } = await supabase
-          .from('candidatos')
-          .update({ vaga_id: identifyData.vaga_id })
-          .eq('id', candidato.id)
+    const identifiedVagaId = identifyData.vaga_id || null
+    const justificativaIdentificacao =
+      identifyData.justificativa || 'Nenhuma vaga compatível foi identificada no sistema.'
 
-        if (updateError) {
-          return new Response(JSON.stringify({ error: 'Erro ao vincular vaga ao candidato.' }), {
-            status: 200,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          })
-        }
+    // =========================================================================
+    // CASO 1: NENHUMA VAGA COMPATÍVEL IDENTIFICADA (vaga_id = null)
+    // =========================================================================
+    if (!identifiedVagaId) {
+      console.log(
+        `[reanalisar-candidato] Nenhuma vaga compatível para candidato ${candidato.id}. Limpando vaga_id e etapa_id, e registrando nao_qualificado.`,
+      )
+
+      // 1. Limpa vaga_id e etapa_id do candidato para que ele não apareça no Kanban como qualificado
+      await supabase
+        .from('candidatos')
+        .update({
+          vaga_id: null,
+          etapa_id: null,
+        })
+        .eq('id', candidato.id)
+
+      // 2. Registra análise com resultado "nao_qualificado" e vaga_id null
+      const motivoSemVaga =
+        hasObjetivo && currentDadosExtraidos.objetivo
+          ? `Não há vaga compatível para o cargo "${currentDadosExtraidos.objetivo}". ${justificativaIdentificacao}`
+          : `Não há vaga compatível com o perfil profissional do candidato no momento. ${justificativaIdentificacao}`
+
+      const analiseSemVagaPayload = {
+        candidato_id: candidato.id,
+        vaga_id: null,
+        resultado: 'nao_qualificado',
+        detalhes: {
+          motivo: motivoSemVaga,
+          summary: motivoSemVaga,
+          justificativa: justificativaIdentificacao,
+          confianca: identifyData.confianca || 'nenhuma',
+          score: 0,
+          matched_criteria: [],
+          unmatched_criteria: [
+            {
+              nome: 'Vaga compatível',
+              motivo: motivoSemVaga,
+            },
+          ],
+        },
+        user_id: effectiveUserId || candidato.user_id,
       }
 
-      vagaId = identifyData.vaga_id
-    } else if (!vagaId) {
-      // Se nenhuma vaga for compatível e ainda não tiver vaga, busca a primeira vaga aberta ATIVA como fallback para pontuar ou criar analise
-      const { data: fallbackVaga } = await supabase
-        .from('vagas')
+      const { data: existingNullAnalise } = await supabase
+        .from('analises')
         .select('id')
-        .eq('ativa', true)
-        .order('criado_em', { ascending: true })
-        .limit(1)
+        .eq('candidato_id', candidato.id)
+        .is('vaga_id', null)
         .maybeSingle()
 
-      if (fallbackVaga?.id) {
-        vagaId = fallbackVaga.id
-
-        // Atualiza a vaga do candidato para que a vaga exibida em /candidatos fique consistente com a análise
-        const { error: updateFallbackError } = await supabase
-          .from('candidatos')
-          .update({ vaga_id: fallbackVaga.id })
-          .eq('id', candidato.id)
-
-        if (updateFallbackError) {
-          console.warn(
-            `[reanalisar-candidato] Falha ao atribuir fallbackVaga ao candidato ${candidato.id}:`,
-            updateFallbackError.message,
-          )
-        }
+      let savedAnaliseData: any = null
+      if (existingNullAnalise) {
+        const { data: updAnalise } = await supabase
+          .from('analises')
+          .update({
+            resultado: 'nao_qualificado',
+            detalhes: analiseSemVagaPayload.detalhes,
+          })
+          .eq('id', existingNullAnalise.id)
+          .select()
+          .single()
+        savedAnaliseData = updAnalise
       } else {
-        return new Response(
-          JSON.stringify({
-            error: 'Nenhuma vaga ativa cadastrada no sistema para realizar a análise.',
-          }),
-          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-        )
+        const { data: insAnalise } = await supabase
+          .from('analises')
+          .insert(analiseSemVagaPayload)
+          .select()
+          .single()
+        savedAnaliseData = insAnalise
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            success: true,
+            analise: savedAnaliseData,
+          },
+          candidato: {
+            id: candidato.id,
+            nome: currentNome,
+            email: currentEmail,
+            telefone: currentTelefone,
+            vaga_id: null,
+          },
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
+    }
+
+    // =========================================================================
+    // CASO 2: VAGA COMPATÍVEL IDENTIFICADA (vaga_id presente)
+    // =========================================================================
+    if (identifiedVagaId !== candidato.vaga_id) {
+      const { error: updateError } = await supabase
+        .from('candidatos')
+        .update({ vaga_id: identifiedVagaId })
+        .eq('id', candidato.id)
+
+      if (updateError) {
+        return new Response(JSON.stringify({ error: 'Erro ao vincular vaga ao candidato.' }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
       }
     }
 
@@ -626,7 +687,7 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${supabaseKey}` },
       body: JSON.stringify({
         cv_id: candidato.id,
-        vaga_id: vagaId,
+        vaga_id: identifiedVagaId,
         user_id: effectiveUserId,
       }),
     })
@@ -649,6 +710,7 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
           nome: currentNome,
           email: currentEmail,
           telefone: currentTelefone,
+          vaga_id: identifiedVagaId,
         },
       }),
       {
