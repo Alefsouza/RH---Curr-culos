@@ -90,16 +90,45 @@ async function pickBestVagaByProximity(
     return { vaga: vagasList[0], menorDistanciaKm: null }
   }
 
-  // Se não temos endereço do candidato ou apiKey do Google, retorna a primeira vaga (ordem de criação/query)
+  // Se não temos endereço do candidato ou apiKey do Google, tenta fallback textual ou retorna a primeira vaga
   if (!candidateAddressStr || !googleApiKey) {
+    if (candidateAddressStr) {
+      const fallbackRef = getReferenceCoordsForText(candidateAddressStr)
+      if (fallbackRef) {
+        // Encontra a vaga mais compatível com essa coordenada de referência
+        let bestVaga = vagasList[0]
+        let bestDist: number | null = null
+        for (const vaga of vagasList) {
+          const vagaRef =
+            getReferenceCoordsForText(vaga.titulo || '') ||
+            getReferenceCoordsForText(vaga.descricao || '')
+          if (vagaRef) {
+            const dist = calculateHaversineDistance(fallbackRef, vagaRef)
+            if (bestDist === null || dist < bestDist) {
+              bestDist = dist
+              bestVaga = vaga
+            }
+          }
+        }
+        return { vaga: bestVaga, menorDistanciaKm: bestDist }
+      }
+    }
     return { vaga: vagasList[0], menorDistanciaKm: null }
   }
 
   try {
-    const candidateCoords = await geocodeAddress(candidateAddressStr, googleApiKey)
+    let candidateCoords = await geocodeAddress(candidateAddressStr, googleApiKey)
     if (!candidateCoords) {
       console.warn(
-        `[identify-vaga] Não foi possível geocodificar endereço do candidato: "${candidateAddressStr}". Usando primeira vaga.`,
+        `[identify-vaga] Não foi possível geocodificar endereço do candidato: "${candidateAddressStr}". Tentando fallback por palavras-chave de região...`,
+      )
+      // Fallback por palavras-chave no texto do endereço do candidato
+      candidateCoords = getReferenceCoordsForText(candidateAddressStr)
+    }
+
+    if (!candidateCoords) {
+      console.warn(
+        `[identify-vaga] Geocodificação e fallback falharam para: "${candidateAddressStr}". Usando primeira vaga.`,
       )
       return { vaga: vagasList[0], menorDistanciaKm: null }
     }

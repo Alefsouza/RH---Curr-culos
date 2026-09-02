@@ -5,6 +5,35 @@ export interface Coordinates {
   lng: number
 }
 
+// Sanitiza strings de endereço removendo "n°", "nº", "nr.", "número", "s/n", etc.
+// para evitar falhas ou erros de posicionamento na Geocoding API do Google.
+export function sanitizeAddressString(raw: string | null | undefined): string {
+  if (!raw || typeof raw !== 'string') return ''
+
+  let cleaned = raw.trim()
+  if (!cleaned) return ''
+
+  // Substitui padrões como "n° 15", "nº 15", "n.º 15", "nr. 15", "num. 15", "número 15", "numero 15" por ", 15" ou " 15"
+  cleaned = cleaned.replace(/\b(?:n[°ºªo\.]*|nr\.?|n[uú]m(?:\.|ero)?)\s*[:=]?\s*(\d+)/gi, ', $1')
+
+  // Remove "n°", "nº", "n.", "nr.", "número", "numero" avulsos ou seguidos de letras
+  cleaned = cleaned.replace(/\b(?:n[°ºªo\.]+|nr\.|n[uú]m(?:ero)?)\s*[:=]?\s*/gi, ' ')
+
+  // Substitui "s/n", "s/nº", "sem número", "sem numero" por "" ou espaço limpo
+  cleaned = cleaned.replace(/\b(?:s\/n[°ºªo\.]*|sem\s+n[uú]mero)\b/gi, '')
+
+  // Normaliza múltiplos hífens, vírgulas e espaços
+  cleaned = cleaned
+    .replace(/\s*-\s*/g, ', ')
+    .replace(/\s*,\s*,+/g, ', ')
+    .replace(/,\s*,/g, ', ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[, -]+|[, -]+$/g, '')
+    .trim()
+
+  return cleaned
+}
+
 // Coordenadas das referências:
 // Cursino: Av. do Cursino, 5797, São Paulo - SP (~ -23.6496, -46.6191)
 // Sapopemba: Rua Leandro de Sevilha, São Paulo - SP (~ -23.5971, -46.5085)
@@ -41,7 +70,7 @@ export function calculateHaversineDistance(coord1: Coordinates, coord2: Coordina
   return R * c
 }
 
-// Extrai endereço em formato de string legível
+// Extrai endereço em formato de string legível e sanitizado
 export function formatAddressString(endereco: any): string | null {
   if (!endereco) return null
   if (typeof endereco === 'string') {
@@ -49,7 +78,8 @@ export function formatAddressString(endereco: any): string | null {
     if (!trimmed || trimmed.toLowerCase() === 'null' || trimmed.toLowerCase() === 'undefined') {
       return null
     }
-    return trimmed
+    const sanitized = sanitizeAddressString(trimmed)
+    return sanitized || trimmed
   }
   if (typeof endereco === 'object') {
     const parts = [
@@ -65,7 +95,9 @@ export function formatAddressString(endereco: any): string | null {
       .map((p) => String(p).trim())
 
     if (parts.length === 0) return null
-    return parts.join(', ')
+    const joined = parts.join(', ')
+    const sanitized = sanitizeAddressString(joined)
+    return sanitized || joined
   }
   return null
 }
@@ -74,8 +106,11 @@ export function formatAddressString(endereco: any): string | null {
 export async function geocodeAddress(address: string, apiKey: string): Promise<Coordinates | null> {
   if (!address || !apiKey) return null
 
+  // Sanitiza o endereço antes da geocodificação
+  const cleanAddr = sanitizeAddressString(address) || address
+
   // Adiciona contexto de São Paulo/Brasil se não houver
-  let queryAddress = address
+  let queryAddress = cleanAddr
   if (!/s[aã]o paulo/i.test(queryAddress) && !/sp\b/i.test(queryAddress)) {
     queryAddress = `${queryAddress}, São Paulo - SP, Brasil`
   } else if (!/brasil/i.test(queryAddress) && !/brazil/i.test(queryAddress)) {
@@ -114,8 +149,8 @@ export async function geocodeAddress(address: string, apiKey: string): Promise<C
   }
 }
 
-// Obtém coordenadas de referência para uma dada string de endereço ou texto (ex: título/descrição da vaga)
-// baseado em palavras-chave ("cursino" -> Cursino, "leste"/"sapopemba" -> Sapopemba/Leste)
+// Obtém coordenadas de referência para uma dada string de endereço ou texto (ex: título/descrição da vaga, bairro do candidato)
+// baseado em palavras-chave ("cursino", "ipiranga", "saúde", "sul" -> Cursino; "santa adélia", "leste", "sapopemba", etc. -> Sapopemba/Leste)
 export function getReferenceCoordsForText(text: string): Coordinates | null {
   if (!text) return null
   const norm = text
@@ -123,19 +158,50 @@ export function getReferenceCoordsForText(text: string): Coordinates | null {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
 
-  if (norm.includes('cursino')) {
-    return REFERENCE_LOCATIONS.cursino.approxCoords
-  }
+  // Região Sapopemba / Zona Leste
   if (
-    norm.includes('leste') ||
+    norm.includes('santa adelia') ||
+    norm.includes('santa adilia') ||
     norm.includes('sapopemba') ||
+    norm.includes('zona leste') ||
+    norm.includes('zl') ||
+    norm.includes('leste') ||
     norm.includes('leandro de sevilha') ||
     norm.includes('pq novo lar') ||
     norm.includes('pq. novo lar') ||
-    norm.includes('parque novo lar')
+    norm.includes('parque novo lar') ||
+    norm.includes('sao mateus') ||
+    norm.includes('itaquera') ||
+    norm.includes('vila formosa') ||
+    norm.includes('vila prudente') ||
+    norm.includes('tatuape') ||
+    norm.includes('mooca') ||
+    norm.includes('arico') ||
+    norm.includes('cidade tiradentes') ||
+    norm.includes('guaianases') ||
+    norm.includes('artur alvim')
   ) {
     return REFERENCE_LOCATIONS.sapopemba.approxCoords
   }
+
+  // Região Cursino / Zona Sul / Ipiranga / Saúde / ABC
+  if (
+    norm.includes('cursino') ||
+    norm.includes('ipiranga') ||
+    norm.includes('saude') ||
+    norm.includes('zona sul') ||
+    norm.includes('zs') ||
+    norm.includes('sul') ||
+    norm.includes('santo andre') ||
+    norm.includes('sao bernardo') ||
+    norm.includes('diadema') ||
+    norm.includes('jabaquara') ||
+    norm.includes('sacoma') ||
+    norm.includes('vila mariana')
+  ) {
+    return REFERENCE_LOCATIONS.cursino.approxCoords
+  }
+
   return null
 }
 
