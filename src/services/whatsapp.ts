@@ -94,14 +94,17 @@ export async function getWhatsappDashboardData() {
     }
   })
 
-  const sentRows = convData?.filter((c) => c.direcao === 'enviada') || []
+  // A listagem inclui mensagens enviadas e recebidas, mas apenas as vinculadas
+  // a um candidato do sistema (com candidato_id) — "Contatos Desconhecidos"
+  // (sem candidato_id) ficam de fora da tela.
+  const listRows = convData?.filter((c) => c.candidato_id) || []
 
   const candMap = new Map<string, WhatsappCandidate>()
 
-  sentRows.forEach((c) => {
+  listRows.forEach((c) => {
     if (!c.conteudo || c.conteudo.trim() === '') return
 
-    const candidateId = c.candidato_id || `unlinked_${c.numero_whatsapp}`
+    const candidateId = c.candidato_id
 
     if (!candMap.has(candidateId)) {
       candMap.set(candidateId, {
