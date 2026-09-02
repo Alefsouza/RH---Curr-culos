@@ -45,7 +45,41 @@ type CandidatesListItem = {
   etapa_id: string | null
   vagas: { titulo: string } | { titulo: string }[] | null
   etapas: { nome: string; cor: string | null } | { nome: string; cor: string | null }[] | null
-  analises: { id: string; resultado: string | null; criado_em: string; detalhes: any }[] | null
+  analises:
+    | {
+        id: string
+        vaga_id: string | null
+        resultado: string | null
+        criado_em: string
+        detalhes: any
+      }[]
+    | null
+}
+
+export function resolveCandidateStatus(
+  analises:
+    | { vaga_id?: string | null; resultado: string | null; criado_em: string }[]
+    | null
+    | undefined,
+  vagaId: string | null | undefined,
+): string {
+  if (!analises || analises.length === 0) return 'pendente'
+
+  const sortedAnalises = [...analises].sort(
+    (a, b) => new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime(),
+  )
+
+  // 1. Se existir análise cujo vaga_id = candidatos.vaga_id, use o resultado dessa análise (a mais recente dessa vaga)
+  if (vagaId) {
+    const analiseVagaAtual = sortedAnalises.find((a) => a.vaga_id === vagaId)
+    if (analiseVagaAtual && analiseVagaAtual.resultado) {
+      return analiseVagaAtual.resultado
+    }
+  }
+
+  // 2. Somente quando NÃO existir análise para a vaga atual, faça fallback para a análise mais recente do candidato
+  const latestAnalise = sortedAnalises[0]
+  return latestAnalise?.resultado || 'pendente'
 }
 
 export async function getCandidatesList(
@@ -80,7 +114,7 @@ export async function getCandidatesList(
       etapa_id,
       vagas (titulo),
       etapas (nome, cor),
-      analises (id, resultado, criado_em, detalhes)
+      analises (id, vaga_id, resultado, criado_em, detalhes)
     `,
     { count: 'exact' },
   )
@@ -117,14 +151,7 @@ export async function getCandidatesList(
     if (error) throw error
 
     const mapped = ((data || []) as unknown as CandidatesListItem[]).map((c) => {
-      const sortedAnalises = c.analises
-        ? [...c.analises].sort(
-            (a, b) => new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime(),
-          )
-        : []
-
-      const latestIa = sortedAnalises[0]
-      const resolvedStatus = latestIa ? latestIa.resultado : 'pendente'
+      const resolvedStatus = resolveCandidateStatus(c.analises, c.vaga_id)
 
       return {
         id: c.id,
@@ -174,14 +201,7 @@ export async function getCandidatesList(
   if (error) throw error
 
   const mappedData: CandidateItem[] = ((data || []) as unknown as CandidatesListItem[]).map((c) => {
-    const sortedAnalises = c.analises
-      ? [...c.analises].sort(
-          (a, b) => new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime(),
-        )
-      : []
-
-    const latestIa = sortedAnalises[0]
-    const resolvedStatus = latestIa ? latestIa.resultado : 'pendente'
+    const resolvedStatus = resolveCandidateStatus(c.analises, c.vaga_id)
 
     return {
       id: c.id,
