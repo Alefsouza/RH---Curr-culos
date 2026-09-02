@@ -1,18 +1,21 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Users, CheckCircle, Activity, Target } from 'lucide-react'
+import { resolveCandidateStatus } from '@/services/candidates'
 
 export function MetricsCards({ candidatos, analises }: { candidatos: any[]; analises: any[] }) {
   const total = candidatos.length
 
-  const qualificados = candidatos.filter((c) =>
-    analises.some((a) => a.candidato_id === c.id && a.resultado === 'qualificado'),
-  ).length
+  const qualificados = candidatos.filter((c) => {
+    const candidateAnalises = analises.filter((a) => a.candidato_id === c.id)
+    return resolveCandidateStatus(candidateAnalises, c.vaga_id) === 'qualificado'
+  }).length
 
   const taxaConversao = total > 0 ? Math.round((qualificados / total) * 100) : 0
 
-  const naoQualificados = candidatos.filter((c) =>
-    analises.some((a) => a.candidato_id === c.id && a.resultado === 'nao_qualificado'),
-  ).length
+  const naoQualificados = candidatos.filter((c) => {
+    const candidateAnalises = analises.filter((a) => a.candidato_id === c.id)
+    return resolveCandidateStatus(candidateAnalises, c.vaga_id) === 'nao_qualificado'
+  }).length
 
   const taxaRotatividade = total > 0 ? Math.round((naoQualificados / total) * 100) : 0
 
