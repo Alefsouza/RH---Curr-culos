@@ -117,17 +117,22 @@ export default function WhatsappPage() {
         telefone: selectedCandidate.telefone,
         mensagem: trimmed,
       })
-      if (error) throw error
-      if (data && data.success === false) throw new Error(data.message || 'Falha no envio')
+      if (error) {
+        throw new Error((error as any).message || 'Falha no envio')
+      }
+      if (data && data.success === false) {
+        throw new Error(data.message || 'Falha no envio')
+      }
       setMessageInput('')
       toast({
         title: 'Mensagem enviada',
         description: 'A mensagem foi enviada com sucesso.',
       })
-    } catch {
+      loadData()
+    } catch (err: any) {
       toast({
         title: 'Erro ao enviar mensagem',
-        description: 'Não foi possível enviar a mensagem. Tente novamente.',
+        description: err?.message || 'Não foi possível enviar a mensagem. Tente novamente.',
         variant: 'destructive',
       })
     } finally {

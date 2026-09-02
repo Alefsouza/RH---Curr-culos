@@ -1,5 +1,5 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
-import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { createClient } from 'npm:@supabase/supabase-js@2'
 import jwt from 'npm:jsonwebtoken'
 import { corsHeaders } from '../_shared/cors.ts'
 
@@ -44,7 +44,7 @@ Deno.serve(async (req: Request) => {
 
     const { candidato_id, telefone, mensagem } = body as {
       candidato_id: string | null
-      telefone: string
+      telefone: string | string[]
       mensagem: string
     }
 
@@ -65,21 +65,41 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
-    const supabase = createClient(supabaseUrl, supabaseKey)
+    // Normalização de múltiplos telefones (separados por vírgula, barra ou array)
+    const rawList: string[] = Array.isArray(telefone)
+      ? telefone
+      : String(telefone)
+          .split(/[,;\n/]+/)
+          .map((t) => t.trim())
+          .filter(Boolean)
 
-    let cleanPhone = telefone.replace(/\D/g, '')
-    if (cleanPhone && !cleanPhone.startsWith('55')) {
-      cleanPhone = '55' + cleanPhone
+    const validPhones: string[] = []
+    const seen = new Set<string>()
+
+    for (const item of rawList) {
+      let clean = item.replace(/\D/g, '')
+      if (!clean) continue
+      if (!clean.startsWith('55')) {
+        clean = '55' + clean
+      }
+      if (clean.length >= 12 && clean.length <= 15) {
+        if (!seen.has(clean)) {
+          seen.add(clean)
+          validPhones.push(clean)
+        }
+      }
     }
 
-    if (cleanPhone.length < 12 || cleanPhone.length > 15) {
+    if (validPhones.length === 0) {
       return new Response(JSON.stringify({ success: false, message: 'Telefone inválido.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+    const supabase = createClient(supabaseUrl, supabaseKey)
 
     const uazapiUrl = Deno.env.get('UAZAPI_URL') || 'https://cvviasudeste.uazapi.com'
     const uazapiToken = Deno.env.get('UAZAPI_TOKEN') || Deno.env.get('UAZAPI_KEY') || ''
@@ -105,80 +125,100 @@ Deno.serve(async (req: Request) => {
     }
 
     const sendUrl = `${baseUrl}/send/text?instance=${instanceId}`
-    let externalId: string | null = null
-    let sendSuccess = false
 
-    try {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 30000)
-      const response = await fetch(sendUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Connection: 'keep-alive',
-          apikey: uazapiToken,
-          Authorization: `Bearer ${uazapiToken}`,
-          token: uazapiToken,
-        },
-        body: JSON.stringify({ number: cleanPhone, text: mensagem }),
-        signal: controller.signal,
-      })
-      clearTimeout(timeoutId)
+    const results: Array<{
+      phone: string
+      success: boolean
+      messageId?: string | null
+      error?: string
+    }> = []
 
-      if (response.ok) {
-        const responseData = await response.json()
-        if (
-          !responseData.error &&
-          responseData.status !== 'error' &&
-          responseData.success !== false
-        ) {
-          sendSuccess = true
-          externalId =
-            responseData.messageId ||
-            responseData.id ||
-            responseData.data?.id ||
-            responseData.message?.messageId ||
-            null
+    for (const phone of validPhones) {
+      let externalId: string | null = null
+      let sendSuccess = false
+      let sendError: string | null = null
+
+      try {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 30000)
+        const response = await fetch(sendUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Connection: 'keep-alive',
+            apikey: uazapiToken,
+            Authorization: `Bearer ${uazapiToken}`,
+            token: uazapiToken,
+          },
+          body: JSON.stringify({ number: phone, text: mensagem }),
+          signal: controller.signal,
+        })
+        clearTimeout(timeoutId)
+
+        if (response.ok) {
+          const responseData = await response.json()
+          if (
+            !responseData.error &&
+            responseData.status !== 'error' &&
+            responseData.success !== false
+          ) {
+            sendSuccess = true
+            externalId =
+              responseData.messageId ||
+              responseData.id ||
+              responseData.data?.id ||
+              responseData.message?.messageId ||
+              null
+          } else {
+            sendError = JSON.stringify(responseData)
+          }
+        } else {
+          sendError = await response.text()
         }
+      } catch (err: any) {
+        sendError = err.message
+        console.error(`Erro ao enviar via UAZAPI para ${phone}:`, err.message)
       }
-    } catch (err: any) {
-      console.error('Erro ao enviar via UAZAPI:', err.message)
-    }
 
-    const { data: insertData, error: insertError } = await supabase
-      .from('mensagens_whatsapp')
-      .insert({
-        candidato_id: candidato_id || null,
-        conteudo: mensagem,
-        direcao: 'enviada',
-        user_id: userId,
-        numero_whatsapp: cleanPhone,
-        enviado_em: sendSuccess ? new Date().toISOString() : null,
-        external_id: externalId,
-        uazapi_message_id: externalId,
-        status: sendSuccess ? 'enviada' : 'falha',
-        tipo: 'texto',
+      const { data: insertData, error: insertError } = await supabase
+        .from('mensagens_whatsapp')
+        .insert({
+          candidato_id: candidato_id || null,
+          conteudo: mensagem,
+          direcao: 'enviada',
+          user_id: userId,
+          numero_whatsapp: phone,
+          enviado_em: sendSuccess ? new Date().toISOString() : null,
+          external_id: externalId,
+          uazapi_message_id: externalId,
+          status: sendSuccess ? 'enviada' : 'falha',
+          tipo: 'texto',
+        })
+        .select('id')
+        .single()
+
+      if (insertError) {
+        console.error('Erro ao registrar mensagem no banco:', insertError.message)
+      }
+
+      results.push({
+        phone,
+        success: sendSuccess,
+        messageId: insertData?.id || externalId,
+        error: sendError || (insertError ? insertError.message : undefined),
       })
-      .select('id')
-      .single()
-
-    if (insertError) {
-      console.error('Erro ao registrar mensagem:', insertError.message)
-      return new Response(
-        JSON.stringify({ success: false, message: 'Erro ao salvar mensagem no banco.' }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
-      )
     }
 
-    if (!sendSuccess) {
+    const anySuccess = results.some((r) => r.success)
+    const firstSuccessful = results.find((r) => r.success)
+
+    if (!anySuccess) {
       return new Response(
         JSON.stringify({
           success: false,
           message:
             'Falha ao enviar mensagem via WhatsApp. Mensagem registrada com status de falha.',
+          results,
         }),
         {
           status: 200,
@@ -187,10 +227,18 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    return new Response(JSON.stringify({ success: true, messageId: insertData?.id }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    return new Response(
+      JSON.stringify({
+        success: true,
+        messageId: firstSuccessful?.messageId,
+        results,
+        phones: validPhones,
+      }),
+      {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      },
+    )
   } catch (error: any) {
     console.error('Erro geral na Edge Function enviar-mensagem-direta:', error.message)
     return new Response(JSON.stringify({ success: false, message: 'Erro interno no servidor.' }), {
