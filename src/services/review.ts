@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase/client'
+import { resolveCandidateStatus } from '@/services/candidates'
 
 export async function getPendingReviews(filters?: {
   vaga_id?: string
@@ -6,28 +7,29 @@ export async function getPendingReviews(filters?: {
   endDate?: string
 }) {
   let query = supabase
-    .from('analises')
+    .from('candidatos')
     .select(`
       id,
-      resultado,
-      detalhes,
-      criado_em,
-      candidato_id,
+      nome,
+      email,
+      telefone,
+      dados_extraidos,
+      curriculo_url,
       vaga_id,
-      candidatos (
+      criado_em,
+      analises (
         id,
-        nome,
-        email,
-        telefone,
-        dados_extraidos,
-        curriculo_url
+        resultado,
+        detalhes,
+        criado_em,
+        candidato_id,
+        vaga_id
       ),
       vagas (
         id,
         titulo
       )
     `)
-    .eq('resultado', 'revisar')
     .order('criado_em', { ascending: true })
 
   if (filters?.vaga_id && filters.vaga_id !== 'all') {
@@ -44,7 +46,49 @@ export async function getPendingReviews(filters?: {
 
   const { data, error } = await query
   if (error) throw error
-  return data
+
+  const pendingReviews: any[] = []
+
+  for (const c of data || []) {
+    const analises = Array.isArray(c.analises) ? c.analises : []
+    const status = resolveCandidateStatus(analises, c.vaga_id)
+
+    if (status === 'revisar') {
+      const sortedAnalises = [...analises].sort(
+        (a, b) => new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime(),
+      )
+
+      let currentAnalise: any = null
+      if (c.vaga_id) {
+        currentAnalise = sortedAnalises.find((a) => a.vaga_id === c.vaga_id)
+      }
+      if (!currentAnalise) {
+        currentAnalise = sortedAnalises[0]
+      }
+
+      if (currentAnalise) {
+        pendingReviews.push({
+          id: currentAnalise.id,
+          resultado: currentAnalise.resultado,
+          detalhes: currentAnalise.detalhes,
+          criado_em: currentAnalise.criado_em,
+          candidato_id: c.id,
+          vaga_id: c.vaga_id,
+          candidatos: {
+            id: c.id,
+            nome: c.nome,
+            email: c.email,
+            telefone: c.telefone,
+            dados_extraidos: c.dados_extraidos,
+            curriculo_url: c.curriculo_url,
+          },
+          vagas: c.vagas,
+        })
+      }
+    }
+  }
+
+  return pendingReviews
 }
 
 export async function fetchVagas() {
