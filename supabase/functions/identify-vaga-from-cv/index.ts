@@ -579,14 +579,18 @@ Deno.serve(async (req: Request) => {
          - NUNCA o atribua à vaga de Cobrador nem a nenhuma outra vaga diferente.
          - Retorne vaga_id como null, confianca como "nenhuma" e justificativa clara explicando que não há vaga disponível para o cargo pretendido pelo candidato.
 
-      3. HISTÓRICO PROFISSIONAL E CRITÉRIOS DA VAGA (quando objetivo não for declarado):
-         Se o objetivo não estiver explícito no currículo:
-         - Compare as experiências anteriores e qualificações com os critérios textuais de cada vaga (exigências de CNH D/E para Motorista, cursos, escolaridade, etc.).
+      3. PRIORIDADE MOTORISTA SOBRE COBRADOR:
+         - Se o perfil ou qualificações do candidato atenderem/forem aprovados tanto para a vaga de Motorista quanto para a vaga de Cobrador (ex: candidato com CNH D/E e experiência/curso de motorista), DÊ PRIORIDADE PARA A VAGA DE MOTORISTA (escolhendo a unidade de Motorista mais próxima do endereço do candidato).
+         - EXCEÇÃO: Apenas mantenha Cobrador se o candidato colocou expressamente como objetivo pretendido "Cobrador" ou objetivo genérico ("À disposição da empresa").
+
+      4. HISTÓRICO PROFISSIONAL, CRITÉRIOS DA VAGA E REGRAS DE ESCOLARIDADE / CURSOS:
+         - ESCOLARIDADE: Ensino Fundamental incompleto ou completo considera também Ensino Médio e Superior. Se a vaga exige Ensino Fundamental, candidatos com Ensino Médio ou Superior atendem ao requisito.
+         - CURSOS DE TRANSPORTE COLETIVO: Considere qualquer curso relativo a transporte coletivo e considere também quando constar "Credencial de Transporte Coletivo" como curso/formação.
+         - CRITÉRIOS EXPLÍCITOS: Continue considerando os critérios explícitos de cada vaga (ex: exigência de CNH categoria D ou E para Motorista). As novas regras não podem sobrepor um critério explícito da vaga.
          - Avalie também a compatibilidade de endereço/localização com as unidades das vagas.
 
-      4. NENHUMA VAGA COMPATÍVEL:
-         Se nenhuma vaga fizer sentido para a profissão/perfil do candidato, retorne vaga_id como null e confianca como "nenhuma".      
-      Retorne ESTRITAMENTE um JSON com a seguinte estrutura:
+      5. NENHUMA VAGA COMPATÍVEL:
+         Se nenhuma vaga fizer sentido para a profissão/perfil do candidato, retorne vaga_id como null e confianca como "nenhuma".            Retorne ESTRITAMENTE um JSON com a seguinte estrutura:
       {
         "vaga_id": "UUID da vaga correspondente ou null",
         "confianca": "alta", "media", "baixa" ou "nenhuma",

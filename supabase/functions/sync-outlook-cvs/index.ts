@@ -66,7 +66,7 @@ Extraia com cuidado preservando a grafia correta com acentos em português:
 - resumo_cv: Resumo das qualificações e perfil profissional, ou null se não identificado
 - experiencia_profissional: Lista de experiências anteriores com cargos e empresas, ou [] se não houver
 - skills: Lista de habilidades técnicas e competências, ou [] se não houver
-- formacao_academica: Lista de formações acadêmicas e cursos, ou [] se não houver
+- formacao_academica: Lista de cursos, escolaridade, certificações e credenciais (ex: "Credencial de Transporte Coletivo", "Curso de Transporte Coletivo de Passageiros"), ou [] se não houver
 
 IMPORTANTE:
 1. NUNCA invente dados ou placeholders como "Candidato Desconhecido", "João da Silva", "11999999999", "exemplo@email.com". Se não constar, use null ou [].

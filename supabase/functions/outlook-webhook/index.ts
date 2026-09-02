@@ -403,8 +403,9 @@ ${JSON.stringify(extractedData)}
 
 DIRETRIZES DE AVALIAÇÃO:
 1. IDADE / FAIXA ETÁRIA: A idade só é critério eliminatório se a vaga MENCIONAR EXPLICITAMENTE uma exigência de faixa etária nos critérios (ex: "18 a 22 anos"). Se a vaga não exigir idade, IGNORE a idade completamente — NUNCA reprove por falta de idade informada nem por idade quando a vaga não estipula idade.
-2. ESCOLARIDADE: Ensino Fundamental/Médio representa o requisito mínimo. Escolaridade superior nunca reprova.
-3. Não invente requisitos que não estejam expressos na vaga.
+2. ESCOLARIDADE (ENSINO FUNDAMENTAL / MÉDIO / SUPERIOR): Todo critério de escolaridade expressa a escolaridade mínima. Se a vaga exige Ensino Fundamental (incompleto ou completo), candidatos com Ensino Fundamental, Ensino Médio ou Ensino Superior atendem plenamente ao requisito e não podem ser reprovados por escolaridade.
+3. CURSOS DE TRANSPORTE COLETIVO E CREDENCIAL: Quando a vaga exigir ou mencionar curso de transporte coletivo, considere válido qualquer curso relativo a transporte coletivo. Considere também quando o candidato colocar "Credencial de Transporte Coletivo" como curso/formação.
+4. CRITÉRIOS EXPLÍCITOS: Continue considerando os critérios explícitos de cada vaga (ex: CNH D/E para Motorista). As novas regras não sobrepõem critérios explícitos da vaga. Não invente requisitos que não estejam expressos na vaga.
 
 Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
 {

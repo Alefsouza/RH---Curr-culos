@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import { resolveCandidateStatus } from '@/services/candidates'
 
 type Resultado = string | null | undefined
 

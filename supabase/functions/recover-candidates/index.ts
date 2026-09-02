@@ -245,7 +245,7 @@ Deno.serve(async (req: Request) => {
 - resumo_cv: Resumo das qualificações e perfil profissional, ou null se não identificado
 - experiencia_profissional: Lista de experiências anteriores, ou []
 - skills: Lista de habilidades e competências, ou []
-- formacao_academica: Lista de cursos e escolaridade, ou []
+- formacao_academica: Lista de cursos, escolaridade, certificações e credenciais (ex: "Credencial de Transporte Coletivo", "Curso de Transporte Coletivo de Passageiros"), ou []
 
 IMPORTANTE:
 1. NUNCA invente dados fictícios.

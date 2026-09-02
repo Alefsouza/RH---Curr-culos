@@ -244,7 +244,7 @@ Deno.serve(async (req: Request) => {
 - objetivo: Cargo pretendido, objetivo profissional ou área de interesse expressamente informada no currículo (ex: "Cobrador de Ônibus", "Motorista", "Auxiliar Administrativo", "Mecânico"), ou null se não identificado
 - experiencia_profissional: Lista de experiências anteriores com cargos e empresas, ou []
 - skills: Lista de habilidades técnicas e competências, ou []
-- formacao_academica: Lista de cursos e formações, ou []
+- formacao_academica: Lista de cursos, formações, escolaridade, certificações e credenciais (ex: "Credencial de Transporte Coletivo", "Curso de Transporte Coletivo de Passageiros"), ou []
 
 IMPORTANTE:
 1. NUNCA invente dados fictícios nem use "Candidato Desconhecido", "João da Silva", emails de exemplo ou telefones falsos.

@@ -234,13 +234,19 @@ DIRETRIZES CRÍTICAS PARA AVALIAÇÃO DE CRITÉRIOS:
      * Se a idade do candidato (ou calculada pela data de nascimento) for identificada e estiver COMPROVADAMENTE FORA da faixa exigida (ex: candidato com 31 anos para vaga que exige expressamente 18 a 22 anos): o candidato DEVE receber resultado = "nao_qualificado", score penalizado e o motivo DEVE explicitar a reprovação por idade ("Reprovado por faixa etária: Candidato possui X anos, fora da faixa exigida de Y a Z anos."). Inclua em 'unmatched_criteria'.
      * Se a vaga exigir faixa etária mas o currículo não contiver idade/data de nascimento, marque para 'revisar' com observação clara.
 
-2. ESCOLARIDADE É REQUISITO MÍNIMO:
-   - Todo critério de escolaridade (ex: "Ensino Fundamental", "Ensino Médio") expressa a ESCOLARIDADE MÍNIMA exigida. NUNCA penalize um candidato por ter escolaridade superior à exigida.
-   - Se o critério exigir "Ensino Fundamental" (incompleto ou completo), candidatos com Ensino Fundamental, Ensino Médio (incompleto/completo) ou Ensino Superior (incompleto/completo) ATENDEM PLENAMENTE ao requisito. Coloque em 'matched_criteria' (ex: "Requerido Ensino Fundamental mínimo, candidato possui Ensino Médio/Superior") e NUNCA em 'unmatched_criteria'.
-   - Se o critério exigir "Ensino Médio", candidatos com Ensino Médio ou Superior atendem ao requisito.
+2. ESCOLARIDADE É REQUISITO MÍNIMO (ENSINO FUNDAMENTAL / MÉDIO / SUPERIOR):
+   - Todo critério de escolaridade (ex: "Ensino Fundamental", "Ensino Fundamental incompleto", "Ensino Médio") expressa a ESCOLARIDADE MÍNIMA exigida. NUNCA penalize ou reprove um candidato por ter escolaridade superior à exigida.
+   - Se o critério da vaga exigir "Ensino Fundamental" (incompleto ou completo), candidatos com Ensino Fundamental (completo/incompleto), Ensino Médio (completo/incompleto) ou Ensino Superior (completo/incompleto) ATENDEM PLENAMENTE ao requisito de escolaridade (NÃO reprovar por escolaridade).
+   - Registre em 'matched_criteria' (ex: "Requerido Ensino Fundamental, candidato possui Ensino Médio/Superior") e NUNCA em 'unmatched_criteria'.
+   - Se o critério exigir "Ensino Médio", candidatos com Ensino Médio ou Ensino Superior atendem ao requisito.
 
-3. AVALIAÇÃO GERAL:
-   - Verifique a aderência real às atividades da vaga e requisitos mandatórios vs desejáveis informados nos critérios.
+3. CURSOS DE TRANSPORTE COLETIVO E CREDENCIAIS:
+   - Quando a vaga exigir ou mencionar "Curso" ou "Curso de transporte coletivo de passageiros" (ex: vagas de Motorista): considere VÁLIDO QUALQUER curso relativo a transporte coletivo (ex: "Curso de Transporte Coletivo", "Condutor de Veículo de Transporte Coletivo de Passageiros", "Resolução 168 / 789 do CONTRAN transporte coletivo", etc.).
+   - CONSIDERE TAMBÉM quando o candidato colocar/informar "Credencial de Transporte Coletivo", "Credencial de Motorista de Coletivo" ou "Credencial" nas formações, cursos, certificações ou observações da CNH como atendimento pleno a essa exigência de curso/formação.
+
+4. AVALIAÇÃO GERAL E RESPEITO AOS CRITÉRIOS EXPLÍCITOS:
+   - Continue considerando e respeitando todos os critérios explícitos de cada vaga (ex: exigência de CNH D ou E, tempo de experiência mandatório vs desejável, etc.).
+   - As regras de flexibilização de escolaridade e credencial de transporte NÃO sobrepõem critérios explícitos da vaga (por exemplo: se a vaga exige CNH D/E, o candidato ainda precisa ter CNH D/E).
    - Não invente critérios eliminatórios que não constem na descrição ou critérios da vaga.
 
 Retorne ESTRITAMENTE um JSON com as seguintes chaves:
