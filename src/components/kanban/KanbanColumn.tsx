@@ -2,7 +2,14 @@ import React, { useState } from 'react'
 import { Candidate, Stage } from '@/types/kanban'
 import { KanbanCard } from '@/components/kanban/KanbanCard'
 import { Button } from '@/components/ui/button'
-import { ArrowRight, GripHorizontal, Loader2, MoreHorizontal, Plus } from 'lucide-react'
+import {
+  ArrowRight,
+  GripHorizontal,
+  Loader2,
+  MoreHorizontal,
+  Plus,
+  ArrowRightLeft,
+} from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,12 +34,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { StageSelectDialog } from '@/components/kanban/StageSelectDialog'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
 import { supabase } from '@/lib/supabase/client'
 
 interface KanbanColumnProps {
   stage: Stage
+  stages?: Stage[]
   candidates: Candidate[]
   draggedCandidateId: string | null
   onDrop: (candidateId: string, stageId: string) => Promise<void> | void
@@ -50,6 +59,7 @@ interface KanbanColumnProps {
 
 export function KanbanColumn({
   stage,
+  stages = [],
   candidates,
   draggedCandidateId,
   onDrop,
@@ -76,6 +86,8 @@ export function KanbanColumn({
   const [movingProgress, setMovingProgress] = useState<{ current: number; total: number } | null>(
     null,
   )
+  const [isSelectStageOpen, setIsSelectStageOpen] = useState(false)
+  const [moveMode, setMoveMode] = useState<'all' | 'selected'>('all')
   const { toast } = useToast()
 
   const isCurrentStageDragging = draggedStageId === stage.id
@@ -261,67 +273,84 @@ export function KanbanColumn({
   }
 
   const selectedCandidatesInStage = candidates.filter((c) => selectedCandidateIds.has(c.id))
+  const otherStagesExist = stages.some((s) => s.id !== stage.id)
 
-  const handleMoveAll = async () => {
-    if (!nextStage || candidates.length === 0 || isMovingAll || isMovingSelected) return
-
-    const total = candidates.length
-    setIsMovingAll(true)
-    setMovingProgress({ current: 0, total })
-
-    try {
-      for (let i = 0; i < candidates.length; i++) {
-        const candidate = candidates[i]
-        setMovingProgress({ current: i + 1, total })
-        await onDrop(candidate.id, nextStage.id)
-      }
-
-      toast({
-        title: `Sucesso!`,
-        description: `${total} candidato(s) movido(s) para "${nextStage.name}".`,
-      })
-      onClearSelectedCandidates?.(candidates.map((c) => c.id))
-    } catch (err: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Erro ao mover candidatos',
-        description: err?.message || 'Ocorreu um erro ao transferir todos os candidatos.',
-      })
-    } finally {
-      setIsMovingAll(false)
-      setMovingProgress(null)
-    }
+  const handleOpenMoveAllModal = () => {
+    if (candidates.length === 0 || isMovingAll || isMovingSelected) return
+    setMoveMode('all')
+    setIsSelectStageOpen(true)
   }
 
-  const handleMoveSelected = async () => {
-    if (!nextStage || selectedCandidatesInStage.length < 2 || isMovingSelected || isMovingAll)
-      return
+  const handleOpenMoveSelectedModal = () => {
+    if (selectedCandidatesInStage.length === 0 || isMovingSelected || isMovingAll) return
+    setMoveMode('selected')
+    setIsSelectStageOpen(true)
+  }
 
-    const total = selectedCandidatesInStage.length
-    setIsMovingSelected(true)
-    setMovingProgress({ current: 0, total })
+  const handleConfirmMoveToStage = async (targetStageId: string) => {
+    setIsSelectStageOpen(false)
 
-    try {
-      for (let i = 0; i < selectedCandidatesInStage.length; i++) {
-        const candidate = selectedCandidatesInStage[i]
-        setMovingProgress({ current: i + 1, total })
-        await onDrop(candidate.id, nextStage.id)
+    const targetStage = stages.find((s) => s.id === targetStageId)
+    const targetStageName = targetStage?.name || 'etapa selecionada'
+
+    if (moveMode === 'all') {
+      if (candidates.length === 0 || isMovingAll || isMovingSelected) return
+
+      const total = candidates.length
+      setIsMovingAll(true)
+      setMovingProgress({ current: 0, total })
+
+      try {
+        for (let i = 0; i < candidates.length; i++) {
+          const candidate = candidates[i]
+          setMovingProgress({ current: i + 1, total })
+          await onDrop(candidate.id, targetStageId)
+        }
+
+        toast({
+          title: `Sucesso!`,
+          description: `${total} candidato(s) movido(s) para "${targetStageName}".`,
+        })
+        onClearSelectedCandidates?.(candidates.map((c) => c.id))
+      } catch (err: any) {
+        toast({
+          variant: 'destructive',
+          title: 'Erro ao mover candidatos',
+          description: err?.message || 'Ocorreu um erro ao transferir todos os candidatos.',
+        })
+      } finally {
+        setIsMovingAll(false)
+        setMovingProgress(null)
       }
+    } else {
+      if (selectedCandidatesInStage.length === 0 || isMovingSelected || isMovingAll) return
 
-      toast({
-        title: `Sucesso!`,
-        description: `${total} candidato(s) selecionado(s) movido(s) para "${nextStage.name}".`,
-      })
-      onClearSelectedCandidates?.(selectedCandidatesInStage.map((c) => c.id))
-    } catch (err: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Erro ao mover candidatos selecionados',
-        description: err?.message || 'Ocorreu um erro ao transferir os candidatos selecionados.',
-      })
-    } finally {
-      setIsMovingSelected(false)
-      setMovingProgress(null)
+      const total = selectedCandidatesInStage.length
+      setIsMovingSelected(true)
+      setMovingProgress({ current: 0, total })
+
+      try {
+        for (let i = 0; i < selectedCandidatesInStage.length; i++) {
+          const candidate = selectedCandidatesInStage[i]
+          setMovingProgress({ current: i + 1, total })
+          await onDrop(candidate.id, targetStageId)
+        }
+
+        toast({
+          title: `Sucesso!`,
+          description: `${total} candidato(s) selecionado(s) movido(s) para "${targetStageName}".`,
+        })
+        onClearSelectedCandidates?.(selectedCandidatesInStage.map((c) => c.id))
+      } catch (err: any) {
+        toast({
+          variant: 'destructive',
+          title: 'Erro ao mover candidatos selecionados',
+          description: err?.message || 'Ocorreu um erro ao transferir os candidatos selecionados.',
+        })
+      } finally {
+        setIsMovingSelected(false)
+        setMovingProgress(null)
+      }
     }
   }
 
@@ -394,15 +423,15 @@ export function KanbanColumn({
             </div>
           </div>
 
-          {nextStage && (
+          {otherStagesExist && (
             <div className="px-3 pb-2.5 pt-0.5 space-y-1.5">
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleMoveAll}
+                onClick={handleOpenMoveAllModal}
                 disabled={candidates.length === 0 || isMovingAll || isMovingSelected}
                 className="w-full h-8 text-xs font-medium text-slate-600 hover:text-primary hover:border-primary/40 bg-white shadow-none transition-all flex items-center justify-center gap-1.5"
-                title={`Mover todos os ${candidates.length} candidatos visíveis para ${nextStage.name}`}
+                title={`Escolher etapa para mover todos os ${candidates.length} candidatos`}
               >
                 {isMovingAll ? (
                   <>
@@ -420,14 +449,14 @@ export function KanbanColumn({
                 )}
               </Button>
 
-              {selectedCandidatesInStage.length > 1 && (
+              {selectedCandidatesInStage.length > 0 && (
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={handleMoveSelected}
+                  onClick={handleOpenMoveSelectedModal}
                   disabled={isMovingSelected || isMovingAll}
                   className="w-full h-8 text-xs font-semibold text-primary bg-primary/10 hover:bg-primary/20 border border-primary/20 shadow-none transition-all flex items-center justify-center gap-1.5"
-                  title={`Mover os ${selectedCandidatesInStage.length} candidatos selecionados para ${nextStage.name}`}
+                  title={`Escolher etapa para mover os ${selectedCandidatesInStage.length} candidatos selecionados`}
                 >
                   {isMovingSelected ? (
                     <>
@@ -537,6 +566,16 @@ export function KanbanColumn({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <StageSelectDialog
+        isOpen={isSelectStageOpen}
+        stages={stages}
+        currentStageId={stage.id}
+        candidateCount={moveMode === 'all' ? candidates.length : selectedCandidatesInStage.length}
+        mode={moveMode}
+        onClose={() => setIsSelectStageOpen(false)}
+        onConfirm={handleConfirmMoveToStage}
+      />
     </>
   )
 }

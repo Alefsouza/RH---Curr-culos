@@ -79,6 +79,7 @@ export function KanbanBoard({
             <KanbanColumn
               key={stage.id}
               stage={stage}
+              stages={sortedStages}
               candidates={stageCandidates}
               draggedCandidateId={draggedCandidateId}
               onDrop={onDropCandidate}
