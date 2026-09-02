@@ -66,7 +66,13 @@ export function KanbanBoard({
     <div className="flex-1 min-h-0 overflow-x-auto overflow-y-auto pb-4 h-full">
       <div className="flex flex-col md:flex-row gap-6 min-h-[600px] items-stretch min-w-max px-1">
         {sortedStages.map((stage, index) => {
-          const stageCandidates = candidates.filter((c) => c.stageId === stage.id)
+          const stageCandidates = candidates
+            .filter((c) => c.stageId === stage.id)
+            .sort((a, b) => {
+              const dateA = new Date(a.criado_em || a.appliedAt || 0).getTime()
+              const dateB = new Date(b.criado_em || b.appliedAt || 0).getTime()
+              return dateB - dateA
+            })
           const nextStage = index < sortedStages.length - 1 ? sortedStages[index + 1] : null
 
           return (

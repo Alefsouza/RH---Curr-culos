@@ -73,55 +73,61 @@ export default function Index() {
   }
 
   const filteredCandidates = useMemo(() => {
-    return candidates.filter((c) => {
-      // Filtro de busca textual (nome, e-mail ou telefone)
-      if (search.trim()) {
-        const query = search.toLowerCase().trim()
-        const matchName = (c.name || '').toLowerCase().includes(query)
-        const matchEmail = (c.email || '').toLowerCase().includes(query)
-        const matchPhone = (c.phone || '').toLowerCase().includes(query)
-        if (!matchName && !matchEmail && !matchPhone) {
-          return false
-        }
-      }
-
-      // Filtro de Vaga
-      if (selectedVaga && selectedVaga !== 'todas') {
-        const matchesVagaId = c.vagaId === selectedVaga
-        const selectedVagaObj = vagas.find((v) => v.id === selectedVaga)
-        const matchesVagaTitle = selectedVagaObj
-          ? (c.job || '').toLowerCase() === selectedVagaObj.titulo.toLowerCase()
-          : false
-
-        if (!matchesVagaId && !matchesVagaTitle) {
-          return false
-        }
-      }
-
-      // Filtro de Data Inicial e Final por criado_em (ou appliedAt)
-      const candDate = c.criado_em || c.appliedAt
-      if (startDate && candDate) {
-        try {
-          if (isBefore(parseISO(candDate), startOfDay(parseISO(startDate)))) {
+    return candidates
+      .filter((c) => {
+        // Filtro de busca textual (nome, e-mail ou telefone)
+        if (search.trim()) {
+          const query = search.toLowerCase().trim()
+          const matchName = (c.name || '').toLowerCase().includes(query)
+          const matchEmail = (c.email || '').toLowerCase().includes(query)
+          const matchPhone = (c.phone || '').toLowerCase().includes(query)
+          if (!matchName && !matchEmail && !matchPhone) {
             return false
           }
-        } catch {
-          // Ignore invalid dates
         }
-      }
 
-      if (endDate && candDate) {
-        try {
-          if (isAfter(parseISO(candDate), endOfDay(parseISO(endDate)))) {
+        // Filtro de Vaga
+        if (selectedVaga && selectedVaga !== 'todas') {
+          const matchesVagaId = c.vagaId === selectedVaga
+          const selectedVagaObj = vagas.find((v) => v.id === selectedVaga)
+          const matchesVagaTitle = selectedVagaObj
+            ? (c.job || '').toLowerCase() === selectedVagaObj.titulo.toLowerCase()
+            : false
+
+          if (!matchesVagaId && !matchesVagaTitle) {
             return false
           }
-        } catch {
-          // Ignore invalid dates
         }
-      }
 
-      return true
-    })
+        // Filtro de Data Inicial e Final por criado_em (ou appliedAt)
+        const candDate = c.criado_em || c.appliedAt
+        if (startDate && candDate) {
+          try {
+            if (isBefore(parseISO(candDate), startOfDay(parseISO(startDate)))) {
+              return false
+            }
+          } catch {
+            // Ignore invalid dates
+          }
+        }
+
+        if (endDate && candDate) {
+          try {
+            if (isAfter(parseISO(candDate), endOfDay(parseISO(endDate)))) {
+              return false
+            }
+          } catch {
+            // Ignore invalid dates
+          }
+        }
+
+        return true
+      })
+      .sort((a, b) => {
+        const dateA = new Date(a.criado_em || a.appliedAt || 0).getTime()
+        const dateB = new Date(b.criado_em || b.appliedAt || 0).getTime()
+        return dateB - dateA
+      })
   }, [candidates, search, selectedVaga, vagas, startDate, endDate])
 
   return (

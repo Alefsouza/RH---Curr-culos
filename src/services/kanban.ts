@@ -36,6 +36,7 @@ export async function fetchCandidates() {
       analises (resultado, detalhes, criado_em)
     `)
     .neq('ativo_kanban', false)
+    .order('criado_em', { ascending: false })
   if (error) throw error
 
   return (data as unknown as CandidateWithRelations[])
