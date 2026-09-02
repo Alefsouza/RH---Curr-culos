@@ -94,9 +94,11 @@ export async function getWhatsappDashboardData() {
     }
   })
 
+  const sentRows = convData?.filter((c) => c.direcao === 'enviada') || []
+
   const candMap = new Map<string, WhatsappCandidate>()
 
-  convData?.forEach((c) => {
+  sentRows.forEach((c) => {
     if (!c.conteudo || c.conteudo.trim() === '') return
 
     const candidateId = c.candidato_id || `unlinked_${c.numero_whatsapp}`
