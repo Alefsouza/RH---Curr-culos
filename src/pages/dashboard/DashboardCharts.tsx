@@ -13,6 +13,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { differenceInDays, parseISO } from 'date-fns'
 import { Info } from 'lucide-react'
+import { resolveCandidateStatus } from '@/services/candidates'
 
 type ChartProps = {
   candidatos: any[]
@@ -66,11 +67,16 @@ export function DashboardCharts({
   // Se há alguma vaga selecionada, as demais ficam esmaeceadas.
   const hasVagaSelection = selectedVagas.length > 0
 
-  // ---- Funil de Candidatos (barras horizontais por etapa) ----
+  // ---- Funil de Candidatos (barras horizontais por etapa) - SOMENTE Qualificados ----
+  const qualificadosFunnel = candidatos.filter((c: any) => {
+    const candidateAnalises = analises.filter((a: any) => a.candidato_id === c.id)
+    return resolveCandidateStatus(candidateAnalises, c.vaga_id) === 'qualificado'
+  })
+
   const funnelData = etapas.map((e: any) => ({
     id: e.id,
     nome: e.nome,
-    quantidade: candidatos.filter((c: any) => c.etapa_id === e.id).length,
+    quantidade: qualificadosFunnel.filter((c: any) => c.etapa_id === e.id).length,
     active: selectedEtapas.includes(e.id),
   }))
 
@@ -108,13 +114,14 @@ export function DashboardCharts({
     if (payload && payload.id) onToggleEtapa(payload.id, e)
   }
 
-  // ---- Taxa de Aprovação por Vaga (barras verticais) ----
+  // ---- Taxa de Aprovação por Vaga (barras verticais) - SOMENTE Qualificados ----
   const approvalData = vagas.map((v: any) => {
     const cands = candidatos.filter((c: any) => c.vaga_id === v.id)
     const total = cands.length
-    const aprovados = cands.filter((c: any) =>
-      analises.some((a: any) => a.candidato_id === c.id && a.resultado === 'qualificado'),
-    ).length
+    const aprovados = cands.filter((c: any) => {
+      const candidateAnalises = analises.filter((a: any) => a.candidato_id === c.id)
+      return resolveCandidateStatus(candidateAnalises, c.vaga_id) === 'qualificado'
+    }).length
 
     return {
       id: v.id,

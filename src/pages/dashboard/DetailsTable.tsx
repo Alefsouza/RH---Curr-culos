@@ -46,10 +46,8 @@ export function DetailsTable({ candidatos, etapas, vagas, analises }: any) {
   }
 
   const getAnaliseResultado = (cand: any) => {
-    const analise = analises.find(
-      (a: any) => a.candidato_id === cand.id && (a.vaga_id === cand.vaga_id || !a.vaga_id),
-    )
-    return analise?.resultado
+    const candidateAnalises = analises.filter((a: any) => a.candidato_id === cand.id)
+    return resolveCandidateStatus(candidateAnalises, cand.vaga_id)
   }
 
   return (
