@@ -114,6 +114,31 @@ export async function geocodeAddress(address: string, apiKey: string): Promise<C
   }
 }
 
+// Obtém coordenadas de referência para uma dada string de endereço ou texto (ex: título/descrição da vaga)
+// baseado em palavras-chave ("cursino" -> Cursino, "leste"/"sapopemba" -> Sapopemba/Leste)
+export function getReferenceCoordsForText(text: string): Coordinates | null {
+  if (!text) return null
+  const norm = text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+
+  if (norm.includes('cursino')) {
+    return REFERENCE_LOCATIONS.cursino.approxCoords
+  }
+  if (
+    norm.includes('leste') ||
+    norm.includes('sapopemba') ||
+    norm.includes('leandro de sevilha') ||
+    norm.includes('pq novo lar') ||
+    norm.includes('pq. novo lar') ||
+    norm.includes('parque novo lar')
+  ) {
+    return REFERENCE_LOCATIONS.sapopemba.approxCoords
+  }
+  return null
+}
+
 // Determina qual referência geográfica o endereço está mais próximo (sem raio mínimo)
 export async function determineProximity(
   endereco: any,

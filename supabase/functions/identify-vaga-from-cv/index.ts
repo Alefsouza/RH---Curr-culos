@@ -6,6 +6,8 @@ import {
   calculateHaversineDistance,
   formatAddressString,
   geocodeAddress,
+  getReferenceCoordsForText,
+  REFERENCE_LOCATIONS,
 } from '../_shared/proximity.ts'
 
 // Padrões de objetivo genérico (normalizados sem acento)
@@ -121,7 +123,18 @@ async function pickBestVagaByProximity(
         }
       }
 
+      // Se ainda assim não houver localizações, tenta obter coordenadas diretamente por palavras-chave do título/descrição
       if (vagaLocations.length === 0) {
+        const directCoords =
+          getReferenceCoordsForText(vaga.titulo || '') ||
+          getReferenceCoordsForText(vaga.descricao || '')
+        if (directCoords) {
+          const dist = calculateHaversineDistance(candidateCoords, directCoords)
+          if (bestDist === null || dist < bestDist) {
+            bestDist = dist
+            bestVaga = vaga
+          }
+        }
         continue
       }
 
@@ -129,6 +142,21 @@ async function pickBestVagaByProximity(
         let coords = locationCoordsCache.get(locStr)
         if (!coords) {
           coords = await geocodeAddress(locStr, googleApiKey)
+          // Se a geocodificação da string falhar (ex: endereço mal formatado ou erro na API),
+          // NÃO descartar a vaga: usar as coordenadas de referência baseadas em palavras-chave no endereço ou título/descrição da vaga
+          if (!coords) {
+            const fallbackRef =
+              getReferenceCoordsForText(locStr) ||
+              getReferenceCoordsForText(vaga.titulo || '') ||
+              getReferenceCoordsForText(vaga.descricao || '')
+            if (fallbackRef) {
+              console.warn(
+                `[identify-vaga] Geocodificação falhou para localização "${locStr}". Usando coordenadas de referência de fallback.`,
+              )
+              coords = fallbackRef
+            }
+          }
+
           if (coords) {
             locationCoordsCache.set(locStr, coords)
           }
