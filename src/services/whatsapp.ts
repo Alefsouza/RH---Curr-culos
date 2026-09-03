@@ -25,7 +25,7 @@ export async function getWhatsappDashboardData() {
   const msgQuery = supabase
     .from('mensagens_whatsapp')
     .select(
-      'id, candidato_id, conteudo, direcao, criado_em, uazapi_message_id, external_id, numero_whatsapp, candidatos(nome, telefone, user_id, ultima_resposta_whatsapp, etapa_id)',
+      'id, candidato_id, conteudo, direcao, criado_em, uazapi_message_id, external_id, numero_whatsapp, template_id, tipo, candidatos(nome, telefone, user_id, ultima_resposta_whatsapp, etapa_id)',
     )
     .not('conteudo', 'is', null)
     .neq('conteudo', '')
@@ -60,6 +60,37 @@ export async function getWhatsappDashboardData() {
   const statsByStage: Record<string, { sent: number; yes: number; no: number }> = {}
   const allStats = { sent: 0, yes: 0, no: 0 }
 
+  const isTemplateMsg = (c: any): boolean =>
+    c.direcao === 'enviada' && (c.template_id != null || c.tipo === 'interativa')
+
+  const detectResponse = (conteudo: string | null | undefined): 'sim' | 'nao' | null => {
+    if (!conteudo) return null
+    const lower = conteudo.toLowerCase().trim()
+    if (
+      ['sim', 's', 'sim!', 'sin', 'quero', 'sim|sim'].includes(lower) ||
+      lower.startsWith('sim|')
+    ) {
+      return 'sim'
+    }
+    if (
+      [
+        'nao',
+        'não',
+        'n',
+        'não!',
+        'nao tenho interesse',
+        'não tenho interesse',
+        'nao|nao',
+        'não|nao',
+      ].includes(lower) ||
+      lower.startsWith('nao|')
+    ) {
+      return 'nao'
+    }
+    return null
+  }
+
+  // Total de mensagens enviadas (mantido como estava: conta toda mensagem 'enviada')
   convData?.forEach((c) => {
     if (c.direcao === 'enviada') {
       allStats.sent++
@@ -71,33 +102,68 @@ export async function getWhatsappDashboardData() {
     }
   })
 
+  // Agrupa as mensagens por candidato, em ordem crescente de criado_em
+  const msgsByCandidate: Record<string, any[]> = {}
+  convData?.forEach((c) => {
+    if (!c.candidato_id) return
+    if (!msgsByCandidate[c.candidato_id]) msgsByCandidate[c.candidato_id] = []
+    msgsByCandidate[c.candidato_id].push(c)
+  })
+
+  // Conta "Sim"/"Não" por template: somente respostas recebidas APÓS uma mensagem
+  // de template, e no máximo uma por template (desempate por template_id).
+  Object.values(msgsByCandidate).forEach((msgs) => {
+    msgs.sort((a, b) => new Date(a.criado_em).getTime() - new Date(b.criado_em).getTime())
+    let currentTemplateKey: string | null = null
+    const credited = new Map<string, { sim: boolean; nao: boolean }>()
+
+    msgs.forEach((m) => {
+      if (isTemplateMsg(m)) {
+        currentTemplateKey = m.template_id || m.id
+      } else if (m.direcao === 'recebida') {
+        const resp = detectResponse(m.conteudo)
+        if (resp && currentTemplateKey) {
+          const cred = credited.get(currentTemplateKey) || { sim: false, nao: false }
+          if (resp === 'sim' && !cred.sim) {
+            cred.sim = true
+            allStats.yes++
+            const etapaId = candidatoEtapaMap[m.candidato_id]
+            if (etapaId) {
+              if (!statsByStage[etapaId]) statsByStage[etapaId] = { sent: 0, yes: 0, no: 0 }
+              statsByStage[etapaId].yes++
+            }
+          }
+          if (resp === 'nao' && !cred.nao) {
+            cred.nao = true
+            allStats.no++
+            const etapaId = candidatoEtapaMap[m.candidato_id]
+            if (etapaId) {
+              if (!statsByStage[etapaId]) statsByStage[etapaId] = { sent: 0, yes: 0, no: 0 }
+              statsByStage[etapaId].no++
+            }
+          }
+          credited.set(currentTemplateKey, cred)
+        }
+      }
+    })
+  })
+
   const responsesByMessage: Record<string, string> = {}
-
   const allResData = resData || []
-
   allResData.forEach((r) => {
-    if (r.resposta) {
-      const respLower = r.resposta.toLowerCase()
-      if (r.mensagem_id) {
-        responsesByMessage[r.mensagem_id] = respLower
-      }
-
-      if (respLower === 'sim') allStats.yes++
-      if (respLower === 'nao') allStats.no++
-
-      const etapaId = r.candidato_id ? candidatoEtapaMap[r.candidato_id] : null
-      if (etapaId) {
-        if (!statsByStage[etapaId]) statsByStage[etapaId] = { sent: 0, yes: 0, no: 0 }
-        if (respLower === 'sim') statsByStage[etapaId].yes++
-        if (respLower === 'nao') statsByStage[etapaId].no++
-      }
+    if (r.resposta && r.mensagem_id) {
+      responsesByMessage[r.mensagem_id] = r.resposta.toLowerCase()
     }
   })
 
-  // A listagem inclui mensagens enviadas e recebidas, mas apenas as vinculadas
-  // a um candidato do sistema (com candidato_id) — "Contatos Desconhecidos"
-  // (sem candidato_id) ficam de fora da tela.
-  const listRows = convData?.filter((c) => c.candidato_id) || []
+  // Somente conversas que possuem ao menos uma mensagem de template
+  const templateCandidateIds = new Set<string>()
+  convData?.forEach((c) => {
+    if (c.candidato_id && isTemplateMsg(c)) templateCandidateIds.add(c.candidato_id)
+  })
+
+  const listRows =
+    convData?.filter((c) => c.candidato_id && templateCandidateIds.has(c.candidato_id)) || []
 
   const candMap = new Map<string, WhatsappCandidate>()
 
