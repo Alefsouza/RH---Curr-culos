@@ -60,13 +60,17 @@ export default function CandidateDetails() {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [obsOpen, setObsOpen] = useState(false)
   const [obsText, setObsText] = useState('')
+  const [activeTab, setActiveTab] = useState('dados')
   const [savingObs, setSavingObs] = useState(false)
+  const [deleteObsId, setDeleteObsId] = useState<string | null>(null)
+  const [deleteObsOpen, setDeleteObsOpen] = useState(false)
+  const [deletingObs, setDeletingObs] = useState(false)
   const [resendingId, setResendingId] = useState<string | null>(null)
   const [reanalyzing, setReanalyzing] = useState(false)
 
-  const fetchCandidateData = async () => {
+  const fetchCandidateData = async (silent = false) => {
     if (!id) return
-    setLoading(true)
+    if (!silent) setLoading(true)
     setError(null)
     try {
       const { data: candData, error: candErr } = await supabase
@@ -256,12 +260,36 @@ export default function CandidateDetails() {
       toast.success('Observação adicionada com sucesso!')
       setObsText('')
       setObsOpen(false)
-      fetchCandidateData()
+      await fetchCandidateData(true)
     } catch (err: any) {
       console.error(err)
       toast.error(err.message || 'Erro ao adicionar observação.')
     } finally {
       setSavingObs(false)
+    }
+  }
+
+  const handleDeleteObservation = async () => {
+    if (!deleteObsId) return
+
+    setDeletingObs(true)
+    try {
+      const { error: deleteErr } = await (supabase as any)
+        .from('candidato_observacoes')
+        .delete()
+        .eq('id', deleteObsId)
+
+      if (deleteErr) throw deleteErr
+
+      toast.success('Observação excluída com sucesso!')
+      setDeleteObsOpen(false)
+      setDeleteObsId(null)
+      await fetchCandidateData(true)
+    } catch (err: any) {
+      console.error(err)
+      toast.error(err.message || 'Erro ao excluir observação.')
+    } finally {
+      setDeletingObs(false)
     }
   }
 
@@ -345,7 +373,7 @@ export default function CandidateDetails() {
           <Button variant="outline" onClick={() => navigate(-1)}>
             Voltar
           </Button>
-          {error && <Button onClick={fetchCandidateData}>Tentar Novamente</Button>}
+          {error && <Button onClick={() => fetchCandidateData()}>Tentar Novamente</Button>}
         </div>
       </div>
     )
@@ -472,7 +500,7 @@ export default function CandidateDetails() {
         </div>
       )}
 
-      <Tabs defaultValue="dados" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="w-full h-auto flex flex-wrap justify-start bg-transparent p-0 gap-2 md:bg-muted md:p-1 md:gap-0 md:inline-flex mb-2">
           <TabsTrigger
             value="dados"
@@ -815,9 +843,25 @@ export default function CandidateDetails() {
                               </Badge>
                             )}
                           </div>
-                          <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full inline-flex w-fit">
-                            {format(new Date(h.criado_em), "dd/MM/yyyy 'às' HH:mm")}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full inline-flex w-fit">
+                              {format(new Date(h.criado_em), "dd/MM/yyyy 'às' HH:mm")}
+                            </span>
+                            {isObs && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-slate-400 hover:text-destructive hover:bg-destructive/10"
+                                title="Excluir observação"
+                                onClick={() => {
+                                  setDeleteObsId(h.raw?.id)
+                                  setDeleteObsOpen(true)
+                                }}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            )}
+                          </div>
                         </div>
 
                         {isObs ? (
@@ -1054,6 +1098,50 @@ export default function CandidateDetails() {
             </Button>
             <Button variant="destructive" onClick={handleDelete} className="min-h-[44px]">
               Sim, Excluir Definitivamente
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Observation Modal */}
+      <Dialog
+        open={deleteObsOpen}
+        onOpenChange={(open) => {
+          setDeleteObsOpen(open)
+          if (!open) setDeleteObsId(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-destructive flex items-center gap-2">
+              <Trash2 className="w-5 h-5" /> Excluir Observação
+            </DialogTitle>
+            <DialogDescription className="pt-2 text-slate-600">
+              Tem certeza que deseja remover esta observação do histórico do candidato?
+              <br />
+              <br />
+              Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4 gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteObsOpen(false)
+                setDeleteObsId(null)
+              }}
+              disabled={deletingObs}
+              className="min-h-[44px]"
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteObservation}
+              disabled={deletingObs}
+              className="min-h-[44px]"
+            >
+              {deletingObs ? 'Excluindo...' : 'Excluir Observação'}
             </Button>
           </DialogFooter>
         </DialogContent>
