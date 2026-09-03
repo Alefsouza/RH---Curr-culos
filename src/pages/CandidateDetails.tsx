@@ -25,6 +25,8 @@ import {
   Star,
   ArrowLeft,
   ShieldAlert,
+  PlusCircle,
+  StickyNote,
 } from 'lucide-react'
 import {
   Dialog,
@@ -36,6 +38,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { cn, safeText } from '@/lib/utils'
@@ -55,6 +58,9 @@ export default function CandidateDetails() {
   const [editOpen, setEditOpen] = useState(false)
   const [editData, setEditData] = useState({ nome: '', email: '', telefone: '' })
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [obsOpen, setObsOpen] = useState(false)
+  const [obsText, setObsText] = useState('')
+  const [savingObs, setSavingObs] = useState(false)
   const [resendingId, setResendingId] = useState<string | null>(null)
   const [reanalyzing, setReanalyzing] = useState(false)
 
@@ -114,12 +120,53 @@ export default function CandidateDetails() {
         setAnalises(uniqueAnalises)
       }
 
-      const { data: histData } = await supabase
-        .from('candidato_etapa')
-        .select('*, etapas(nome, cor), usuarios(nome)')
-        .eq('candidato_id', id)
-        .order('criado_em', { ascending: false })
-      if (histData) setHistory(histData)
+      const [histRes, obsRes] = await Promise.all([
+        supabase
+          .from('candidato_etapa')
+          .select('*, etapas(nome, cor), usuarios(nome)')
+          .eq('candidato_id', id)
+          .order('criado_em', { ascending: false }),
+        (supabase as any)
+          .from('candidato_observacoes')
+          .select('*, usuarios(nome)')
+          .eq('candidato_id', id)
+          .order('criado_em', { ascending: false }),
+      ])
+
+      const combinedHistory: any[] = []
+
+      if (histRes.data) {
+        histRes.data.forEach((h: any) => {
+          combinedHistory.push({
+            id: `etapa-${h.id}`,
+            tipo: 'etapa',
+            criado_em: h.criado_em || h.data_entrada,
+            nome_etapa: h.etapas?.nome || 'Etapa Desconhecida',
+            cor_etapa: h.etapas?.cor,
+            autor_nome: h.usuarios?.nome || 'Sistema Automatizado',
+            raw: h,
+          })
+        })
+      }
+
+      if (obsRes.data) {
+        obsRes.data.forEach((o: any) => {
+          combinedHistory.push({
+            id: `obs-${o.id}`,
+            tipo: 'observacao',
+            criado_em: o.criado_em,
+            texto: o.texto,
+            autor_nome: o.usuarios?.nome || 'Usuário',
+            raw: o,
+          })
+        })
+      }
+
+      // Ordenar histórico unificado pelo mais recente primeiro
+      combinedHistory.sort(
+        (a, b) => new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime(),
+      )
+      setHistory(combinedHistory)
 
       const { data: msgData } = await supabase
         .from('mensagens_whatsapp')
@@ -182,6 +229,39 @@ export default function CandidateDetails() {
       navigate('/')
     } catch (e: any) {
       toast.error('Erro ao deletar: ' + e.message)
+    }
+  }
+
+  const handleAddObservation = async () => {
+    if (!obsText.trim()) {
+      toast.error('Por favor, digite a observação antes de salvar.')
+      return
+    }
+    if (!candidate?.id) return
+
+    setSavingObs(true)
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      const { error: insertErr } = await (supabase as any).from('candidato_observacoes').insert({
+        candidato_id: candidate.id,
+        usuario_id: user?.id || null,
+        texto: obsText.trim(),
+      })
+
+      if (insertErr) throw insertErr
+
+      toast.success('Observação adicionada com sucesso!')
+      setObsText('')
+      setObsOpen(false)
+      fetchCandidateData()
+    } catch (err: any) {
+      console.error(err)
+      toast.error(err.message || 'Erro ao adicionar observação.')
+    } finally {
+      setSavingObs(false)
     }
   }
 
@@ -667,37 +747,97 @@ export default function CandidateDetails() {
 
         <TabsContent value="historico" className="space-y-4 mt-4">
           <Card className="shadow-elevation border-border">
+            <CardHeader className="pb-3 border-b bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-primary" /> Linha do Tempo e Observações
+                </CardTitle>
+                <CardDescription>
+                  Histórico completo de movimentações de etapas e observações manuais da equipe
+                </CardDescription>
+              </div>
+              <Button
+                onClick={() => {
+                  setObsText('')
+                  setObsOpen(true)
+                }}
+                className="gap-1.5 shrink-0 min-h-[40px]"
+                size="sm"
+              >
+                <PlusCircle className="w-4 h-4" />
+                Adicionar Observação
+              </Button>
+            </CardHeader>
             <CardContent className="p-6">
               <div className="space-y-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-primary/20 before:via-primary/20 before:to-transparent">
-                {history.map((h, i) => (
-                  <div
-                    key={h.id}
-                    className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group"
-                  >
-                    <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-white bg-primary text-white shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow-sm z-10">
-                      <Clock className="w-4 h-4" />
-                    </div>
-                    <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-lg border bg-white shadow-sm hover:shadow-md transition-shadow">
-                      <div className="flex flex-col md:flex-row md:items-center justify-between mb-2 gap-1">
-                        <h4 className="font-bold text-slate-800">
-                          {h.etapas?.nome || 'Etapa Desconhecida'}
-                        </h4>
-                        <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full inline-flex w-fit">
-                          {format(new Date(h.criado_em), "dd/MM/yyyy 'às' HH:mm")}
-                        </span>
+                {history.map((h) => {
+                  const isObs = h.tipo === 'observacao'
+
+                  return (
+                    <div
+                      key={h.id}
+                      className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group"
+                    >
+                      <div
+                        className={cn(
+                          'flex items-center justify-center w-10 h-10 rounded-full border-4 border-white text-white shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow-sm z-10',
+                          isObs ? 'bg-amber-500' : 'bg-primary',
+                        )}
+                      >
+                        {isObs ? <StickyNote className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
                       </div>
-                      <p className="text-sm text-slate-600 flex items-center gap-1.5">
-                        <User className="w-3.5 h-3.5 text-slate-400" /> Movido por:{' '}
-                        <span className="font-medium">
-                          {h.usuarios?.nome || 'Sistema Automatizado'}
-                        </span>
-                      </p>
+                      <div
+                        className={cn(
+                          'w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-lg border shadow-sm hover:shadow-md transition-shadow',
+                          isObs
+                            ? 'bg-amber-50/30 border-amber-200/80'
+                            : 'bg-white border-slate-200',
+                        )}
+                      >
+                        <div className="flex flex-col md:flex-row md:items-center justify-between mb-2 gap-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-bold text-slate-800">
+                              {isObs ? 'Observação Manual' : h.nome_etapa}
+                            </h4>
+                            {isObs ? (
+                              <Badge
+                                variant="outline"
+                                className="bg-amber-100/70 text-amber-800 border-amber-300 text-[11px]"
+                              >
+                                Manual
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="outline"
+                                className="bg-primary/10 text-primary border-primary/20 text-[11px]"
+                              >
+                                Mudança de Etapa
+                              </Badge>
+                            )}
+                          </div>
+                          <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full inline-flex w-fit">
+                            {format(new Date(h.criado_em), "dd/MM/yyyy 'às' HH:mm")}
+                          </span>
+                        </div>
+
+                        {isObs ? (
+                          <div className="mt-2 text-sm text-slate-700 whitespace-pre-wrap bg-white/90 p-3 rounded border border-amber-100 leading-relaxed font-sans">
+                            {h.texto}
+                          </div>
+                        ) : null}
+
+                        <p className="text-xs text-slate-500 mt-2.5 flex items-center gap-1.5">
+                          <User className="w-3.5 h-3.5 text-slate-400" />
+                          {isObs ? 'Adicionada por:' : 'Movido por:'}{' '}
+                          <span className="font-medium text-slate-700">{h.autor_nome}</span>
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
                 {history.length === 0 && (
                   <p className="text-center text-muted-foreground relative z-10 bg-white py-4">
-                    Nenhum histórico de movimentação encontrado.
+                    Nenhum histórico de movimentação ou observação encontrado.
                   </p>
                 )}
               </div>
@@ -836,6 +976,55 @@ export default function CandidateDetails() {
             </Button>
             <Button onClick={handleSaveEdit} className="min-h-[44px]">
               Salvar Alterações
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Observation Modal */}
+      <Dialog open={obsOpen} onOpenChange={setObsOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <StickyNote className="w-5 h-5 text-amber-500" />
+              Adicionar Observação ao Histórico
+            </DialogTitle>
+            <DialogDescription>
+              Insira anotações sobre entrevistas, feedbacks, alinhamentos ou qualquer informação
+              relevante para acompanhar o candidato{' '}
+              <strong className="text-slate-800">{candidate?.nome}</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="observacao-texto">
+                Observação <span className="text-red-500">*</span>
+              </Label>
+              <Textarea
+                id="observacao-texto"
+                placeholder="Ex: Candidato realizou a entrevista inicial hoje e demonstrou excelente comunicação. Aguardando teste prático."
+                rows={5}
+                value={obsText}
+                onChange={(e) => setObsText(e.target.value)}
+                className="resize-none"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setObsOpen(false)}
+              disabled={savingObs}
+              className="min-h-[44px]"
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleAddObservation}
+              disabled={savingObs || !obsText.trim()}
+              className="min-h-[44px]"
+            >
+              {savingObs ? 'Salvando...' : 'Salvar Observação'}
             </Button>
           </DialogFooter>
         </DialogContent>
