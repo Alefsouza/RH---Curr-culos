@@ -184,7 +184,7 @@ export function getReferenceCoordsForText(text: string): Coordinates | null {
     return REFERENCE_LOCATIONS.sapopemba.approxCoords
   }
 
-  // Região Cursino / Zona Sul / Ipiranga / Saúde / ABC
+  // Região Cursino / Zona Sul / Ipiranga / Saúde / ABC / Campo Limpo / M'Boi Mirim / Santo Amaro
   if (
     norm.includes('cursino') ||
     norm.includes('ipiranga') ||
@@ -197,7 +197,22 @@ export function getReferenceCoordsForText(text: string): Coordinates | null {
     norm.includes('diadema') ||
     norm.includes('jabaquara') ||
     norm.includes('sacoma') ||
-    norm.includes('vila mariana')
+    norm.includes('vila mariana') ||
+    norm.includes('jardim nakamura') ||
+    norm.includes('nakamura') ||
+    norm.includes('m boi mirim') ||
+    norm.includes('mboi mirim') ||
+    norm.includes('jardim angela') ||
+    norm.includes('jd angela') ||
+    norm.includes('jardim sao luis') ||
+    norm.includes('capao redondo') ||
+    norm.includes('campo limpo') ||
+    norm.includes('santo amaro') ||
+    norm.includes('socorro') ||
+    norm.includes('interlagos') ||
+    norm.includes('grajau') ||
+    norm.includes('cidade dutra') ||
+    norm.includes('pedreira')
   ) {
     return REFERENCE_LOCATIONS.cursino.approxCoords
   }

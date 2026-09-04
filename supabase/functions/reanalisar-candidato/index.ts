@@ -101,6 +101,9 @@ Deno.serve(async (req: Request) => {
     const hasObjetivo =
       typeof currentDadosExtraidos.objetivo === 'string' &&
       currentDadosExtraidos.objetivo.trim().length > 0
+    const hasExperiencia =
+      Array.isArray(currentDadosExtraidos.experiencia_profissional) &&
+      currentDadosExtraidos.experiencia_profissional.length > 0
     const needsReExtraction =
       force_reextract ||
       !validCurrentName ||
@@ -108,7 +111,7 @@ Deno.serve(async (req: Request) => {
       !hasCurrentTelefone ||
       !hasCurrentEndereco ||
       !currentDadosExtraidos.skills ||
-      !hasObjetivo ||
+      (!hasObjetivo && !hasExperiencia) ||
       (Array.isArray(currentDadosExtraidos.skills) &&
         currentDadosExtraidos.skills.length === 0 &&
         !currentEmail)

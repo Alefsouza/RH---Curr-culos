@@ -57,6 +57,114 @@ function isGenericObjective(str: string): boolean {
   })
 }
 
+// Verifica se o candidato tem experiência profissional relevante como motorista
+function hasMotoristaExperience(cvData: any): boolean {
+  if (!cvData) return false
+
+  // Se cvData for string, analisar o texto
+  if (typeof cvData === 'string') {
+    const norm = normalizeString(cvData)
+    return (
+      norm.includes('cargo motorista') ||
+      norm.includes('funcao motorista') ||
+      norm.includes('motorista de onibus') ||
+      norm.includes('motorista coletivo') ||
+      norm.includes('motor apoio') ||
+      norm.includes('motorista carreteiro') ||
+      norm.includes('motorista toco') ||
+      norm.includes('motorista truck') ||
+      norm.includes('motorista d') ||
+      norm.includes('motorista e')
+    )
+  }
+
+  // Se for objeto estruturado
+  const expList =
+    cvData.experiencia_profissional || cvData.experiencias || cvData.historico_profissional || []
+
+  if (Array.isArray(expList)) {
+    for (const item of expList) {
+      if (typeof item === 'string') {
+        const norm = normalizeString(item)
+        if (
+          norm.includes('motorista') ||
+          norm.includes('condutor') ||
+          norm.includes('motor apoio')
+        ) {
+          return true
+        }
+      } else if (typeof item === 'object' && item !== null) {
+        const cargo = normalizeString(item.cargo || item.funcao || item.titulo || item.role || '')
+        const desc = normalizeString(item.descricao || item.atividades || item.resumo || '')
+        if (
+          cargo.includes('motorista') ||
+          cargo.includes('condutor') ||
+          cargo.includes('motor apoio') ||
+          desc.includes('motorista de onibus') ||
+          desc.includes('conducao de veiculos de grande porte') ||
+          desc.includes('transporte coletivo de passageiros')
+        ) {
+          return true
+        }
+      }
+    }
+  }
+
+  // Verificar também resumo_cv ou skills se mencionarem cargo anterior como motorista
+  const resumo = normalizeString(cvData.resumo_cv || cvData.resumo || '')
+  if (
+    resumo.includes('atuou como motorista') ||
+    resumo.includes('experiencia como motorista') ||
+    resumo.includes('motorista profissional') ||
+    resumo.includes('motorista de transporte')
+  ) {
+    return true
+  }
+
+  return false
+}
+
+// Extrai a idade do candidato (se disponível em anos como número)
+function extractCandidateAge(cvData: any): number | null {
+  if (!cvData) return null
+  if (typeof cvData.idade === 'number' && !isNaN(cvData.idade)) {
+    return cvData.idade
+  }
+  if (typeof cvData.idade === 'string') {
+    const match = cvData.idade.match(/\d+/)
+    if (match) {
+      const parsed = parseInt(match[0], 10)
+      if (!isNaN(parsed) && parsed > 0 && parsed < 120) return parsed
+    }
+  }
+  // Tentar calcular via data_nascimento
+  if (cvData.data_nascimento && typeof cvData.data_nascimento === 'string') {
+    const dStr = cvData.data_nascimento.trim()
+    let birthDate: Date | null = null
+    const brMatch = dStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/)
+    if (brMatch) {
+      birthDate = new Date(
+        parseInt(brMatch[3], 10),
+        parseInt(brMatch[2], 10) - 1,
+        parseInt(brMatch[1], 10),
+      )
+    } else {
+      const isoDate = new Date(dStr)
+      if (!isNaN(isoDate.getTime())) birthDate = isoDate
+    }
+    if (birthDate && !isNaN(birthDate.getTime())) {
+      const now = new Date()
+      let age = now.getFullYear() - birthDate.getFullYear()
+      const m = now.getMonth() - birthDate.getMonth()
+      if (m < 0 || (m === 0 && now.getDate() < birthDate.getDate())) {
+        age--
+      }
+      if (age > 0 && age < 120) return age
+    }
+  }
+  return null
+}
+
 // Extrai as strings de localização de uma vaga a partir de criterios_qualificacao
 function extractVagaLocations(vaga: any): string[] {
   if (!vaga) return []
@@ -302,19 +410,93 @@ Deno.serve(async (req: Request) => {
 
     // =========================================================================
     // REGRA 1: DETECÇÃO DE "OBJETIVO GENÉRICO" ("A disposição da empresa", etc.)
-    // Prioridade para vagas de Cobrador com desempate por endereço / proximidade.
+    // Se o objetivo for genérico, considerar TAMBÉM a experiência profissional do candidato:
+    // - Se possui experiência/cargo de Motorista no histórico, deve ser candidatado à vaga de
+    //   MOTORISTA da garagem mais próxima do endereço dele.
+    // - As vagas de Cobrador exigem idade 18-56 anos; um candidato com idade > 56 ou que tenha
+    //   experiência de motorista NUNCA deve ser mandado para Cobrador quando existe a alternativa de Motorista.
+    // - Só recorrer à vaga de Cobrador se não houver vaga de Motorista compatível ou se ele não tiver perfil de Motorista.
     // =========================================================================
     if (candidatoObjetivo && isGenericObjective(candidatoObjetivo)) {
       console.log(
-        `[identify-vaga-from-cv] Objetivo genérico detectado: "${candidatoObjetivo}". Aplicando preferência para Cobrador.`,
+        `[identify-vaga-from-cv] Objetivo genérico detectado: "${candidatoObjetivo}". Analisando histórico profissional e critérios...`,
       )
 
-      // Filtrar vagas cujo título contenha "cobrador"
+      const candidatoTemExpMotorista = hasMotoristaExperience(
+        parsedDadosExtraidos || cvDataToAnalyze,
+      )
+      const idadeCandidato = extractCandidateAge(parsedDadosExtraidos)
+      const motoristaVagas = vagas.filter((v) =>
+        normalizeString(v.titulo || '').includes('motorista'),
+      )
       const cobradorVagas = vagas.filter((v) =>
         normalizeString(v.titulo || '').includes('cobrador'),
       )
 
-      if (cobradorVagas.length > 0) {
+      // Se possui experiência como Motorista e existem vagas de Motorista disponíveis:
+      if (candidatoTemExpMotorista && motoristaVagas.length > 0) {
+        console.log(
+          `[identify-vaga-from-cv] Candidato com objetivo genérico ("${candidatoObjetivo}") possui histórico de Motorista. Direcionando para vaga de Motorista da garagem mais próxima.`,
+        )
+
+        const { vaga: chosenMotoristaVaga, menorDistanciaKm } = await pickBestVagaByProximity(
+          candidatoEndereco,
+          motoristaVagas,
+          googleApiKey,
+        )
+
+        let proxText = ''
+        if (menorDistanciaKm !== null) {
+          proxText = ` Selecionada a vaga de Motorista da garagem mais próxima do endereço do candidato (${candidatoEndereco}), a aproximadamente ${menorDistanciaKm.toFixed(1)} km.`
+        } else if (candidatoEndereco) {
+          proxText = ` Endereço do candidato: "${candidatoEndereco}". Selecionada a garagem mais adequada.`
+        } else {
+          proxText = ' Não foi identificado endereço no currículo para desempate geográfico.'
+        }
+
+        return new Response(
+          JSON.stringify({
+            vaga_id: chosenMotoristaVaga.id,
+            confianca: 'alta',
+            justificativa: `Objetivo do candidato é genérico ("${candidatoObjetivo}"), mas o histórico profissional comprova experiência como Motorista. Pela regra de negócio, foi priorizada a vaga de Motorista ("${chosenMotoristaVaga.titulo}").${proxText}`,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
+      }
+
+      // Se NÃO tem experiência de motorista, verificar compatibilidade com Cobrador (faixa etária 18-56 anos)
+      // Se a idade for conhecida e for maior que 56 anos ou menor que 18, NÃO direcionar para Cobrador
+      const foraFaixaEtariaCobrador =
+        idadeCandidato !== null && (idadeCandidato < 18 || idadeCandidato > 56)
+
+      if (foraFaixaEtariaCobrador && motoristaVagas.length > 0) {
+        // Candidato fora da faixa etária de Cobrador, mas há vagas de Motorista abertas (onde não há teto de 56 anos)
+        console.log(
+          `[identify-vaga-from-cv] Candidato tem ${idadeCandidato} anos (fora da faixa de 18-56 anos para Cobrador). Avaliando vaga de Motorista por proximidade.`,
+        )
+        const { vaga: chosenMotoristaVaga, menorDistanciaKm } = await pickBestVagaByProximity(
+          candidatoEndereco,
+          motoristaVagas,
+          googleApiKey,
+        )
+
+        let proxText = ''
+        if (menorDistanciaKm !== null) {
+          proxText = ` Selecionada a vaga de Motorista da garagem mais próxima (${menorDistanciaKm.toFixed(1)} km) do endereço (${candidatoEndereco}).`
+        }
+
+        return new Response(
+          JSON.stringify({
+            vaga_id: chosenMotoristaVaga.id,
+            confianca: 'alta',
+            justificativa: `Objetivo genérico ("${candidatoObjetivo}"). Como a idade do candidato (${idadeCandidato} anos) não atende ao limite de até 56 anos das vagas de Cobrador, foi direcionado para a vaga de Motorista ("${chosenMotoristaVaga.titulo}").${proxText}`,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
+      }
+
+      // Caso padrão para objetivo genérico (candidato sem histórico específico de motorista e dentro da faixa etária)
+      if (cobradorVagas.length > 0 && !foraFaixaEtariaCobrador) {
         const { vaga: chosenVaga, menorDistanciaKm } = await pickBestVagaByProximity(
           candidatoEndereco,
           cobradorVagas,
@@ -334,7 +516,7 @@ Deno.serve(async (req: Request) => {
           JSON.stringify({
             vaga_id: chosenVaga.id,
             confianca: 'alta',
-            justificativa: `Objetivo do candidato identificado como "${candidatoObjetivo}" (disposição da empresa/genérico). Pela regra de negócio, foi dada preferência à vaga de Cobrador ("${chosenVaga.titulo}").${proxText}`,
+            justificativa: `Objetivo do candidato identificado como "${candidatoObjetivo}" (disposição da empresa/genérico). Pela regra de negócio, foi direcionado para a vaga de Cobrador ("${chosenVaga.titulo}").${proxText}`,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         )
@@ -569,10 +751,11 @@ Deno.serve(async (req: Request) => {
       
       REGRAS CRÍTICAS DE MATCHING (SIGA RIGOROSAMENTE NA ORDEM):
 
-      1. REGRA ESPECIAL DE OBJETIVO GENÉRICO ("A disposição da empresa" ou semelhante):
+      1. REGRA ESPECIAL DE OBJETIVO GENÉRICO ("A disposição da empresa", "Qualquer vaga", etc.):
          Se o candidato informar objetivo como "À disposição da empresa", "Disposição da empresa", "Qualquer vaga", "Sem preferência", "O que precisar" ou expressar genericamente disponibilidade:
-         - DÊ PREFERÊNCIA PARA A VAGA DE COBRADOR (ex: "Cobrador de Ônibus Cursino" ou "Cobrador de Ônibus Leste").
-         - Escolha a unidade de Cobrador mais próxima da localização do candidato (Zona Leste -> Cobrador Leste; Cursino/Saúde/Ipiranga/ABC/Sul -> Cobrador Cursino).
+         - ANALISE O HISTÓRICO PROFISSIONAL: Se o candidato tem cargo de Motorista, experiência na condução de veículos de passageiros/ônibus ou CNH D/E no histórico: ATRIBUA À VAGA DE MOTORISTA DA GARAGEM MAIS PRÓXIMA do endereço do candidato (Cursino ou Leste).
+         - FAIXA ETÁRIA: As vagas de Cobrador exigem idade entre 18 e 56 anos. Se o candidato tiver mais de 56 anos (ex: 57, 58 anos ou mais), NUNCA o atribua para Cobrador caso haja vaga de Motorista ou outra vaga compatível onde não há limite de idade.
+         - Só atribua a vaga de Cobrador para objetivo genérico se o candidato NÃO possuir histórico de Motorista e tiver idade compatível (18 a 56 anos).
          - Confiança deve ser "alta".
 
       2. OBJETIVO / CARGO PRETENDIDO ESPECÍFICO QUE NÃO TEM VAGA ABERTA:
@@ -584,7 +767,7 @@ Deno.serve(async (req: Request) => {
          - Se o candidato expressar objetivo para MOTORISTA ou tiver perfil/histórico voltado para Motorista (ou possuir CNH D/E, experiência como motorista, etc.): ATRIBUA À VAGA DE MOTORISTA (escolhendo a unidade mais próxima).
          - NUNCA reclassifique, desvie ou realoque um candidato a MOTORISTA para a vaga de COBRADOR caso ele necessite de revisão, falte algum comprovante ou o resultado seja "revisar". O candidato de Motorista DEVE permanecer vinculado à vaga de Motorista para revisão humana da Paola.
          - Se o perfil ou qualificações do candidato atenderem/forem compatíveis tanto com a vaga de Motorista quanto com a vaga de Cobrador, DÊ RIGOROSA PRIORIDADE PARA A VAGA DE MOTORISTA (escolhendo a unidade de Motorista mais próxima do endereço do candidato).
-         - EXCEÇÃO: Apenas atribua Cobrador se o candidato colocou expressamente como objetivo único/pretendido "Cobrador" ou objetivo genérico ("À disposição da empresa").
+         - EXCEÇÃO: Apenas atribua Cobrador se o candidato colocou expressamente como objetivo único/pretendido "Cobrador" (e não tenha histórico de motorista/idade impeditiva).
 
       4. HISTÓRICO PROFISSIONAL, CRITÉRIOS DA VAGA E REGRAS DE ESCOLARIDADE / CURSOS:
          - ESCOLARIDADE: Ensino Fundamental incompleto ou completo considera também Ensino Médio e Superior. Se a vaga exige Ensino Fundamental, candidatos com Ensino Médio ou Superior atendem ao requisito.
@@ -608,17 +791,23 @@ Deno.serve(async (req: Request) => {
       result.vaga_id = null
     }
 
-    // GUARDA DE SEGURANÇA: Se o objetivo do candidato era de MOTORISTA mas a IA retornou Cobrador,
-    // impedir a realocação para Cobrador e redirecionar para a vaga de Motorista mais próxima.
-    if (result.vaga_id && candidatoObjetivo) {
-      const normObj = normalizeString(candidatoObjetivo)
-      const isMotoristaObjective = normObj.includes('motorista') || normObj.includes('condutor')
-      if (isMotoristaObjective) {
-        const targetVaga = vagas.find((v) => v.id === result.vaga_id)
-        const normTargetTitle = normalizeString(targetVaga?.titulo || '')
-        if (normTargetTitle.includes('cobrador')) {
+    // GUARDA DE SEGURANÇA: Se o objetivo do candidato era de MOTORISTA OU se o candidato possui histórico de MOTORISTA
+    // mas a IA retornou Cobrador, impedir a realocação para Cobrador e redirecionar para a vaga de Motorista mais próxima.
+    if (result.vaga_id) {
+      const targetVaga = vagas.find((v) => v.id === result.vaga_id)
+      const normTargetTitle = normalizeString(targetVaga?.titulo || '')
+      if (normTargetTitle.includes('cobrador')) {
+        const normObj = normalizeString(candidatoObjetivo)
+        const isMotoristaObjective = normObj.includes('motorista') || normObj.includes('condutor')
+        const candidatoTemExpMotorista = hasMotoristaExperience(
+          parsedDadosExtraidos || cvDataToAnalyze,
+        )
+        const candidateAge = extractCandidateAge(parsedDadosExtraidos)
+        const foraIdadeCobrador = candidateAge !== null && (candidateAge < 18 || candidateAge > 56)
+
+        if (isMotoristaObjective || candidatoTemExpMotorista || foraIdadeCobrador) {
           console.log(
-            `[identify-vaga-from-cv] Salvaguarda acionada: candidato com objetivo de Motorista ("${candidatoObjetivo}") foi associado a Cobrador pela IA. Revertendo para Motorista por proximidade.`,
+            `[identify-vaga-from-cv] Salvaguarda acionada: candidato foi associado a Cobrador, mas atende a condições para Motorista (objetivo=${isMotoristaObjective}, expMotorista=${candidatoTemExpMotorista}, idade=${candidateAge}). Revertendo para Motorista por proximidade.`,
           )
           const motoristaVagas = vagas.filter((v) =>
             normalizeString(v.titulo || '').includes('motorista'),
@@ -631,7 +820,9 @@ Deno.serve(async (req: Request) => {
             )
             result.vaga_id = motoristaVaga.id
             result.confianca = 'alta'
-            result.justificativa = `Candidato possui objetivo de Motorista ("${candidatoObjetivo}"). Pela regra de negócio, permanece vinculado à vaga de Motorista ("${motoristaVaga.titulo}") para revisão humana caso necessário, sem realocação para Cobrador.`
+            result.justificativa = isMotoristaObjective
+              ? `Candidato possui objetivo de Motorista ("${candidatoObjetivo}"). Pela regra de negócio, permanece vinculado à vaga de Motorista ("${motoristaVaga.titulo}") para revisão humana caso necessário, sem realocação para Cobrador.`
+              : `Candidato possui histórico como Motorista / critérios incompatíveis com Cobrador (idade ${candidateAge || 'N/I'}). Pela regra de negócio, foi direcionado à vaga de Motorista da garagem mais próxima ("${motoristaVaga.titulo}").`
           }
         }
       }

@@ -8,6 +8,13 @@ import {
   sanitizeAndValidateName,
   sanitizeAndValidateEmail,
 } from '../_shared/validation.ts'
+import {
+  calculateHaversineDistance,
+  formatAddressString,
+  geocodeAddress,
+  getReferenceCoordsForText,
+  sanitizeAddressString,
+} from '../_shared/proximity.ts'
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -119,8 +126,9 @@ Deno.serve(async (req: Request) => {
       criteriosText = vaga.criterios_qualificacao
     }
 
-    const enderecoCV =
+    const rawEndereco =
       extracted.endereco || extracted.location || extracted.cidade || extracted.estado || ''
+    const enderecoCV = formatAddressString(rawEndereco) || rawEndereco
 
     const googleApiKey = Deno.env.get('GOOGLE_API_KEY')
     let menorDistanciaKm: number = 0
@@ -150,9 +158,13 @@ Deno.serve(async (req: Request) => {
           delays = [2000, 4000, 8000],
         ): Promise<number | null> => {
           try {
+            // Sanitizar a origem para remover "n°", "nº", etc.
+            const cleanOrigin = sanitizeAddressString(origin) || origin
+            const cleanDest = sanitizeAddressString(destination) || destination
+
             const url = new URL('https://maps.googleapis.com/maps/api/distancematrix/json')
-            url.searchParams.append('origins', origin)
-            url.searchParams.append('destinations', destination)
+            url.searchParams.append('origins', cleanOrigin)
+            url.searchParams.append('destinations', cleanDest)
             url.searchParams.append('key', googleApiKey)
             url.searchParams.append('units', 'metric')
 
@@ -196,6 +208,34 @@ Deno.serve(async (req: Request) => {
             if (minC === null || dist < minC) {
               minC = dist
             }
+          }
+        }
+
+        // Se Distance Matrix falhou (ex: endereço mal formatado ou limite de quota), tentar fallback por geocodificação ou palavras-chave de região
+        if (minC === null) {
+          try {
+            let candidateCoords = await geocodeAddress(enderecoCV, googleApiKey)
+            if (!candidateCoords) {
+              candidateCoords = getReferenceCoordsForText(enderecoCV)
+            }
+            if (candidateCoords) {
+              for (const locVaga of localizacoesVaga) {
+                let vagaCoords = await geocodeAddress(locVaga, googleApiKey)
+                if (!vagaCoords) {
+                  vagaCoords =
+                    getReferenceCoordsForText(locVaga) ||
+                    getReferenceCoordsForText(vaga.titulo || '')
+                }
+                if (vagaCoords) {
+                  const dist = calculateHaversineDistance(candidateCoords, vagaCoords)
+                  if (minC === null || dist < minC) {
+                    minC = dist
+                  }
+                }
+              }
+            }
+          } catch (fbErr: any) {
+            console.warn('Fallback de distância por coordenadas falhou:', fbErr?.message)
           }
         }
 
