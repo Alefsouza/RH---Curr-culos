@@ -551,7 +551,34 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
       currentNome = formattedPrefix
     }
 
-    // Reanálise SEMPRE reidentifica a vaga compatível com base no currículo atualizado
+    // =========================================================================
+    // SALVAGUARDA 1: MOTORISTA EM "REVISAR"
+    // Se existe uma análise prévia com resultado "revisar" para uma vaga de Motorista,
+    // a reanálise NÃO PODE reclassificar o candidato para Cobrador ou outra vaga:
+    // ele DEVE permanecer vinculado à vaga de Motorista, aguardando revisão humana (Paola).
+    // =========================================================================
+    const { data: previousMotoristaAnalises } = await supabase
+      .from('analises')
+      .select('id, vaga_id, resultado, criado_em, vagas (id, titulo)')
+      .eq('candidato_id', candidato.id)
+      .order('criado_em', { ascending: false })
+
+    let motoristaEmRevisaoVagaId: string | null = null
+    let motoristaEmRevisaoVagaTitulo: string = ''
+
+    if (Array.isArray(previousMotoristaAnalises)) {
+      for (const a of previousMotoristaAnalises) {
+        const vagaObj: any = Array.isArray(a.vagas) ? a.vagas[0] : a.vagas
+        const tituloVaga = (vagaObj?.titulo || '').toLowerCase()
+        if (tituloVaga.includes('motorista') && a.resultado === 'revisar') {
+          motoristaEmRevisaoVagaId = a.vaga_id
+          motoristaEmRevisaoVagaTitulo = vagaObj?.titulo || 'Motorista'
+          break
+        }
+      }
+    }
+
+    // Reanálise identifica a vaga compatível com base no currículo atualizado
     const identifyRes = await fetch(`${supabaseUrl}/functions/v1/identify-vaga-from-cv`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${supabaseKey}` },
@@ -571,9 +598,32 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
       })
     }
 
-    const identifiedVagaId = identifyData.vaga_id || null
-    const justificativaIdentificacao =
+    let identifiedVagaId = identifyData.vaga_id || null
+    let justificativaIdentificacao =
       identifyData.justificativa || 'Nenhuma vaga compatível foi identificada no sistema.'
+
+    // Se temos análise prévia de Motorista com resultado "revisar", verificar se identify tentou desviar para não-motorista (ex: Cobrador)
+    if (motoristaEmRevisaoVagaId) {
+      // Buscar título da vaga identificada (se houver)
+      let identifiedTitulo = ''
+      if (identifiedVagaId) {
+        const { data: idVagaObj } = await supabase
+          .from('vagas')
+          .select('titulo')
+          .eq('id', identifiedVagaId)
+          .maybeSingle()
+        identifiedTitulo = (idVagaObj?.titulo || '').toLowerCase()
+      }
+
+      // Se a vaga identificada não for Motorista (ex: Cobrador) ou for nula:
+      if (!identifiedTitulo.includes('motorista')) {
+        console.log(
+          `[reanalisar-candidato] Salvaguarda ativada: candidato ${candidato.id} possui análise "revisar" em vaga de Motorista ("${motoristaEmRevisaoVagaTitulo}"). Bloqueando reclassificação para "${identifiedTitulo || 'nenhuma'}" e mantendo vaga de Motorista.`,
+        )
+        identifiedVagaId = motoristaEmRevisaoVagaId
+        justificativaIdentificacao = `Candidato possui análise em status "revisar" para a vaga de ${motoristaEmRevisaoVagaTitulo}. Pela regra de salvaguarda, permanece vinculado à vaga de Motorista aguardando revisão humana (Paola), não podendo ser reclassificado para Cobrador.`
+      }
+    }
 
     // =========================================================================
     // CASO 1: NENHUMA VAGA COMPATÍVEL IDENTIFICADA (vaga_id = null)
@@ -702,6 +752,27 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
+    }
+
+    // =========================================================================
+    // SALVAGUARDA 2: PÓS-ANÁLISE E PRIORIDADE MOTORISTA
+    // Se o candidato foi analisado para Motorista e tiver análises anteriores de Cobrador,
+    // ou se o candidato atende a Motorista e Cobrador:
+    // 1. Prioridade absoluta para Motorista.
+    // 2. Se o resultado para Motorista for "revisar", ele DEVE permanecer em "revisar" na vaga de Motorista,
+    //    e NUNCA ser rebaixado para Cobrador.
+    // =========================================================================
+    const { data: currentVagaData } = await supabase
+      .from('vagas')
+      .select('titulo')
+      .eq('id', identifiedVagaId)
+      .maybeSingle()
+
+    const isCurrentMotorista = (currentVagaData?.titulo || '').toLowerCase().includes('motorista')
+
+    if (isCurrentMotorista) {
+      // Garantir que a vaga principal do candidato permaneça a de Motorista
+      await supabase.from('candidatos').update({ vaga_id: identifiedVagaId }).eq('id', candidato.id)
     }
 
     return new Response(

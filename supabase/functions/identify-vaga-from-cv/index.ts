@@ -57,6 +57,21 @@ function isGenericObjective(str: string): boolean {
   })
 }
 
+// Verifica se uma string de objetivo é especificamente de motorista / condutor
+function isMotoristaObjectiveString(str: string): boolean {
+  if (!str) return false
+  const norm = normalizeString(str)
+  if (!norm) return false
+  // Deve conter palavras como 'motorista', 'condutor', 'carreteiro', 'manobrista', etc.
+  return (
+    norm.includes('motorista') ||
+    norm.includes('condutor') ||
+    norm.includes('motor apoio') ||
+    norm.includes('carreteiro') ||
+    norm.includes('transporte coletivo')
+  )
+}
+
 // Verifica se o candidato tem experiência profissional relevante como motorista
 function hasMotoristaExperience(cvData: any): boolean {
   if (!cvData) return false
@@ -524,6 +539,59 @@ Deno.serve(async (req: Request) => {
     }
 
     // =========================================================================
+    // REGRA 1.5: CANDIDATO COM OBJETIVO ESPECÍFICO DE MOTORISTA
+    // Exemplo real: "Motorista Profissional - Ônibus/Atende/Caminhão/Ambulância"
+    // Regra solicitada: Quando o objetivo do candidato for específico de Motorista,
+    // avaliar SOMENTE as vagas de Motorista (da garagem mais próxima do candidato),
+    // NUNCA colocá-lo em vaga de Cobrador nem em outras áreas.
+    // =========================================================================
+    if (candidatoObjetivo && isMotoristaObjectiveString(candidatoObjetivo)) {
+      console.log(
+        `[identify-vaga-from-cv] Objetivo específico de Motorista detectado: "${candidatoObjetivo}". Avaliando SOMENTE vagas de Motorista por proximidade...`,
+      )
+
+      const motoristaVagas = vagas.filter((v) =>
+        normalizeString(v.titulo || '').includes('motorista'),
+      )
+
+      if (motoristaVagas.length > 0) {
+        const { vaga: chosenMotoristaVaga, menorDistanciaKm } = await pickBestVagaByProximity(
+          candidatoEndereco,
+          motoristaVagas,
+          googleApiKey,
+        )
+
+        let proxText = ''
+        if (menorDistanciaKm !== null) {
+          proxText = ` Selecionada a garagem mais próxima do endereço do candidato (${candidatoEndereco || 'N/I'}), a aproximadamente ${menorDistanciaKm.toFixed(1)} km.`
+        } else if (candidatoEndereco) {
+          proxText = ` Endereço do candidato: "${candidatoEndereco}". Selecionada a garagem de Motorista mais compatível.`
+        }
+
+        return new Response(
+          JSON.stringify({
+            vaga_id: chosenMotoristaVaga.id,
+            confianca: 'alta',
+            justificativa: `Objetivo do candidato é específico de Motorista ("${candidatoObjetivo}"). Pela regra de negócio, foram avaliadas estritamente as vagas de Motorista e selecionada a vaga "${chosenMotoristaVaga.titulo}". NUNCA alocar em vaga de Cobrador.${proxText}`,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
+      } else {
+        console.warn(
+          `[identify-vaga-from-cv] Objetivo de Motorista "${candidatoObjetivo}", mas não há vagas de Motorista ativas.`,
+        )
+        return new Response(
+          JSON.stringify({
+            vaga_id: null,
+            confianca: 'nenhuma',
+            justificativa: `O objetivo informado pelo candidato é específico de Motorista ("${candidatoObjetivo}"), mas atualmente não há vagas de Motorista ativas no sistema.`,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
+      }
+    }
+
+    // =========================================================================
     // REGRA 2: MATCH DIRETO DE OBJETIVO ESPECÍFICO -> TÍTULO DA VAGA
     // Quando houver correspondência, desempatar por endereço se houver múltiplas vagas do mesmo cargo.
     // Se o objetivo for específico e NÃO houver NENHUMA vaga ativa compatível:
@@ -796,15 +864,14 @@ Deno.serve(async (req: Request) => {
     if (result.vaga_id) {
       const targetVaga = vagas.find((v) => v.id === result.vaga_id)
       const normTargetTitle = normalizeString(targetVaga?.titulo || '')
-      if (normTargetTitle.includes('cobrador')) {
-        const normObj = normalizeString(candidatoObjetivo)
-        const isMotoristaObjective = normObj.includes('motorista') || normObj.includes('condutor')
-        const candidatoTemExpMotorista = hasMotoristaExperience(
-          parsedDadosExtraidos || cvDataToAnalyze,
-        )
-        const candidateAge = extractCandidateAge(parsedDadosExtraidos)
-        const foraIdadeCobrador = candidateAge !== null && (candidateAge < 18 || candidateAge > 56)
+      const isMotoristaObjective = isMotoristaObjectiveString(candidatoObjetivo)
+      const candidatoTemExpMotorista = hasMotoristaExperience(
+        parsedDadosExtraidos || cvDataToAnalyze,
+      )
+      const candidateAge = extractCandidateAge(parsedDadosExtraidos)
+      const foraIdadeCobrador = candidateAge !== null && (candidateAge < 18 || candidateAge > 56)
 
+      if (normTargetTitle.includes('cobrador')) {
         if (isMotoristaObjective || candidatoTemExpMotorista || foraIdadeCobrador) {
           console.log(
             `[identify-vaga-from-cv] Salvaguarda acionada: candidato foi associado a Cobrador, mas atende a condições para Motorista (objetivo=${isMotoristaObjective}, expMotorista=${candidatoTemExpMotorista}, idade=${candidateAge}). Revertendo para Motorista por proximidade.`,
@@ -821,9 +888,27 @@ Deno.serve(async (req: Request) => {
             result.vaga_id = motoristaVaga.id
             result.confianca = 'alta'
             result.justificativa = isMotoristaObjective
-              ? `Candidato possui objetivo de Motorista ("${candidatoObjetivo}"). Pela regra de negócio, permanece vinculado à vaga de Motorista ("${motoristaVaga.titulo}") para revisão humana caso necessário, sem realocação para Cobrador.`
+              ? `Candidato possui objetivo de Motorista ("${candidatoObjetivo}"). Pela regra de negócio, permanece estritamente vinculado à vaga de Motorista ("${motoristaVaga.titulo}") para avaliação/revisão humana caso necessário, sem realocação para Cobrador.`
               : `Candidato possui histórico como Motorista / critérios incompatíveis com Cobrador (idade ${candidateAge || 'N/I'}). Pela regra de negócio, foi direcionado à vaga de Motorista da garagem mais próxima ("${motoristaVaga.titulo}").`
           }
+        }
+      } else if (isMotoristaObjective && !normTargetTitle.includes('motorista')) {
+        // Se o objetivo é especificamente de Motorista, NUNCA pode ser associado a outra vaga não-Motorista
+        console.log(
+          `[identify-vaga-from-cv] Salvaguarda acionada: candidato com objetivo de Motorista foi associado a "${targetVaga?.titulo}". Revertendo para Motorista por proximidade.`,
+        )
+        const motoristaVagas = vagas.filter((v) =>
+          normalizeString(v.titulo || '').includes('motorista'),
+        )
+        if (motoristaVagas.length > 0) {
+          const { vaga: motoristaVaga } = await pickBestVagaByProximity(
+            candidatoEndereco,
+            motoristaVagas,
+            googleApiKey,
+          )
+          result.vaga_id = motoristaVaga.id
+          result.confianca = 'alta'
+          result.justificativa = `Candidato possui objetivo específico de Motorista ("${candidatoObjetivo}"). Vinculado à vaga de Motorista ("${motoristaVaga.titulo}").`
         }
       }
     }
