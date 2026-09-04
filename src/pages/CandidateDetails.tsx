@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -46,6 +46,58 @@ import { cn, safeText } from '@/lib/utils'
 export default function CandidateDetails() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
+
+  // Determina a origem da navegação:
+  // 1. Prioriza location.state?.from ('kanban' ou 'candidatos')
+  // 2. Fallback via document.referrer se disponível
+  // 3. Fallback padrão seguro: '/candidatos'
+  const locationState = location.state as { from?: string } | null
+  const originFrom = (() => {
+    if (locationState?.from === 'kanban') return 'kanban'
+    if (locationState?.from === 'candidatos') return 'candidatos'
+    if (typeof document !== 'undefined' && document.referrer) {
+      try {
+        const refUrl = new URL(document.referrer)
+        if (refUrl.origin === window.location.origin) {
+          if (refUrl.pathname === '/' || refUrl.pathname === '') return 'kanban'
+          if (refUrl.pathname.startsWith('/candidatos')) return 'candidatos'
+        }
+      } catch {
+        // Ignora erro ao parsear URL do referrer
+      }
+    }
+    return null
+  })()
+
+  const handleBack = () => {
+    if (originFrom === 'kanban') {
+      navigate('/')
+      return
+    }
+    if (originFrom === 'candidatos') {
+      navigate('/candidatos')
+      return
+    }
+    // Se há histórico no navegador anterior dentro da mesma sessão, podemos voltar,
+    // caso contrário navegamos com segurança para /candidatos
+    if (
+      window.history.length > 1 &&
+      document.referrer &&
+      document.referrer.includes(window.location.host)
+    ) {
+      navigate(-1)
+    } else {
+      navigate('/candidatos')
+    }
+  }
+
+  const backLabel =
+    originFrom === 'kanban'
+      ? 'Voltar ao Kanban'
+      : originFrom === 'candidatos'
+        ? 'Voltar aos Candidatos'
+        : 'Voltar'
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -370,8 +422,8 @@ export default function CandidateDetails() {
             'Não foi possível encontrar as informações deste candidato. Ele pode ter sido excluído.'}
         </p>
         <div className="flex gap-4">
-          <Button variant="outline" onClick={() => navigate(-1)}>
-            Voltar
+          <Button variant="outline" onClick={handleBack}>
+            {backLabel}
           </Button>
           {error && <Button onClick={() => fetchCandidateData()}>Tentar Novamente</Button>}
         </div>
@@ -400,10 +452,10 @@ export default function CandidateDetails() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => navigate(-1)}
+            onClick={handleBack}
             className="mb-2 -ml-2 text-muted-foreground"
           >
-            <ArrowLeft className="w-4 h-4 mr-2" /> Voltar
+            <ArrowLeft className="w-4 h-4 mr-2" /> {backLabel}
           </Button>
           <h1 className="text-2xl md:text-3xl font-bold flex flex-wrap items-center gap-3">
             {candidate.nome}
@@ -491,6 +543,7 @@ export default function CandidateDetails() {
               Este registro foi marcado como duplicado pelo sistema. O registro original é:{' '}
               <Link
                 to={`/candidato/${candidate.duplicado.id}`}
+                state={{ from: originFrom || 'candidatos' }}
                 className="font-semibold underline hover:text-yellow-900 transition-colors"
               >
                 {candidate.duplicado.nome}

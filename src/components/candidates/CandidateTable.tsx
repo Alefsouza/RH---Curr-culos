@@ -293,7 +293,11 @@ export function CandidateTable({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem asChild>
-            <Link to={`/candidato/${candidate.id}`} className="flex items-center cursor-pointer">
+            <Link
+              to={`/candidato/${candidate.id}`}
+              state={{ from: 'candidatos' }}
+              className="flex items-center cursor-pointer"
+            >
               <ExternalLink className="mr-2 h-4 w-4" /> Detalhes
             </Link>
           </DropdownMenuItem>

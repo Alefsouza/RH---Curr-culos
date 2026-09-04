@@ -166,8 +166,8 @@ export function KanbanCard({
           <h4 className="font-semibold text-slate-800 leading-tight hover:text-primary transition-colors">
             <Link
               to={`/candidato/${candidate.id}`}
+              state={{ from: 'kanban' }}
               onClick={(e) => e.stopPropagation()}
-              target="_blank"
               className="flex items-center justify-between group/link"
             >
               <span>{candidate.name}</span>
