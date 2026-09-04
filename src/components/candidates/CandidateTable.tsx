@@ -49,6 +49,16 @@ import {
 } from '@/components/ui/select'
 
 function StatusBadge({ status }: { status: string | null }) {
+  if (status === 'retirado_kanban') {
+    return (
+      <Badge
+        variant="secondary"
+        className="bg-amber-100 text-amber-800 border-amber-300 font-medium whitespace-nowrap"
+      >
+        Retirado Kanban
+      </Badge>
+    )
+  }
   if (status === 'revisar') {
     return (
       <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">

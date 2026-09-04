@@ -33,7 +33,7 @@ export async function fetchCandidates() {
     .select(`
       *,
       vagas (titulo),
-      analises (resultado, detalhes, criado_em)
+      analises (vaga_id, resultado, detalhes, criado_em)
     `)
     .neq('ativo_kanban', false)
     .order('criado_em', { ascending: false })
@@ -47,7 +47,13 @@ export async function fetchCandidates() {
           )
         : []
 
-      const latestIa = sortedAnalises[0]
+      const vagaId = (d as any).vaga_id
+      let latestIa = sortedAnalises[0]
+      if (vagaId) {
+        const analiseVaga = sortedAnalises.find((a: any) => a.vaga_id === vagaId)
+        if (analiseVaga) latestIa = analiseVaga
+      }
+
       return latestIa?.resultado === 'qualificado'
     })
     .map((d) => {
@@ -100,7 +106,90 @@ export async function updateCandidateStage(candidateId: string, stageId: string)
   }
 }
 
+export async function removeFromKanban(candidateId: string, vagaId?: string | null) {
+  // 1. Marcar no candidato como inativo no Kanban
+  const { error: candError } = await supabase
+    .from('candidatos')
+    .update({
+      ativo_kanban: false,
+      motivo_inativo: 'Retirado Kanban',
+    })
+    .eq('id', candidateId)
+
+  if (candError) throw candError
+
+  // 2. Se houver usuário autenticado, atualizar ou criar análise com status 'retirado_kanban'
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (user) {
+    let targetVagaId = vagaId
+    if (!targetVagaId) {
+      const { data: cand } = await supabase
+        .from('candidatos')
+        .select('vaga_id')
+        .eq('id', candidateId)
+        .maybeSingle()
+      targetVagaId = cand?.vaga_id || null
+    }
+
+    if (targetVagaId) {
+      const { data: existing } = await supabase
+        .from('analises')
+        .select('id, detalhes')
+        .eq('candidato_id', candidateId)
+        .eq('vaga_id', targetVagaId)
+        .maybeSingle()
+
+      if (existing) {
+        await supabase
+          .from('analises')
+          .update({
+            resultado: 'retirado_kanban',
+            detalhes: { ...((existing.detalhes as any) || {}), atualizado_manualmente: true },
+          })
+          .eq('id', existing.id)
+      } else {
+        await supabase.from('analises').insert({
+          candidato_id: candidateId,
+          vaga_id: targetVagaId,
+          resultado: 'retirado_kanban',
+          user_id: user.id,
+        })
+      }
+    } else {
+      // Se não possui vaga_id vinculada, atualiza a análise mais recente ou cria uma geral
+      const { data: latestAnalise } = await supabase
+        .from('analises')
+        .select('id, detalhes')
+        .eq('candidato_id', candidateId)
+        .order('criado_em', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (latestAnalise) {
+        await supabase
+          .from('analises')
+          .update({
+            resultado: 'retirado_kanban',
+            detalhes: { ...((latestAnalise.detalhes as any) || {}), atualizado_manualmente: true },
+          })
+          .eq('id', latestAnalise.id)
+      } else {
+        await supabase.from('analises').insert({
+          candidato_id: candidateId,
+          vaga_id: null,
+          resultado: 'retirado_kanban',
+          user_id: user.id,
+        })
+      }
+    }
+  }
+}
+
 export async function deleteCandidate(candidateId: string) {
+  // Mantido para compatibilidade, mas a ação do Kanban agora utiliza removeFromKanban
   const { error } = await supabase.from('candidatos').delete().eq('id', candidateId)
   if (error) throw error
 }

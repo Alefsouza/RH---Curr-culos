@@ -15,9 +15,19 @@ import {
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
-import { deleteCandidate } from '@/services/kanban'
+import { removeFromKanban } from '@/services/kanban'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 
 interface KanbanCardProps {
   candidate: Candidate
@@ -52,6 +62,8 @@ export function KanbanCard({
   onDragEnd,
 }: KanbanCardProps) {
   const { toast } = useToast()
+  const [showRemoveDialog, setShowRemoveDialog] = React.useState(false)
+  const [isRemoving, setIsRemoving] = React.useState(false)
 
   const handleDragStart = (e: React.DragEvent) => {
     e.dataTransfer.setData('text/plain', candidate.id)
@@ -60,18 +72,33 @@ export function KanbanCard({
     setTimeout(() => onDragStart(candidate.id), 0)
   }
 
-  const handleDelete = async (e: React.MouseEvent) => {
+  const handleOpenRemoveDialog = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    if (!confirm('Deseja excluir este currículo do Kanban?')) return
+    setShowRemoveDialog(true)
+  }
+
+  const handleConfirmRemove = async () => {
+    setIsRemoving(true)
     try {
-      await deleteCandidate(candidate.id)
-      toast({ title: 'Currículo excluído com sucesso.' })
+      await removeFromKanban(candidate.id, (candidate as any).vagaId)
+      toast({
+        title: 'Candidato retirado do Kanban',
+        description:
+          'O candidato continua disponível em Candidatos com o status "Retirado Kanban".',
+      })
       window.dispatchEvent(
         new CustomEvent('kanban:delete-candidate', { detail: { candidateId: candidate.id } }),
       )
-    } catch (err) {
-      toast({ variant: 'destructive', title: 'Erro ao excluir currículo. Tente novamente.' })
+      setShowRemoveDialog(false)
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao retirar do Kanban',
+        description: err?.message || 'Tente novamente.',
+      })
+    } finally {
+      setIsRemoving(false)
     }
   }
 
@@ -127,8 +154,9 @@ export function KanbanCard({
         <Button
           variant="ghost"
           size="icon"
+          title="Retirar do Kanban"
           className="h-6 w-6 text-slate-400 hover:text-red-600 hover:bg-red-50"
-          onClick={handleDelete}
+          onClick={handleOpenRemoveDialog}
         >
           <Trash2 size={14} />
         </Button>
@@ -232,6 +260,37 @@ export function KanbanCard({
           </div>
         </div>
       </CardContent>
+
+      <AlertDialog open={showRemoveDialog} onOpenChange={setShowRemoveDialog}>
+        <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Retirar candidato do Kanban?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O candidato <strong className="text-slate-800">{candidate.name}</strong> deixará de
+              aparecer no Kanban e sua qualificação será definida como{' '}
+              <strong className="text-slate-800">Retirado Kanban</strong>.
+              <br />
+              <br />
+              Ele <span className="font-semibold text-emerald-600">continuará disponível</span> na
+              página de Candidatos e poderá voltar ao Kanban a qualquer momento ao mudar sua
+              qualificação para <strong>Sim</strong>.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isRemoving}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isRemoving}
+              onClick={(e) => {
+                e.preventDefault()
+                handleConfirmRemove()
+              }}
+              className="bg-amber-600 hover:bg-amber-700 text-white focus:ring-amber-600"
+            >
+              {isRemoving ? 'Retirando...' : 'Retirar do Kanban'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   )
 }

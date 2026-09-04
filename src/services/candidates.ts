@@ -266,6 +266,25 @@ export async function updateAnaliseStatus(
     })
     if (error) throw error
   }
+
+  // Se o status for alterado para 'qualificado', reativar o candidato no Kanban (reversibilidade)
+  if (status === 'qualificado') {
+    await supabase
+      .from('candidatos')
+      .update({
+        ativo_kanban: true,
+        motivo_inativo: null,
+      })
+      .eq('id', cv_id)
+  } else if (status === 'retirado_kanban') {
+    await supabase
+      .from('candidatos')
+      .update({
+        ativo_kanban: false,
+        motivo_inativo: 'Retirado Kanban',
+      })
+      .eq('id', cv_id)
+  }
 }
 
 export async function deleteCandidate(id: string) {

@@ -195,6 +195,8 @@ export default function CandidatesPage() {
     currentStatus: string | null,
     vagaId: string | null,
   ) => {
+    // Se estiver qualificado, muda para 'nao_qualificado' (ou 'retirado_kanban')
+    // Se estiver em 'retirado_kanban', 'nao_qualificado', 'revisar' ou 'pendente', ao mudar para Sim vai para 'qualificado'
     const newStatus = currentStatus === 'qualificado' ? 'nao_qualificado' : 'qualificado'
     try {
       const {
@@ -208,7 +210,12 @@ export default function CandidatesPage() {
       }
 
       await updateAnaliseStatus(candidateId, vagaId, newStatus, user.id)
-      toast({ title: 'Status atualizado com sucesso' })
+      toast({
+        title:
+          newStatus === 'qualificado'
+            ? 'Candidato qualificado e adicionado ao Kanban'
+            : 'Status atualizado com sucesso',
+      })
       loadData()
     } catch (err: any) {
       toast({ variant: 'destructive', title: 'Erro ao atualizar status', description: err.message })
@@ -448,6 +455,7 @@ export default function CandidatesPage() {
                 <SelectItem value="todos">Todos os status</SelectItem>
                 <SelectItem value="qualificado">Qualificados</SelectItem>
                 <SelectItem value="nao_qualificado">Não Qualificados</SelectItem>
+                <SelectItem value="retirado_kanban">Retirados do Kanban</SelectItem>
                 <SelectItem value="revisar">Para Revisão</SelectItem>
                 <SelectItem value="sem_etapa">Sem Etapa</SelectItem>
               </SelectContent>

@@ -103,6 +103,8 @@ export default function Layout() {
       if (r === 'qualificado' || r === 'pre_aprovado') {
         statusText = 'Qualificado'
         isQualified = true
+      } else if (r === 'retirado_kanban') {
+        statusText = 'Retirado Kanban'
       } else if (r === 'nao_qualificado' || r === 'reprovado') {
         statusText = 'Não Qualificado'
       } else if (r === 'revisar') {
@@ -180,9 +182,11 @@ export default function Layout() {
                                   className={`text-xs px-2 py-1 rounded-full font-medium ${
                                     status.isQualified
                                       ? 'bg-green-100 text-green-800'
-                                      : status.text === 'Não Qualificado'
-                                        ? 'bg-red-100 text-red-800'
-                                        : 'bg-slate-100 text-slate-800'
+                                      : status.text === 'Retirado Kanban'
+                                        ? 'bg-amber-100 text-amber-800'
+                                        : status.text === 'Não Qualificado'
+                                          ? 'bg-red-100 text-red-800'
+                                          : 'bg-slate-100 text-slate-800'
                                   }`}
                                 >
                                   {status.text}

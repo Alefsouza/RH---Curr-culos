@@ -24,6 +24,8 @@ export function DetailsTable({ candidatos, etapas, vagas, analises }: any) {
         return 'bg-green-100 text-green-800 hover:bg-green-200 border-none'
       case 'nao_qualificado':
         return 'bg-red-100 text-red-800 hover:bg-red-200 border-none'
+      case 'retirado_kanban':
+        return 'bg-amber-100 text-amber-800 hover:bg-amber-200 border-none'
       case 'revisar':
         return 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200 border-none'
       default:
@@ -39,6 +41,8 @@ export function DetailsTable({ candidatos, etapas, vagas, analises }: any) {
         return 'Qualificado'
       case 'nao_qualificado':
         return 'Não Qualificado'
+      case 'retirado_kanban':
+        return 'Retirado Kanban'
       case 'revisar':
         return 'Revisar'
       default:

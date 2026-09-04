@@ -640,15 +640,23 @@ export default function CandidateDetails() {
                             ? 'default'
                             : a.resultado === 'nao_qualificado'
                               ? 'destructive'
-                              : 'secondary'
+                              : a.resultado === 'retirado_kanban'
+                                ? 'outline'
+                                : 'secondary'
                         }
-                        className="shrink-0"
+                        className={cn(
+                          'shrink-0',
+                          a.resultado === 'retirado_kanban' &&
+                            'bg-amber-100 text-amber-800 border-amber-300',
+                        )}
                       >
                         {a.resultado === 'qualificado'
                           ? 'Qualificado'
                           : a.resultado === 'nao_qualificado'
                             ? 'Não Qualificado'
-                            : 'Revisar'}
+                            : a.resultado === 'retirado_kanban'
+                              ? 'Retirado Kanban'
+                              : 'Revisar'}
                       </Badge>
                     </div>
                   </CardHeader>
