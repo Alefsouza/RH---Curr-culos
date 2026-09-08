@@ -63,7 +63,9 @@ Deno.serve(async (req: Request) => {
     }
 
     if (body.candidate_id) {
-      console.log(`[batch-reanalyze-all] Executando reanálise direta para candidato único ${body.candidate_id}`)
+      console.log(
+        `[batch-reanalyze-all] Executando reanálise direta para candidato único ${body.candidate_id}`,
+      )
       const res = await fetch(`${supabaseUrl}/functions/v1/reanalisar-candidato`, {
         method: 'POST',
         headers: {
@@ -73,10 +75,13 @@ Deno.serve(async (req: Request) => {
         body: JSON.stringify({ candidate_id: body.candidate_id }),
       })
       const resJson = await res.json()
-      return new Response(JSON.stringify({ singleCandidate: true, status: res.status, ok: res.ok, data: resJson }), {
-        status: res.status,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(
+        JSON.stringify({ singleCandidate: true, status: res.status, ok: res.ok, data: resJson }),
+        {
+          status: res.status,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
     }
 
     const totalPending = pendingCandidates.length
