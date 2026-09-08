@@ -22,39 +22,92 @@ export async function getWhatsappDashboardData() {
   const { data: userData } = await supabase.auth.getUser()
   if (!userData.user) throw new Error('Não autenticado')
 
-  const msgQuery = supabase
-    .from('mensagens_whatsapp')
-    .select(
-      'id, candidato_id, conteudo, direcao, criado_em, uazapi_message_id, external_id, numero_whatsapp, template_id, tipo, candidatos(nome, telefone, user_id, ultima_resposta_whatsapp, etapa_id)',
-    )
-    .not('conteudo', 'is', null)
-    .neq('conteudo', '')
-    .order('criado_em', { ascending: true })
+  // 1. Busca todos os candidatos do sistema com sua etapa definida e status no Kanban
+  // Ancoramos a busca de WhatsApp nos candidatos que estão no Kanban ou vinculados
+  const { data: candsData, error: candsError } = await supabase
+    .from('candidatos')
+    .select('id, nome, telefone, etapa_id, ativo_kanban, vaga_id, ultima_resposta_whatsapp')
+    .not('etapa_id', 'is', null)
+    .neq('ativo_kanban', false)
 
-  const resQuery = supabase
-    .from('respostas_whatsapp')
-    .select('candidato_id, resposta, mensagem_id, candidatos!inner(user_id)')
-    .order('criado_em', { ascending: true })
-
-  const candsQuery = supabase.from('candidatos').select('id, etapa_id')
-
-  const [
-    { data: convData, error: convError },
-    { data: resData, error: resError },
-    { data: candsData, error: candsError },
-  ] = await Promise.all([msgQuery, resQuery, candsQuery])
-
-  if (convError) throw convError
-
-  if (resError) {
-    console.warn('Aviso: Falha ao buscar respostas (ignorado)', resError)
-  }
+  if (candsError) throw candsError
 
   const candidatoEtapaMap: Record<string, string | null> = {}
+  const candidatoInfoMap: Record<
+    string,
+    { nome: string; telefone: string; etapaId: string | null; ultimaResposta: string | null }
+  > = {}
+  const candidateIds: string[] = []
+
   if (candsData) {
     candsData.forEach((c) => {
       candidatoEtapaMap[c.id] = c.etapa_id
+      candidatoInfoMap[c.id] = {
+        nome: c.nome,
+        telefone: c.telefone || '',
+        etapaId: c.etapa_id,
+        ultimaResposta: c.ultima_resposta_whatsapp || null,
+      }
+      candidateIds.push(c.id)
     })
+  }
+
+  // Se não houver candidatos ativos no Kanban, retorna dashboard vazio
+  if (candidateIds.length === 0) {
+    return {
+      stats: { sent: 0, yes: 0, no: 0 },
+      statsByStage: {},
+      candidates: [],
+    }
+  }
+
+  // 2. Busca as mensagens ancoradas nos candidatos do Kanban em blocos de IDs
+  // Garante que mensagens antigas e recentes apareçam sem serem truncadas pelo limite de 1000 linhas
+  const BATCH_SIZE = 100
+  const msgPromises: PromiseLike<any>[] = []
+  for (let i = 0; i < candidateIds.length; i += BATCH_SIZE) {
+    const batch = candidateIds.slice(i, i + BATCH_SIZE)
+    msgPromises.push(
+      Promise.resolve(
+        supabase
+          .from('mensagens_whatsapp')
+          .select(
+            'id, candidato_id, conteudo, direcao, criado_em, uazapi_message_id, external_id, numero_whatsapp, template_id, tipo, candidatos(nome, telefone, user_id, ultima_resposta_whatsapp, etapa_id)',
+          )
+          .in('candidato_id', batch)
+          .not('conteudo', 'is', null)
+          .neq('conteudo', '')
+          .order('criado_em', { ascending: true }),
+      ),
+    )
+  }
+
+  const resQuery = Promise.resolve(
+    supabase
+      .from('respostas_whatsapp')
+      .select('candidato_id, resposta, mensagem_id, candidatos!inner(user_id)')
+      .in('candidato_id', candidateIds)
+      .order('criado_em', { ascending: true }),
+  )
+
+  const [msgResults, { data: resData, error: resError }] = await Promise.all([
+    Promise.all(msgPromises),
+    resQuery,
+  ])
+
+  let convData: any[] = []
+  for (const res of msgResults) {
+    if (res.error) throw res.error
+    if (res.data) {
+      convData = convData.concat(res.data)
+    }
+  }
+
+  // Ordena todas as mensagens cronologicamente (crescente para reconstruir o diálogo)
+  convData.sort((a, b) => new Date(a.criado_em).getTime() - new Date(b.criado_em).getTime())
+
+  if (resError) {
+    console.warn('Aviso: Falha ao buscar respostas (ignorado)', resError)
   }
 
   const statsByStage: Record<string, { sent: number; yes: number; no: number }> = {}
@@ -171,16 +224,18 @@ export async function getWhatsappDashboardData() {
     if (!c.conteudo || c.conteudo.trim() === '') return
 
     const candidateId = c.candidato_id
+    const candInfo = candidatoInfoMap[candidateId]
 
     if (!candMap.has(candidateId)) {
       candMap.set(candidateId, {
         id: candidateId,
-        nome: (c.candidatos as any)?.nome || 'Contato Desconhecido',
-        telefone: (c.candidatos as any)?.telefone || c.numero_whatsapp || '',
+        nome: (c.candidatos as any)?.nome || candInfo?.nome || 'Contato Desconhecido',
+        telefone: (c.candidatos as any)?.telefone || candInfo?.telefone || c.numero_whatsapp || '',
         lastMessage: '',
         lastMessageTime: '',
         lastResponse: (() => {
-          const dbResponse = (c.candidatos as any)?.ultima_resposta_whatsapp
+          const dbResponse =
+            (c.candidatos as any)?.ultima_resposta_whatsapp || candInfo?.ultimaResposta
           if (dbResponse) {
             const lower = dbResponse.toLowerCase()
             if (lower === 'sim') return 'sim'
@@ -189,7 +244,7 @@ export async function getWhatsappDashboardData() {
           return null
         })(),
         isUnlinked: !c.candidato_id,
-        etapaId: (c.candidatos as any)?.etapa_id || null,
+        etapaId: (c.candidatos as any)?.etapa_id || candInfo?.etapaId || null,
         conversations: [],
       })
     }
