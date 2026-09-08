@@ -263,7 +263,19 @@ Dados completos do currículo:
 ${JSON.stringify(cvData)}
 
 DIRETRIZES CRÍTICAS PARA AVALIAÇÃO DE CRITÉRIOS:
-1. REGRA DE FAIXA ETÁRIA / IDADE (ATENÇÃO MÁXIMA):
+1. REGRA CONDICIONAL AO GÊNERO / SEXO (EX: "MULHERES APENAS SE TIVER CATEGORIA D NA CNH"):
+   - Quando nos critérios da vaga houver regras condicionais do tipo "Mulheres apenas se tiver categoria D na CNH" ou "Mulheres apenas se...":
+     * Identifique o gênero/sexo do candidato com base no primeiro nome, pronomes, gênero informado ou pistas contextuais do currículo (ex: Maria, Ana, Camila, Juliana, etc. = Mulher; Carlos, João, Marcos, etc. = Homem).
+     * SE O CANDIDATO FOR MULHER:
+       - Deve-se entender que para essa vaga SÓ se admite mulher se ela possuir a CNH especificada (ex: CNH Categoria D ou E).
+       - Se a mulher POSSUIR CNH Categoria D (ou superior, ex: D, E, AD, AE): esse critério condicional está ATENDIDO ✅ (coloque em 'matched_criteria').
+       - Se a mulher NÃO POSSUIR CNH Categoria D (ou seja, não tem CNH, tem apenas CNH A, B ou AB, ou a categoria D não foi comprovada): ela DEVE SER REPROVADA para essa vaga ❌ com resultado = "nao_qualificado", score penalizado e motivo claro (ex: "Reprovada por critério da vaga: candidata é mulher e não possui CNH categoria D exigida para candidatas do sexo feminino."). Registre em 'unmatched_criteria'.
+     * SE O CANDIDATO FOR HOMEM:
+       - Homem NÃO entra nessa regra! A categoria da CNH NÃO deve ser avaliada nem exigida por causa desse critério condicional.
+       - NUNCA reprove, desqualifique, penalize pontuação nem envie para revisão um candidato homem por não ter CNH D quando esse critério condicional de mulheres estiver presente. Para o homem, esse critério condicional é COMPLETAMENTE IGNORADO / NÃO APLICÁVEL (ou considerado atendido/não exigido). NUNCA coloque falta de CNH D em 'unmatched_criteria' para homem sob essa regra.
+     * Os demais critérios da vaga (idade/faixa etária, escolaridade, localização, etc.) continuam valendo normalmente para todos (homens e mulheres).
+
+2. REGRA DE FAIXA ETÁRIA / IDADE (ATENÇÃO MÁXIMA):
    - A idade SÓ É CRITÉRIO quando os critérios da vaga MENCIONAREM EXPLICITAMENTE uma exigência de faixa etária ou idade (exemplos de vagas COM critério de idade: "18 a 22 anos", "entre 18 e 24 anos", "mínimo 18 anos", "até 30 anos", "jovem aprendiz 18 a 22 anos").
    - SE A VAGA NÃO MENCIONAR EXPLICITAMENTE NENHUMA EXIGÊNCIA DE IDADE / FAIXA ETÁRIA NOS CRITÉRIOS:
      * A idade ou data de nascimento do candidato DEVE SER COMPLETAMENTE IGNORADA na avaliação.
@@ -274,23 +286,23 @@ DIRETRIZES CRÍTICAS PARA AVALIAÇÃO DE CRITÉRIOS:
      * Se a idade do candidato (ou calculada pela data de nascimento) for identificada e estiver COMPROVADAMENTE FORA da faixa exigida (ex: candidato com 31 anos para vaga que exige expressamente 18 a 22 anos): o candidato DEVE receber resultado = "nao_qualificado", score penalizado e o motivo DEVE explicitar a reprovação por idade ("Reprovado por faixa etária: Candidato possui X anos, fora da faixa exigida de Y a Z anos."). Inclua em 'unmatched_criteria'.
      * Se a vaga exigir faixa etária mas o currículo não contiver idade/data de nascimento, marque para 'revisar' com observação clara.
 
-2. ESCOLARIDADE É REQUISITO MÍNIMO (ENSINO FUNDAMENTAL / MÉDIO / SUPERIOR):
+3. ESCOLARIDADE É REQUISITO MÍNIMO (ENSINO FUNDAMENTAL / MÉDIO / SUPERIOR):
    - Todo critério de escolaridade (ex: "Ensino Fundamental", "Ensino Fundamental incompleto", "Ensino Médio") expressa a ESCOLARIDADE MÍNIMA exigida. NUNCA penalize ou reprove um candidato por ter escolaridade superior à exigida.
    - Se o critério da vaga exigir "Ensino Fundamental" (incompleto ou completo), candidatos com Ensino Fundamental (completo/incompleto), Ensino Médio (completo/incompleto) ou Ensino Superior (completo/incompleto) ATENDEM PLENAMENTE ao requisito de escolaridade (NÃO reprovar por escolaridade).
    - Registre em 'matched_criteria' (ex: "Requerido Ensino Fundamental, candidato possui Ensino Médio/Superior") e NUNCA em 'unmatched_criteria'.
    - Se o critério exigir "Ensino Médio", candidatos com Ensino Médio ou Ensino Superior atendem ao requisito.
 
-3. CURSOS DE TRANSPORTE COLETIVO E CREDENCIAIS:
+4. CURSOS DE TRANSPORTE COLETIVO E CREDENCIAIS:
    - Quando a vaga exigir ou mencionar "Curso" ou "Curso de transporte coletivo de passageiros" (ex: vagas de Motorista): considere VÁLIDO QUALQUER curso relativo a transporte coletivo (ex: "Curso de Transporte Coletivo", "Condutor de Veículo de Transporte Coletivo de Passageiros", "Resolução 168 / 789 do CONTRAN transporte coletivo", etc.).
    - CONSIDERE TAMBÉM quando o candidato colocar/informar "Credencial de Transporte Coletivo", "Credencial de Motorista de Coletivo" ou "Credencial" nas formações, cursos, certificações ou observações da CNH como atendimento pleno a essa exigência de curso/formação.
 
-4. REGRA DE VAGAS DE MOTORISTA E STATUS "REVISAR" (IMPORTANTE):
+5. REGRA DE VAGAS DE MOTORISTA E STATUS "REVISAR" (IMPORTANTE):
    - Para vagas de MOTORISTA: caso falte comprovação clara ou haja dúvidas sobre tempo de experiência, categoria da CNH ou cursos/credenciais que justifiquem validação humana, o resultado DEVE ser "revisar".
    - Quando o resultado for "revisar", o candidato NÃO deve ser considerado desqualificado nem rebaixado para outra função — ele ficará pendente na vaga de Motorista para a Paola revisar manualmente.
 
-5. AVALIAÇÃO GERAL E RESPEITO AOS CRITÉRIOS EXPLÍCITOS:
-   - Continue considerando e respeitando todos os critérios explícitos de cada vaga (ex: exigência de CNH D ou E, tempo de experiência mandatório vs desejável, etc.).
-   - As regras de flexibilização de escolaridade e credencial de transporte NÃO sobrepõem critérios explícitos da vaga (por exemplo: se a vaga exige CNH D/E, o candidato ainda precisa ter CNH D/E).
+6. AVALIAÇÃO GERAL E RESPEITO AOS CRITÉRIOS EXPLÍCITOS:
+   - Continue considerando e respeitando todos os critérios explícitos de cada vaga (ex: exigência de CNH D ou E para motorista, tempo de experiência mandatório vs desejável, etc.).
+   - As regras de flexibilização de escolaridade e credencial de transporte NÃO sobrepõem critérios explícitos da vaga (por exemplo: se a vaga exige CNH D/E para todos os candidatos, o candidato ainda precisa ter CNH D/E).
    - Não invente critérios eliminatórios que não constem na descrição ou critérios da vaga.
 
 Retorne ESTRITAMENTE um JSON com as seguintes chaves:
