@@ -1,11 +1,11 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
-Deno.test('Invocar reanálise do André Luiz Dos Santos e verificar resultado', async () => {
+Deno.test('Invocar reanálise do Henrique Amâncio Da Silva Miranda e verificar resultado', async () => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
   const supabase = createClient(supabaseUrl, serviceRoleKey)
 
-  const candidateId = 'f1a2b4c2-314e-4e9e-a8ed-2ad98af3f72e'
+  const candidateId = '9c351c31-33cd-45c9-b024-29f5abb0927e'
 
   console.log(`[TEST] Disparando reanálise para o candidato ${candidateId}...`)
 
