@@ -305,6 +305,10 @@ DIRETRIZES CRÍTICAS PARA AVALIAÇÃO DE CRITÉRIOS:
    - As regras de flexibilização de escolaridade e credencial de transporte NÃO sobrepõem critérios explícitos da vaga (por exemplo: se a vaga exige CNH D/E para todos os candidatos, o candidato ainda precisa ter CNH D/E).
    - Não invente critérios eliminatórios que não constem na descrição ou critérios da vaga.
 
+7. REGRA DE CANDIDATO DIRECIONADO POR EXPERIÊNCIA / FALLBACK DE OBJETIVO:
+   - Quando o candidato tiver um objetivo específico que difere do título da vaga (ex: objetivo "Manutenção" avaliado para a vaga de "Abastecedor Leste"), considere prioritariamente a EXPERIÊNCIA PROFISSIONAL do candidato compatível com a vaga (ex: experiência como Frentista, Abastecimento, Posto Shell é altamente aderente para a vaga de Abastecedor).
+   - NUNCA reprove o candidato apenas pelo campo "objetivo" ter uma palavra diferente do título da vaga, desde que o histórico profissional atenda ao perfil e às exigências da vaga.
+
 Retorne ESTRITAMENTE um JSON com as seguintes chaves:
 - resultado (qualificado, nao_qualificado ou revisar)
 - detalhes (objeto com score (número inteiro de 0 a 100 representando a compatibilidade geral do candidato), matched_criteria (array de objetos com nome (string) e evidencia (string)), unmatched_criteria (array de objetos com nome (string) e motivo (string)), summary (string com resumo conciso da análise), pontos_fortes (array de strings), pontos_fracos (array de strings), aderencia (string ex: '85%') e motivo (string, explicação breve sobre a decisão, focando no critério eliminatório como idade ou localização se for reprovado))`
