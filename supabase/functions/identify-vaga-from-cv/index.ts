@@ -1121,7 +1121,7 @@ Deno.serve(async (req: Request) => {
          - EXCEÇÃO: Apenas atribua Cobrador se o candidato colocou expressamente como objetivo único/pretendido "Cobrador" (e não tenha histórico de motorista/idade impeditiva).
 
       4. HISTÓRICO PROFISSIONAL, CRITÉRIOS DA VAGA E REGRAS DE ESCOLARIDADE / CURSOS / GÊNERO:
-         - REGRA CONDICIONAL AO GÊNERO (ex: "Mulheres apenas se tiver categoria D na CNH"): Se os critérios de uma vaga (como Cobrador) contêm regra condicional ao gênero feminino exigindo CNH D, mulheres sem CNH D não são compatíveis com a vaga. Homens NÃO entram nessa regra e NÃO devem ter CNH D exigida para essa vaga.
+         - REGRA CONDICIONAL AO GÊNERO (ex: "Mulheres apenas se tiver categoria D na CNH"): Se os critérios de uma vaga (como Cobrador) contêm regra condicional ao gênero feminino exigindo CNH D, mulheres sem CNH D não são compatíveis com a vaga. Para homens na vaga de Cobrador, NÃO verificar nem exigir CNH — a ausência de CNH ou de dados de CNH em candidato homem NUNCA deve ser impeditiva.
          - ESCOLARIDADE: Ensino Fundamental incompleto ou completo considera também Ensino Médio e Superior. Se a vaga exige Ensino Fundamental, candidatos com Ensino Médio ou Superior atendem ao requisito.
          - CURSOS DE TRANSPORTE COLETIVO: Considere qualquer curso relativo a transporte coletivo e considere também quando constar "Credencial de Transporte Coletivo" como curso/formação.
          - CRITÉRIOS EXPLÍCITOS: Continue considerando os critérios explícitos de cada vaga (ex: exigência de CNH categoria D ou E para Motorista). As novas regras não podem sobrepor um critério explícito da vaga.

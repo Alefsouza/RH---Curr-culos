@@ -249,11 +249,13 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    const isCobrador = vaga.titulo?.toLowerCase().includes('cobrador') || false
+
     const promptText = `Analise este currículo comparado com os critérios da vaga "${vaga.titulo}":
 - Descrição da vaga: ${vaga.descricao || 'Não informada'}
 - Critérios textuais: ${criteriosText}
 - Localização do candidato: ${enderecoCV || 'Não informado'}
-- Idade do candidato: ${idadeCandidato !== null ? `${idadeCandidato} anos` : 'Não informada'}
+- Idade do candidato: ${idadeCandidato !== null ? `${idadeCandidato} anos` : 'Não informada (null/ausente)'}
 - Data de nascimento: ${dataNascimentoCandidato || 'Não informada'}
 - Distância até a vaga: ${distanciaCalculada ? menorDistanciaKm.toFixed(2) : 0} km
 - Raio aceito: ${raioKm} km
@@ -265,26 +267,27 @@ ${JSON.stringify(cvData)}
 DIRETRIZES CRÍTICAS PARA AVALIAÇÃO DE CRITÉRIOS:
 1. REGRA CONDICIONAL AO GÊNERO / SEXO (EX: "MULHERES APENAS SE TIVER CATEGORIA D NA CNH"):
    - Quando nos critérios da vaga houver regras condicionais do tipo "Mulheres apenas se tiver categoria D na CNH" ou "Mulheres apenas se...":
-     * Identifique o gênero/sexo do candidato com base no primeiro nome, pronomes, gênero informado ou pistas contextuais do currículo (ex: Maria, Ana, Camila, Juliana, etc. = Mulher; Carlos, João, Marcos, etc. = Homem).
+     * Identifique o gênero/sexo do candidato com base no primeiro nome, pronomes, gênero informado ou pistas contextuais do currículo (ex: Maria, Ana, Camila, Juliana, etc. = Mulher; Carlos, João, Marcos, Henrique, etc. = Homem).
      * SE O CANDIDATO FOR MULHER:
        - Deve-se entender que para essa vaga SÓ se admite mulher se ela possuir a CNH especificada (ex: CNH Categoria D ou E).
        - Se a mulher POSSUIR CNH Categoria D (ou superior, ex: D, E, AD, AE): esse critério condicional está ATENDIDO ✅ (coloque em 'matched_criteria').
        - Se a mulher NÃO POSSUIR CNH Categoria D (ou seja, não tem CNH, tem apenas CNH A, B ou AB, ou a categoria D não foi comprovada): ela DEVE SER REPROVADA para essa vaga ❌ com resultado = "nao_qualificado", score penalizado e motivo claro (ex: "Reprovada por critério da vaga: candidata é mulher e não possui CNH categoria D exigida para candidatas do sexo feminino."). Registre em 'unmatched_criteria'.
      * SE O CANDIDATO FOR HOMEM:
-       - Homem NÃO entra nessa regra! A categoria da CNH NÃO deve ser avaliada nem exigida por causa desse critério condicional.
-       - NUNCA reprove, desqualifique, penalize pontuação nem envie para revisão um candidato homem por não ter CNH D quando esse critério condicional de mulheres estiver presente. Para o homem, esse critério condicional é COMPLETAMENTE IGNORADO / NÃO APLICÁVEL (ou considerado atendido/não exigido). NUNCA coloque falta de CNH D em 'unmatched_criteria' para homem sob essa regra.
-     * Os demais critérios da vaga (idade/faixa etária, escolaridade, localização, etc.) continuam valendo normalmente para todos (homens e mulheres).
+       - Homem NÃO entra nessa regra! A regra condicional aplica-se SOMENTE a mulheres.
+       - Para vaga de Cobrador: homem NÃO precisa de CNH, NÃO precisa informar CNH e NÃO deve ter categoria de CNH avaliada. A falta de CNH ou de dados de CNH em homem NUNCA é motivo de reprovação nem de revisão ("revisar")!
+       - NUNCA reprove, desqualifique, penalize pontuação nem envie para revisão um candidato homem por não ter CNH D ou por não informar CNH quando esse critério condicional de mulheres estiver presente. Para o homem, esse critério condicional é COMPLETAMENTE IGNORADO / NÃO APLICÁVEL (ou considerado atendido/não exigido). NUNCA coloque falta de CNH ou CNH D em 'unmatched_criteria' para homem sob essa regra.
+     * Os demais critérios da vaga (escolaridade, localização, etc.) continuam valendo normalmente para todos (homens e mulheres).
 
 2. REGRA DE FAIXA ETÁRIA / IDADE (ATENÇÃO MÁXIMA):
-   - A idade SÓ É CRITÉRIO quando os critérios da vaga MENCIONAREM EXPLICITAMENTE uma exigência de faixa etária ou idade (exemplos de vagas COM critério de idade: "18 a 22 anos", "entre 18 e 24 anos", "mínimo 18 anos", "até 30 anos", "jovem aprendiz 18 a 22 anos").
+   - A idade SÓ É CRITÉRIO quando os critérios da vaga MENCIONAREM EXPLICITAMENTE uma exigência de faixa etária ou idade (exemplos de vagas COM critério de idade: "18 a 22 anos", "entre 18 e 24 anos", "mínimo 18 anos", "até 30 anos", "Idade dos 19 até 56 anos").
    - SE A VAGA NÃO MENCIONAR EXPLICITAMENTE NENHUMA EXIGÊNCIA DE IDADE / FAIXA ETÁRIA NOS CRITÉRIOS:
      * A idade ou data de nascimento do candidato DEVE SER COMPLETAMENTE IGNORADA na avaliação.
      * NUNCA reprove, desqualifique, penalize a pontuação nem envie para revisão um candidato por ausência de idade informada, falta de data de nascimento ou pela idade que possui quando a vaga não estipula idade.
      * NUNCA mencione falta de informação de idade como motivo de reprovação ou desqualificação quando a vaga não tiver critério de idade.
    - SOMENTE quando a vaga EXIGIR EXPLICITAMENTE uma faixa etária:
-     * O critério passa a ser eliminatório.
-     * Se a idade do candidato (ou calculada pela data de nascimento) for identificada e estiver COMPROVADAMENTE FORA da faixa exigida (ex: candidato com 31 anos para vaga que exige expressamente 18 a 22 anos): o candidato DEVE receber resultado = "nao_qualificado", score penalizado e o motivo DEVE explicitar a reprovação por idade ("Reprovado por faixa etária: Candidato possui X anos, fora da faixa exigida de Y a Z anos."). Inclua em 'unmatched_criteria'.
-     * Se a vaga exigir faixa etária mas o currículo não contiver idade/data de nascimento, marque para 'revisar' com observação clara.
+     * O critério só é eliminatório quando a idade FOR CONHECIDA / COMPROVADA.
+     * Se a idade do candidato (ou calculada pela data de nascimento) for identificada e estiver COMPROVADAMENTE FORA da faixa exigida (ex: candidato com 58 anos para vaga de 19 a 56 anos): o candidato DEVE receber resultado = "nao_qualificado", score penalizado e o motivo DEVE explicitar a reprovação por idade ("Reprovado por faixa etária: Candidato possui X anos, fora da faixa exigida de Y a Z anos."). Inclua em 'unmatched_criteria'.
+     * REGRA DE IDADE AUSENTE / NÃO INFORMADA: Se a idade for nula / não informada / sem data de nascimento no currículo, a avaliação SEGUE NORMALMENTE sem travar! Se o candidato atender aos demais critérios avaliáveis (como escolaridade e localização), ele DEVE ser "qualificado" e NÃO "revisar". A ausência de idade isolada NUNCA deve colocar um candidato em "revisar" quando a escolaridade e localização são compatíveis.
 
 3. ESCOLARIDADE É REQUISITO MÍNIMO (ENSINO FUNDAMENTAL / MÉDIO / SUPERIOR):
    - Todo critério de escolaridade (ex: "Ensino Fundamental", "Ensino Fundamental incompleto", "Ensino Médio") expressa a ESCOLARIDADE MÍNIMA exigida. NUNCA penalize ou reprove um candidato por ter escolaridade superior à exigida.
@@ -407,6 +410,62 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
           !motivoFinal.toLowerCase().includes('raio')
         ) {
           motivoFinal = `Reprovado por localização: Distância calculada de ${menorDistanciaKm.toFixed(2)} km ultrapassa o limite aceitável de ${raioKm} km. ${motivoFinal}`
+        }
+      }
+    }
+
+    // REGRA DE NEGÓCIO: Vaga de Cobrador + Homem
+    // Homens não necessitam de CNH nem informação de CNH para a vaga de Cobrador.
+    // Falta de idade/data de nascimento também não deve travar o candidato em "revisar".
+    // Se o resultado foi "revisar" motivado por falta de CNH e/ou falta de idade em vaga de Cobrador para homem,
+    // ajustar para "qualificado" se a localização e requisitos gerais foram cumpridos.
+    if (isCobrador && statusFinal === 'revisar') {
+      const isCandidateFemale =
+        cvData.genero === 'feminino' ||
+        cvData.sexo === 'feminino' ||
+        /^(maria|ana|juliana|camila|patricia|aline|amanda|beatriz|bruna|carolina|daniela|debora|fernanda|gabriela|jessica|larissa|leticia|luana|mariana|natalia|paula|rafaela|renata|sabrina|tatiane|vanessa|flavia|elisabete|elizabeth|andreia|marcia|simone|luciana|rosana|valeria|claudia|cristina|adriana|priscila|monica)\b/i.test(
+          validName || '',
+        )
+
+      if (!isCandidateFemale) {
+        // Candidato é homem para vaga de Cobrador
+        const motivoLower = (motivoFinal || '').toLowerCase()
+        const summaryLower = (resultJson.detalhes?.summary || '').toLowerCase()
+        const textToCheck = `${motivoLower} ${summaryLower}`
+
+        const isTravaPorCnhOuIdade =
+          textToCheck.includes('cnh') ||
+          textToCheck.includes('idade') ||
+          textToCheck.includes('nascimento') ||
+          textToCheck.includes('habilitação') ||
+          textToCheck.includes('habilitacao')
+
+        // Se a localização está ok (ou não é reprovado por localização)
+        const localizacaoOk =
+          localizacoesVaga.length === 0 || raioKm === 0 || (qualificadoPorLocalizacao && enderecoCV)
+
+        if (isTravaPorCnhOuIdade && localizacaoOk) {
+          statusFinal = 'qualificado'
+          motivoFinal =
+            'Qualificado para Cobrador: candidato atende aos critérios da vaga. (Para candidatos do sexo masculino não é exigida CNH, e a avaliação segue normalmente).'
+          if (resultJson.detalhes) {
+            resultJson.detalhes.score = Math.max(resultJson.detalhes.score || 0, 85)
+            // Remover menções indevidas de CNH/idade de unmatched_criteria
+            if (Array.isArray(resultJson.detalhes.unmatched_criteria)) {
+              resultJson.detalhes.unmatched_criteria =
+                resultJson.detalhes.unmatched_criteria.filter((item: any) => {
+                  const nomeL = (item?.nome || '').toLowerCase()
+                  const motL = (item?.motivo || '').toLowerCase()
+                  return (
+                    !nomeL.includes('cnh') &&
+                    !nomeL.includes('idade') &&
+                    !nomeL.includes('habilita') &&
+                    !motL.includes('cnh') &&
+                    !motL.includes('idade')
+                  )
+                })
+            }
+          }
         }
       }
     }

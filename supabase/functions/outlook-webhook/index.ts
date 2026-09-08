@@ -430,6 +430,8 @@ ${pdfText.substring(0, 15000)}
           }
         }
 
+        const isCobrador = vaga.titulo?.toLowerCase().includes('cobrador') || false
+
         const analyzePrompt = `Analise o currículo para a vaga de "${vaga.titulo}".
 Descrição da vaga: ${vaga.descricao || 'Não informada'}
 Critérios Textuais: ${criteriosText}
@@ -449,9 +451,13 @@ DIRETRIZES DE AVALIAÇÃO:
      * Se for mulher e tiver CNH D: pode ser aprovada ✅ (critério atendido).
      * Se for mulher e NÃO tiver CNH D (ou não tiver comprovação): DEVE ser reprovada ❌ com resultado = "nao_qualificado" e motivo claro de reprovação por ausência de CNH D para candidata feminina.
    - SE O CANDIDATO FOR HOMEM:
-     * Homem NÃO entra nessa regra! A categoria da CNH NÃO deve ser avaliada nem exigida para homens por conta desse critério. NUNCA reprove ou envie homem para revisão por falta de CNH D sob esse critério condicional.
+     * Homem NÃO entra nessa regra! A regra condicional aplica-se SOMENTE a mulheres.
+     * Para vaga de Cobrador: homem NÃO precisa de CNH, NÃO precisa informar CNH e NÃO deve ter categoria de CNH avaliada. A ausência de CNH ou de dados de CNH em homem NUNCA deve reprovar nem enviar para revisão ("revisar").
+     * NUNCA reprove ou envie homem para revisão por falta de CNH sob esse critério condicional.
    - Demais critérios da vaga continuam valendo normalmente para todos (homens e mulheres).
-2. IDADE / FAIXA ETÁRIA: A idade só é critério eliminatório se a vaga MENCIONAR EXPLICITAMENTE uma exigência de faixa etária nos critérios (ex: "18 a 22 anos"). Se a vaga não exigir idade, IGNORE a idade completamente — NUNCA reprove por falta de idade informada nem por idade quando a vaga não estipula idade.
+2. IDADE / FAIXA ETÁRIA:
+   - A idade só é critério quando a vaga mencionar expressamente uma faixa etária.
+   - Se a vaga tiver faixa etária mas o currículo NÃO contiver idade/data de nascimento (idade null), a avaliação segue normalmente sem reprovar e sem marcar como "revisar" se os demais critérios (escolaridade e localização) forem atendidos. Se a idade for comprovadamente fora da faixa, reprova ("nao_qualificado").
 3. ESCOLARIDADE (ENSINO FUNDAMENTAL / MÉDIO / SUPERIOR): Todo critério de escolaridade expressa a escolaridade mínima. Se a vaga exige Ensino Fundamental (incompleto ou completo), candidatos com Ensino Fundamental, Ensino Médio ou Ensino Superior atendem plenamente ao requisito e não podem ser reprovados por escolaridade.
 4. CURSOS DE TRANSPORTE COLETIVO E CREDENCIAL: Quando a vaga exigir ou mencionar curso de transporte coletivo, considere válido qualquer curso relativo a transporte coletivo. Considere também quando o candidato colocar "Credencial de Transporte Coletivo" como curso/formação.
 5. REGRA DE MOTORISTA E STATUS "REVISAR": Para vagas de MOTORISTA, caso falte comprovação clara ou haja dúvidas sobre categoria da CNH, experiência ou cursos que justifiquem validação humana, o resultado DEVE ser "revisar" (para a Paola revisar manualmente) e NÃO deve ser alterado para outra vaga nem aprovado como Cobrador.
@@ -488,6 +494,38 @@ Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
               }
             }
           }
+
+          // Salvaguarda: Cobrador + Homem
+          if (isCobrador && statusFinal === 'revisar') {
+            const isFemale =
+              extractedData.genero === 'feminino' ||
+              extractedData.sexo === 'feminino' ||
+              /^(maria|ana|juliana|camila|patricia|aline|amanda|beatriz|bruna|carolina|daniela|debora|fernanda|gabriela|jessica|larissa|leticia|luana|mariana|natalia|paula|rafaela|renata|sabrina|tatiane|vanessa|flavia|elisabete|elizabeth|andreia|marcia|simone|luciana|rosana|valeria|claudia|cristina|adriana|priscila|monica)\b/i.test(
+                extractedData.nome || '',
+              )
+
+            if (!isFemale) {
+              const textCheck =
+                `${motivoFinal} ${analiseJson.detalhes?.summary || ''}`.toLowerCase()
+              const isTravaCnhOuIdade =
+                textCheck.includes('cnh') ||
+                textCheck.includes('idade') ||
+                textCheck.includes('nascimento') ||
+                textCheck.includes('habilita')
+
+              const localizacaoOk =
+                localizacoesVaga.length === 0 ||
+                raioKm === 0 ||
+                (qualificadoPorLocalizacao && enderecoCV)
+
+              if (isTravaCnhOuIdade && localizacaoOk) {
+                statusFinal = 'qualificado'
+                motivoFinal =
+                  'Qualificado para Cobrador: candidato atende aos critérios da vaga. (Para candidatos do sexo masculino não é exigida CNH, e a avaliação segue normalmente).'
+              }
+            }
+          }
+
           if (analiseJson.detalhes) analiseJson.detalhes.motivo = motivoFinal
 
           const { data: novaAnalise, error: analiseError } = await supabase
