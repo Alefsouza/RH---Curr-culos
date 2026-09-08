@@ -7,6 +7,7 @@ import {
   isValidBrazilianPhone,
   sanitizeAndValidateName,
   sanitizeAndValidateEmail,
+  resolveCandidateAge,
 } from '../_shared/validation.ts'
 import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
 import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
@@ -86,6 +87,19 @@ Deno.serve(async (req: Request) => {
       typeof candidato.dados_extraidos === 'object' && candidato.dados_extraidos !== null
         ? { ...candidato.dados_extraidos }
         : {}
+
+    // Garantir que a idade seja derivada da data de nascimento se ela existir
+    const initialResolvedAge = resolveCandidateAge(
+      currentDadosExtraidos.idade,
+      currentDadosExtraidos.data_nascimento,
+    )
+    if (initialResolvedAge !== null && currentDadosExtraidos.idade !== initialResolvedAge) {
+      currentDadosExtraidos.idade = initialResolvedAge
+      await supabase
+        .from('candidatos')
+        .update({ dados_extraidos: currentDadosExtraidos })
+        .eq('id', candidato.id)
+    }
 
     // 1. Verificar se o nome é inválido, se faltam telefone/endereço/objetivo ou se foi forçada a reextração completa
     const validCurrentName = sanitizeAndValidateName(currentNome)
@@ -465,6 +479,15 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
               }
             }
             if (newlyExtracted) {
+              // Recalcular e sobrescrever idade caso haja data de nascimento
+              const resolvedAge = resolveCandidateAge(
+                newlyExtracted.idade,
+                newlyExtracted.data_nascimento,
+              )
+              if (resolvedAge !== null) {
+                newlyExtracted.idade = resolvedAge
+              }
+
               const cleanName = sanitizeAndValidateName(newlyExtracted.nome)
               const cleanEmail = sanitizeAndValidateEmail(newlyExtracted.email)
 
@@ -524,6 +547,14 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
                 ...(cleanName ? { nome: cleanName } : {}),
                 ...(cleanEmail ? { email: cleanEmail } : {}),
                 ...(finalTelefone ? { telefones_celulares: finalTelefone.split(',') } : {}),
+              }
+              // Garantir que a idade derivada da data de nascimento seja refletida em currentDadosExtraidos
+              const finalResolvedAge = resolveCandidateAge(
+                currentDadosExtraidos.idade,
+                currentDadosExtraidos.data_nascimento,
+              )
+              if (finalResolvedAge !== null) {
+                currentDadosExtraidos.idade = finalResolvedAge
               }
               candidateUpdate.dados_extraidos = currentDadosExtraidos
 

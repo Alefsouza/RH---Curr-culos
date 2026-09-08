@@ -158,6 +158,45 @@ ${pdfText.substring(0, 15000)}
     let extractedData
     try {
       extractedData = await callOpenAIWithRetry(extractionPrompt)
+      if (
+        extractedData &&
+        extractedData.data_nascimento &&
+        typeof extractedData.data_nascimento === 'string'
+      ) {
+        const dStr = extractedData.data_nascimento.trim()
+        let birthDate: Date | null = null
+        const brMatch = dStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/)
+        if (brMatch) {
+          birthDate = new Date(
+            parseInt(brMatch[3], 10),
+            parseInt(brMatch[2], 10) - 1,
+            parseInt(brMatch[1], 10),
+          )
+        } else {
+          const isoMatch = dStr.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/)
+          if (isoMatch) {
+            birthDate = new Date(
+              parseInt(isoMatch[1], 10),
+              parseInt(isoMatch[2], 10) - 1,
+              parseInt(isoMatch[3], 10),
+            )
+          } else {
+            const parsed = new Date(dStr)
+            if (!isNaN(parsed.getTime())) birthDate = parsed
+          }
+        }
+        if (birthDate && !isNaN(birthDate.getTime())) {
+          const now = new Date()
+          let age = now.getFullYear() - birthDate.getFullYear()
+          const m = now.getMonth() - birthDate.getMonth()
+          if (m < 0 || (m === 0 && now.getDate() < birthDate.getDate())) {
+            age--
+          }
+          if (age >= 0 && age < 130) {
+            extractedData.idade = age
+          }
+        }
+      }
     } catch (err) {
       console.error('Erro na chamada da OpenAI:', err)
       return new Response(

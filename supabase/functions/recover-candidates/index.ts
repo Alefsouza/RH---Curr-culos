@@ -339,6 +339,12 @@ Formato JSON estrito esperado:
       }
       const { extractedData, rawText } = extractionResult
 
+      // Recalcular e sobrescrever idade caso haja data de nascimento
+      const resolvedAge = resolveCandidateAge(extractedData.idade, extractedData.data_nascimento)
+      if (resolvedAge !== null) {
+        extractedData.idade = resolvedAge
+      }
+
       const cleanCandidateName = sanitizeAndValidateName(extractedData.nome)
       const cleanCandidateEmail = sanitizeAndValidateEmail(extractedData.email)
 

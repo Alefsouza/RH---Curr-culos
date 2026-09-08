@@ -7,6 +7,7 @@ import {
   isValidBrazilianPhone,
   sanitizeAndValidateName,
   sanitizeAndValidateEmail,
+  resolveCandidateAge,
 } from '../_shared/validation.ts'
 import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
 import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
@@ -612,6 +613,12 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
     }
 
     const finalEmail = cleanEmail
+
+    // Recalcular e sobrescrever idade caso haja data de nascimento
+    const resolvedAge = resolveCandidateAge(extractedData.idade, extractedData.data_nascimento)
+    if (resolvedAge !== null) {
+      extractedData.idade = resolvedAge
+    }
 
     // Deduplicação (apenas se tiver e-mail ou telefone válido)
     const orConditions = []

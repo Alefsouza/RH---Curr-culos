@@ -41,7 +41,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { cn, safeText } from '@/lib/utils'
+import { cn, safeText, resolveCandidateAge } from '@/lib/utils'
 
 export default function CandidateDetails() {
   const { id } = useParams()
@@ -441,9 +441,14 @@ export default function CandidateDetails() {
   const enderecoRaw =
     extraidos.endereco || extraidos.location || extraidos.cidade || extraidos.estado || null
   const endereco = enderecoRaw ? safeText(enderecoRaw) : null
-  const idade =
-    extraidos.idade !== undefined && extraidos.idade !== null ? safeText(extraidos.idade) : null
   const dataNascimento = extraidos.data_nascimento ? safeText(extraidos.data_nascimento) : null
+  const resolvedIdadeNum = resolveCandidateAge(extraidos.idade, extraidos.data_nascimento)
+  const idade =
+    resolvedIdadeNum !== null
+      ? String(resolvedIdadeNum)
+      : extraidos.idade !== undefined && extraidos.idade !== null
+        ? safeText(extraidos.idade)
+        : null
 
   return (
     <div className="container mx-auto p-4 md:p-6 max-w-6xl space-y-6 animate-fade-in">

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { vagaDetalhesService, Vaga, AnaliseCVComCandidato } from '@/services/vaga-detalhes'
+import { resolveCandidateAge } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -198,15 +199,18 @@ function DesktopCVTable({
               : []
             const skills = Array.isArray(dadosExtraidos?.skills) ? dadosExtraidos.skills : []
             const isAprovado = analise.status === 'pre_aprovado'
+            const displayIdade =
+              resolveCandidateAge(dadosExtraidos?.idade, dadosExtraidos?.data_nascimento) ??
+              dadosExtraidos?.idade
 
             return (
               <TableRow key={analise.id} className="hover:bg-slate-50/50">
                 <TableCell>
                   <div className="font-medium text-slate-900">{candidato.nome}</div>
                   <div className="text-xs text-slate-500 mt-1 space-y-0.5">
-                    {dadosExtraidos?.idade && (
+                    {displayIdade && (
                       <span className="inline-block text-purple-700 font-medium bg-purple-50 px-1.5 py-0.2 rounded border border-purple-200 mr-1 mb-0.5">
-                        {dadosExtraidos.idade} anos
+                        {displayIdade} anos
                       </span>
                     )}
                     {candidato.email && <div>{candidato.email}</div>}

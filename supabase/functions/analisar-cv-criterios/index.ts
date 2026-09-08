@@ -7,6 +7,7 @@ import {
   isValidBrazilianPhone,
   sanitizeAndValidateName,
   sanitizeAndValidateEmail,
+  resolveCandidateAge,
 } from '../_shared/validation.ts'
 import {
   calculateHaversineDistance,
@@ -95,19 +96,18 @@ Deno.serve(async (req: Request) => {
       validName = prefix.replace(/[._-]/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
     }
 
+    // Identificar idade do candidato (preferindo estritamente a derivada da data de nascimento se disponível)
+    const dataNascimentoCandidato = extracted.data_nascimento || null
+    const idadeCandidato = resolveCandidateAge(extracted.idade, dataNascimentoCandidato)
+
     const cvData = {
       nome: validName || 'Candidato',
       email: validEmail,
       telefone: candidato.telefone,
-      idade: extracted.idade ?? null,
-      data_nascimento: extracted.data_nascimento ?? null,
       ...extracted,
+      idade: idadeCandidato,
+      data_nascimento: dataNascimentoCandidato,
     }
-
-    // Identificar idade do candidato se disponível
-    const idadeCandidato =
-      extracted.idade !== undefined && extracted.idade !== null ? extracted.idade : null
-    const dataNascimentoCandidato = extracted.data_nascimento || null
 
     let criteriosText = 'Sem critérios definidos.'
     let localizacoesVaga: string[] = []

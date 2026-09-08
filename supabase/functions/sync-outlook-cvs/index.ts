@@ -7,6 +7,7 @@ import {
   isValidBrazilianPhone,
   sanitizeAndValidateName,
   sanitizeAndValidateEmail,
+  resolveCandidateAge,
 } from '../_shared/validation.ts'
 import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
 import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
@@ -508,6 +509,12 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
         }
 
         const { extractedData, rawText } = extractionResult
+
+        // Recalcular e sobrescrever idade caso haja data de nascimento
+        const resolvedAge = resolveCandidateAge(extractedData.idade, extractedData.data_nascimento)
+        if (resolvedAge !== null) {
+          extractedData.idade = resolvedAge
+        }
 
         // MUDANÇA 2: Validações rigorosas de nome e email
         const cleanCandidateName = sanitizeAndValidateName(extractedData.nome)

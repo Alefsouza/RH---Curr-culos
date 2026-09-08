@@ -81,6 +81,108 @@ export const sanitizeAndValidateName = (name: string | null | undefined): string
   return trimmed
 }
 
+/**
+ * Calcula a idade em anos completos a partir de uma data de nascimento ou string de data.
+ * Suporta formatos:
+ * - "DD/MM/YYYY" ou "DD-MM-YYYY"
+ * - "YYYY-MM-DD" ou "YYYY/MM/DD"
+ * - ISO string
+ */
+export const calculateAgeFromBirthDate = (
+  birthDateInput: string | Date | null | undefined,
+  referenceDate: Date = new Date(),
+): number | null => {
+  if (!birthDateInput) return null
+
+  let birthDate: Date | null = null
+
+  if (birthDateInput instanceof Date) {
+    if (!isNaN(birthDateInput.getTime())) {
+      birthDate = birthDateInput
+    }
+  } else if (typeof birthDateInput === 'string') {
+    const dStr = birthDateInput.trim()
+    if (!dStr) return null
+
+    // Formato brasileiro DD/MM/YYYY ou DD-MM-YYYY
+    const brMatch = dStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/)
+    if (brMatch) {
+      const day = parseInt(brMatch[1], 10)
+      const month = parseInt(brMatch[2], 10) - 1
+      const year = parseInt(brMatch[3], 10)
+      const parsed = new Date(year, month, day)
+      if (!isNaN(parsed.getTime()) && parsed.getMonth() === month && parsed.getDate() === day) {
+        birthDate = parsed
+      }
+    } else {
+      // Formato ISO YYYY-MM-DD ou YYYY/MM/DD
+      const isoMatch = dStr.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/)
+      if (isoMatch) {
+        const year = parseInt(isoMatch[1], 10)
+        const month = parseInt(isoMatch[2], 10) - 1
+        const day = parseInt(isoMatch[3], 10)
+        const parsed = new Date(year, month, day)
+        if (!isNaN(parsed.getTime()) && parsed.getMonth() === month && parsed.getDate() === day) {
+          birthDate = parsed
+        }
+      } else {
+        const parsed = new Date(dStr)
+        if (!isNaN(parsed.getTime())) {
+          birthDate = parsed
+        }
+      }
+    }
+  }
+
+  if (!birthDate || isNaN(birthDate.getTime())) {
+    return null
+  }
+
+  let age = referenceDate.getFullYear() - birthDate.getFullYear()
+  const m = referenceDate.getMonth() - birthDate.getMonth()
+  if (m < 0 || (m === 0 && referenceDate.getDate() < birthDate.getDate())) {
+    age--
+  }
+
+  if (age >= 0 && age < 130) {
+    return age
+  }
+
+  return null
+}
+
+/**
+ * Normaliza e resolve a idade do candidato:
+ * Prioridade: se houver data de nascimento válida, a idade DEVE ser calculada a partir dela
+ * (com a data atual), em vez de usar o campo "idade" solto.
+ * Caso não haja data de nascimento, usa o valor de idade original se for numérico válido.
+ */
+export const resolveCandidateAge = (
+  rawIdade: any,
+  dataNascimento: string | null | undefined,
+): number | null => {
+  const calculatedFromBirth = calculateAgeFromBirthDate(dataNascimento)
+  if (calculatedFromBirth !== null) {
+    return calculatedFromBirth
+  }
+
+  if (typeof rawIdade === 'number' && !isNaN(rawIdade) && rawIdade > 0 && rawIdade < 130) {
+    return Math.floor(rawIdade)
+  }
+
+  if (typeof rawIdade === 'string') {
+    const match = rawIdade.match(/\d+/)
+    if (match) {
+      const parsed = parseInt(match[0], 10)
+      if (!isNaN(parsed) && parsed > 0 && parsed < 130) {
+        return parsed
+      }
+    }
+  }
+
+  return null
+}
+
 const INVALID_EMAIL_DOMAINS = [
   'example.com',
   'example.org',

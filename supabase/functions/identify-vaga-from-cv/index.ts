@@ -9,6 +9,7 @@ import {
   getReferenceCoordsForText,
   REFERENCE_LOCATIONS,
 } from '../_shared/proximity.ts'
+import { resolveCandidateAge } from '../_shared/validation.ts'
 
 // Padrões de objetivo genérico (normalizados sem acento)
 const GENERIC_OBJECTIVE_PATTERNS = [
@@ -139,45 +140,10 @@ function hasMotoristaExperience(cvData: any): boolean {
   return false
 }
 
-// Extrai a idade do candidato (se disponível em anos como número)
+// Extrai a idade do candidato (priorizando cálculo por data de nascimento)
 function extractCandidateAge(cvData: any): number | null {
   if (!cvData) return null
-  if (typeof cvData.idade === 'number' && !isNaN(cvData.idade)) {
-    return cvData.idade
-  }
-  if (typeof cvData.idade === 'string') {
-    const match = cvData.idade.match(/\d+/)
-    if (match) {
-      const parsed = parseInt(match[0], 10)
-      if (!isNaN(parsed) && parsed > 0 && parsed < 120) return parsed
-    }
-  }
-  // Tentar calcular via data_nascimento
-  if (cvData.data_nascimento && typeof cvData.data_nascimento === 'string') {
-    const dStr = cvData.data_nascimento.trim()
-    let birthDate: Date | null = null
-    const brMatch = dStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/)
-    if (brMatch) {
-      birthDate = new Date(
-        parseInt(brMatch[3], 10),
-        parseInt(brMatch[2], 10) - 1,
-        parseInt(brMatch[1], 10),
-      )
-    } else {
-      const isoDate = new Date(dStr)
-      if (!isNaN(isoDate.getTime())) birthDate = isoDate
-    }
-    if (birthDate && !isNaN(birthDate.getTime())) {
-      const now = new Date()
-      let age = now.getFullYear() - birthDate.getFullYear()
-      const m = now.getMonth() - birthDate.getMonth()
-      if (m < 0 || (m === 0 && now.getDate() < birthDate.getDate())) {
-        age--
-      }
-      if (age > 0 && age < 120) return age
-    }
-  }
-  return null
+  return resolveCandidateAge(cvData.idade, cvData.data_nascimento)
 }
 
 // Extrai as strings de localização de uma vaga a partir de criterios_qualificacao

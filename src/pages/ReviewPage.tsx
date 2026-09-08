@@ -28,6 +28,7 @@ import {
 import { format } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
+import { resolveCandidateAge } from '@/lib/utils'
 
 function formatExperiencia(exp: any): string {
   if (typeof exp === 'string') return exp
@@ -126,14 +127,20 @@ function ReviewDetail({ analise, etapas, onConfirm, onCancel, isSubmitting }: an
                 <p className="font-medium">{candidato?.telefone || '-'}</p>
               </div>
               <div>
-                <span className="text-muted-foreground">Idade / Nascimento:</span>{' '}
-                <p className="font-medium">
-                  {dados?.idade ? `${dados.idade} anos` : ''}
-                  {dados?.idade && dados?.data_nascimento
-                    ? ` (${dados.data_nascimento})`
-                    : dados?.data_nascimento || '-'}
-                </p>
-              </div>
+                <span className="font-semibold text-slate-700">Idade / Nascimento:</span>{' '}
+                <span className="text-slate-900 font-medium">
+                  {(() => {
+                    const resolvedIdade = resolveCandidateAge(dados?.idade, dados?.data_nascimento)
+                    if (resolvedIdade !== null) {
+                      return `${resolvedIdade} anos${dados?.data_nascimento ? ` (${dados.data_nascimento})` : ''}`
+                    }
+                    if (dados?.idade) {
+                      return `${dados.idade} anos${dados?.data_nascimento ? ` (${dados.data_nascimento})` : ''}`
+                    }
+                    return dados?.data_nascimento || '-'
+                  })()}
+                </span>
+              </div>{' '}
               <div>
                 <span className="text-muted-foreground">Vaga:</span>{' '}
                 <p className="font-medium">{analise.vagas?.titulo || '-'}</p>
