@@ -692,6 +692,9 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
       identifyData.justificativa || 'Nenhuma vaga compatível foi identificada no sistema.'
 
     // Se temos análise prévia de Motorista com resultado "revisar", verificar se identify tentou desviar para não-motorista (ex: Cobrador)
+    // EXCEÇÃO DA SALVAGUARDA: Se a análise "revisar" prévia de Motorista foi decorrente do bug de termos de ambiente
+    // (ex.: candidato com objetivo específico sem vaga e experiências apenas de Caixa/Atendimento/Loja, SEM cargo de condução nem CNH D/E),
+    // e o identify-vaga agora corrigiu o direcionamento para a vaga correta (ex.: Cobrador), permitir a correção!
     if (motoristaEmRevisaoVagaId) {
       // Buscar título da vaga identificada (se houver)
       let identifiedTitulo = ''
@@ -706,11 +709,63 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
 
       // Se a vaga identificada não for Motorista (ex: Cobrador) ou for nula:
       if (!identifiedTitulo.includes('motorista')) {
-        console.log(
-          `[reanalisar-candidato] Salvaguarda ativada: candidato ${candidato.id} possui análise "revisar" em vaga de Motorista ("${motoristaEmRevisaoVagaTitulo}"). Bloqueando reclassificação para "${identifiedTitulo || 'nenhuma'}" e mantendo vaga de Motorista.`,
-        )
-        identifiedVagaId = motoristaEmRevisaoVagaId
-        justificativaIdentificacao = `Candidato possui análise em status "revisar" para a vaga de ${motoristaEmRevisaoVagaTitulo}. Pela regra de salvaguarda, permanece vinculado à vaga de Motorista aguardando revisão humana (Paola), não podendo ser reclassificado para Cobrador.`
+        // Verificar se o candidato realmente tem perfil/pretensão de motorista
+        const rawObj = (currentDadosExtraidos?.objetivo || '').toLowerCase()
+        const normObj = rawObj.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        const isTrueMotoristaObjective =
+          normObj.includes('motorista') ||
+          normObj.includes('condutor') ||
+          normObj.includes('carreteiro') ||
+          normObj.includes('motor apoio')
+
+        // Checar CNH D ou E
+        const cnhStr = (
+          (currentDadosExtraidos?.cnh || '') +
+          ' ' +
+          (currentDadosExtraidos?.categoria_cnh || '') +
+          ' ' +
+          (Array.isArray(currentDadosExtraidos?.skills)
+            ? currentDadosExtraidos.skills.join(' ')
+            : '')
+        ).toLowerCase()
+        const hasTrueCnhDE =
+          /\b(cnh|categoria|cat|habilitacao)\s*(categoria\s*)?([a-c]*d[a-e]*)\b/.test(cnhStr) ||
+          /\bcnh\s*d\b/.test(cnhStr) ||
+          /\bcategoria\s*d\b/.test(cnhStr) ||
+          /\bcat\s*d\b/.test(cnhStr) ||
+          /\b(cnh|categoria|cat|habilitacao)\s*(categoria\s*)?([a-d]*e)\b/.test(cnhStr) ||
+          /\bcnh\s*e\b/.test(cnhStr) ||
+          /\bcategoria\s*e\b/.test(cnhStr) ||
+          /\bcat\s*e\b/.test(cnhStr)
+
+        // Checar cargos de condução
+        const exps = Array.isArray(currentDadosExtraidos?.experiencia_profissional)
+          ? currentDadosExtraidos.experiencia_profissional
+          : []
+        const hasTrueConducaoCargo = exps.some((item: any) => {
+          const cargo = (
+            typeof item === 'string' ? item : item.cargo || item.funcao || item.titulo || ''
+          ).toLowerCase()
+          return (
+            cargo.includes('motorista') ||
+            cargo.includes('condutor') ||
+            cargo.includes('carreteiro') ||
+            cargo.includes('manobrista')
+          )
+        })
+
+        // Se o candidato realmente tinha perfil/objetivo de Motorista ou condução real ou CNH D/E, a salvaguarda se mantém
+        if (isTrueMotoristaObjective || hasTrueCnhDE || hasTrueConducaoCargo) {
+          console.log(
+            `[reanalisar-candidato] Salvaguarda ativada: candidato ${candidato.id} possui análise "revisar" em vaga de Motorista ("${motoristaEmRevisaoVagaTitulo}") e histórico/perfil condutor. Bloqueando reclassificação para "${identifiedTitulo || 'nenhuma'}" e mantendo vaga de Motorista.`,
+          )
+          identifiedVagaId = motoristaEmRevisaoVagaId
+          justificativaIdentificacao = `Candidato possui análise em status "revisar" para a vaga de ${motoristaEmRevisaoVagaTitulo}. Pela regra de salvaguarda, permanece vinculado à vaga de Motorista aguardando revisão humana (Paola), não podendo ser reclassificado para Cobrador.`
+        } else {
+          console.log(
+            `[reanalisar-candidato] Correção de fallback por experiência: candidato ${candidato.id} estava erroneamente em Motorista ("revisar"), mas NÃO possui cargo de condução, CNH D/E nem objetivo de motorista. Permitindo direcionamento correto para "${identifiedTitulo}".`,
+          )
+        }
       }
     }
 

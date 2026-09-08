@@ -86,11 +86,87 @@ function getExperiencesList(cvData: any): any[] {
   return []
 }
 
-// Verifica se o candidato tem experiência profissional relevante como motorista
+// Verifica se o candidato possui CNH categoria D ou E comprovada no currículo
+function hasCnhCategoriaDouE(cvData: any): boolean {
+  if (!cvData) return false
+
+  const checkTextForCnh = (text: string): boolean => {
+    if (!text) return false
+    const norm = normalizeString(text)
+    // Padrões explícitos de CNH D ou E:
+    // "cnh d", "cnh e", "cnh ad", "cnh ae", "categoria d", "categoria e", "cat d", "cat e"
+    // "habilitacao d", "habilitacao e", "cnh categoria d", "cnh categoria e"
+    const hasCategoryD =
+      /\b(cnh|categoria|cat|habilitacao)\s*(categoria\s*)?([a-c]*d[a-e]*)\b/.test(norm) ||
+      /\bcnh\s*d\b/.test(norm) ||
+      /\bcategoria\s*d\b/.test(norm) ||
+      /\bcat\s*d\b/.test(norm)
+    const hasCategoryE =
+      /\b(cnh|categoria|cat|habilitacao)\s*(categoria\s*)?([a-d]*e)\b/.test(norm) ||
+      /\bcnh\s*e\b/.test(norm) ||
+      /\bcategoria\s*e\b/.test(norm) ||
+      /\bcat\s*e\b/.test(norm)
+
+    return hasCategoryD || hasCategoryE
+  }
+
+  // Se cvData for string direta
+  if (typeof cvData === 'string') {
+    return checkTextForCnh(cvData)
+  }
+
+  if (typeof cvData === 'object' && cvData !== null) {
+    // Campos diretos comuns de CNH
+    const directFields = [
+      cvData.cnh,
+      cvData.categoria_cnh,
+      cvData.cnh_categoria,
+      cvData.habilitacao,
+      cvData.cnh_tipo,
+      cvData.tipo_cnh,
+    ]
+    for (const f of directFields) {
+      if (typeof f === 'string') {
+        const normF = normalizeString(f)
+        if (
+          normF.includes('d') ||
+          normF.includes('e') ||
+          normF.includes('ad') ||
+          normF.includes('ae')
+        ) {
+          return true
+        }
+      }
+    }
+
+    // Verificar em skills/habilidades
+    if (Array.isArray(cvData.skills)) {
+      for (const s of cvData.skills) {
+        if (typeof s === 'string' && checkTextForCnh(s)) return true
+      }
+    }
+
+    // Resumo ou outros textos
+    if (checkTextForCnh(cvData.resumo_cv || cvData.resumo || cvData.perfil || '')) {
+      return true
+    }
+  }
+
+  return false
+}
+
+// Verifica se o candidato tem experiência profissional real como motorista ou condução de veículos
+// IMPORTANTE: Termos de ambiente (estacionamento, loja, shopping, leve mobilidade) NÃO contam como motorista!
+// Exige CARGO/FUNÇÃO de condução (motorista, condutor, carreteiro, manobrista) OU CNH D/E comprovada.
 function hasMotoristaExperience(cvData: any): boolean {
   if (!cvData) return false
 
-  // Se cvData for string, analisar o texto
+  // Se tiver CNH D/E comprovada, qualifica como perfil condutor/motorista
+  if (hasCnhCategoriaDouE(cvData)) {
+    return true
+  }
+
+  // Se cvData for string, analisar o texto por declarações explícitas de cargo
   if (typeof cvData === 'string') {
     const norm = normalizeString(cvData)
     return (
@@ -103,7 +179,9 @@ function hasMotoristaExperience(cvData: any): boolean {
       norm.includes('motorista toco') ||
       norm.includes('motorista truck') ||
       norm.includes('motorista d') ||
-      norm.includes('motorista e')
+      norm.includes('motorista e') ||
+      norm.includes('cargo condutor') ||
+      norm.includes('funcao condutor')
     )
   }
 
@@ -115,8 +193,10 @@ function hasMotoristaExperience(cvData: any): boolean {
       if (typeof item === 'string') {
         const norm = normalizeString(item)
         if (
-          norm.includes('motorista') ||
-          norm.includes('condutor') ||
+          norm.includes('cargo motorista') ||
+          norm.includes('cargo condutor') ||
+          norm.includes('motorista de onibus') ||
+          norm.includes('motorista carreteiro') ||
           norm.includes('motor apoio')
         ) {
           return true
@@ -124,13 +204,28 @@ function hasMotoristaExperience(cvData: any): boolean {
       } else if (typeof item === 'object' && item !== null) {
         const cargo = normalizeString(item.cargo || item.funcao || item.titulo || item.role || '')
         const desc = normalizeString(item.descricao || item.atividades || item.resumo || '')
-        if (
+
+        // Verifica estritamente o CARGO/FUNÇÃO: deve ser de condução de veículos
+        const cargoIsMotorista =
           cargo.includes('motorista') ||
           cargo.includes('condutor') ||
           cargo.includes('motor apoio') ||
-          desc.includes('motorista de onibus') ||
+          cargo.includes('carreteiro') ||
+          cargo.includes('manobrista')
+
+        if (cargoIsMotorista) {
+          return true
+        }
+
+        // Se o cargo não era motorista (ex: "Operador de Caixa", "Vigilante", "Operador de loja"),
+        // termos genéricos da empresa/ambiente ("Propark Estacionamento", "Leve Mobilidade") NÃO qualificam.
+        // Apenas atividades inequívocas e explícitas de condução de ônibus/veículo pesado na descrição:
+        if (
+          desc.includes('conducao de onibus') ||
           desc.includes('conducao de veiculos de grande porte') ||
-          desc.includes('transporte coletivo de passageiros')
+          desc.includes('transporte coletivo de passageiros') ||
+          desc.includes('motorista de onibus') ||
+          desc.includes('motorista de caminhao')
         ) {
           return true
         }
@@ -138,13 +233,14 @@ function hasMotoristaExperience(cvData: any): boolean {
     }
   }
 
-  // Verificar também resumo_cv ou skills se mencionarem cargo anterior como motorista
+  // Verificar resumo_cv somente por menção inequívoca a ter trabalhado como motorista/condutor
   const resumo = normalizeString(cvData.resumo_cv || cvData.resumo || '')
   if (
     resumo.includes('atuou como motorista') ||
     resumo.includes('experiencia como motorista') ||
     resumo.includes('motorista profissional') ||
-    resumo.includes('motorista de transporte')
+    resumo.includes('motorista de transporte') ||
+    resumo.includes('motorista de onibus')
   ) {
     return true
   }
@@ -709,8 +805,17 @@ Deno.serve(async (req: Request) => {
             if (cargo) expKeywords.push({ text: normalizeString(`${cargo} ${desc}`), role: cargo })
           }
 
-          // Mapeamento direto de famílias/áreas conhecidas por experiência:
-          // 1. Abastecimento / Frentista -> Família Abastecedor
+          // Mapeamento direto de famílias/áreas conhecidas por experiência profissional:
+          // REGRAS RIGOROSAS:
+          // - A associação deve ser pelos CARGOS REAIS do histórico (ex.: Operador de Caixa, Atendimento, Cobrança, Vigilância de loja etc. -> Cobrador)
+          // - Termos de ambiente/setor (estacionamento, loja, leve mobilidade, shopping) NÃO devem ser interpretados como Motorista!
+          // - Motorista SOMENTE se houver cargo/função de condução de veículos no histórico OU CNH categoria D/E comprovada no currículo.
+          // - Respeitar a restrição de idade 18-56 anos das vagas de Cobrador.
+
+          // 1. Motorista -> SOMENTE com cargo/função de condução real OU CNH D/E comprovada
+          const hasMotoristaExp = hasMotoristaExperience(parsedDadosExtraidos || cvDataToAnalyze)
+
+          // 2. Abastecimento / Frentista -> Família Abastecedor (preservar)
           const hasAbastecimentoExp = expKeywords.some(
             (k) =>
               k.text.includes('frentista') ||
@@ -722,10 +827,7 @@ Deno.serve(async (req: Request) => {
               k.text.includes('troca de oleo'),
           )
 
-          // 2. Motorista -> Família Motorista
-          const hasMotoristaExp = hasMotoristaExperience(parsedDadosExtraidos || cvDataToAnalyze)
-
-          // 3. Mecânico / Manutenção mecânica -> Família Mecânico
+          // 3. Mecânico / Manutenção mecânica -> Família Mecânico (preservar)
           const hasMecanicaExp = expKeywords.some(
             (k) =>
               k.text.includes('mecanico') ||
@@ -734,14 +836,34 @@ Deno.serve(async (req: Request) => {
               k.text.includes('diesel'),
           )
 
-          // 4. Cobrador / Bilheteiro / Atendimento caixa -> Família Cobrador
-          const hasCobradorExp = expKeywords.some(
-            (k) =>
-              k.text.includes('cobrador') ||
-              k.text.includes('bilheteiro') ||
-              k.text.includes('fiscal de catraca') ||
-              k.text.includes('operador de caixa'),
-          )
+          // 4. Cobrador / Operador de Caixa / Atendimento / Cobrança / Vigilância de loja / Balconista
+          // Verifica cargos reais no histórico profissional ou nas skills
+          const candidateAgeForFallback = extractCandidateAge(parsedDadosExtraidos)
+          const isAgeCompatibleWithCobrador =
+            candidateAgeForFallback === null ||
+            (candidateAgeForFallback >= 18 && candidateAgeForFallback <= 56)
+
+          const hasCobradorExp = expKeywords.some((k) => {
+            const roleNorm = normalizeString(k.role)
+            const textNorm = k.text
+            return (
+              roleNorm.includes('cobrador') ||
+              roleNorm.includes('bilheteiro') ||
+              roleNorm.includes('fiscal de catraca') ||
+              roleNorm.includes('operador de caixa') ||
+              roleNorm.includes('caixa') ||
+              roleNorm.includes('atendimento') ||
+              roleNorm.includes('cobranca') ||
+              roleNorm.includes('vigilancia') ||
+              roleNorm.includes('vigilante') ||
+              roleNorm.includes('operador de loja') ||
+              roleNorm.includes('balconista') ||
+              roleNorm.includes('fiscal de loja') ||
+              textNorm.includes('operador de caixa') ||
+              textNorm.includes('atendimento ao cliente') ||
+              textNorm.includes('operar caixa')
+            )
+          })
 
           let fallbackVagasGroup: any[] = []
           let fallbackFamilyName = ''
@@ -778,18 +900,22 @@ Deno.serve(async (req: Request) => {
               (k) => k.text.includes('mecanic') || k.text.includes('diesel'),
             )
             fallbackRoleMentioned = expMatch?.role || 'Mecânica'
-          } else if (hasCobradorExp) {
+          } else if (hasCobradorExp && isAgeCompatibleWithCobrador) {
             fallbackVagasGroup = vagas.filter((v) =>
               normalizeString(v.titulo || '').includes('cobrador'),
             )
             fallbackFamilyName = 'Cobrador'
             const expMatch = expKeywords.find(
               (k) =>
+                k.text.includes('caixa') ||
+                k.text.includes('atendimento') ||
+                k.text.includes('cobranca') ||
+                k.text.includes('vigil') ||
+                k.text.includes('loja') ||
                 k.text.includes('cobrador') ||
-                k.text.includes('bilheteiro') ||
-                k.text.includes('caixa'),
+                k.text.includes('bilheteiro'),
             )
-            fallbackRoleMentioned = expMatch?.role || 'Cobrador'
+            fallbackRoleMentioned = expMatch?.role || 'Operador de Caixa / Atendimento'
           }
 
           if (fallbackVagasGroup.length > 0) {
@@ -934,13 +1060,14 @@ Deno.serve(async (req: Request) => {
          - Confiança deve ser "alta".
 
       2. OBJETIVO / CARGO PRETENDIDO ESPECÍFICO QUE NÃO TEM VAGA ABERTA (REGRA DE FALLBACK NA EXPERIÊNCIA):
-         - Quando o objetivo do candidato for específico mas não houver vaga ativa correspondente ao cargo (ex: objetivo "Manutenção" e não há vaga de manutenção aberta):
+         - Quando o objetivo do candidato for específico mas não houver vaga ativa correspondente ao cargo (ex: objetivo "Lavador", "Auxiliar Geral" etc. e não há vaga correspondente aberta):
          - NUNCA descarte imediatamente como "sem vaga compatível" se o candidato possuir EXPERIÊNCIA PROFISSIONAL em áreas correspondentes a alguma vaga ativa aberta no sistema.
-         - USE A EXPERIÊNCIA PROFISSIONAL COMO FALLBACK para escolher a vaga mais compatível:
-           * Se o candidato tem experiência como Frentista, Abastecedor, Posto de Combustíveis, Troca de Óleo ou Abastecimento: ATRIBUA À VAGA DE ABASTECEDOR DA GARAGEM MAIS PRÓXIMA pelo endereço do candidato (ex: Abastecedor Leste ou Abastecedor Cursino).
-           * Se o candidato tem experiência como Motorista, condução ou CNH D/E: ATRIBUA À VAGA DE MOTORISTA DA GARAGEM MAIS PRÓXIMA.
-           * Se o candidato tem experiência como Mecânico de veículos pesados/diesel/ônibus: ATRIBUA À VAGA DE MECÂNICO DA GARAGEM MAIS PRÓXIMA se houver vaga de Mecânico ativa aberta.
-           * Se o candidato tem experiência em Cobrança, Caixa ou Atendimento: ATRIBUA À VAGA DE COBRADOR DA GARAGEM MAIS PRÓXIMA (respeitando idade 18-56 anos).
+         - USE A EXPERIÊNCIA PROFISSIONAL COMO FALLBACK para escolher a vaga mais compatível seguindo RIGOROSAMENTE as regras abaixo:
+           * CARGOS REAIS: A associação da experiência deve ser feita estritamente pelos CARGOS REAIS do histórico profissional (Operador de Caixa, Atendimento, Cobrança, Vigilância de loja, Operador de loja, Balconista, Balcão etc.) -> ATRIBUA À VAGA DE COBRADOR DA GARAGEM MAIS PRÓXIMA (respeitando a restrição de idade de 18 a 56 anos das vagas de Cobrador).
+           * TERMOS DE AMBIENTE NÃO SÃO MOTORISTA: Termos de ambiente/setor/empresa como "estacionamento", "loja", "leve mobilidade", "shopping", "garagem", "pátio" NÃO devem ser interpretados como experiência de Motorista! Ter trabalhado como Caixa ou Vigilante em um estacionamento (ex: Propark Estacionamento / Leve Mobilidade) NÃO É experiência de motorista.
+           * MOTORISTA SOMENTE SE: Vaga de Motorista SOMENTE se houver cargo/função real de condução de veículos no histórico (ex: "motorista", "condutor", "carreteiro") OU CNH categoria D/E comprovada no currículo. Se NÃO houver comprovação de condução nem CNH D/E, NUNCA atribua vaga de Motorista nem envie para revisão de Motorista.
+           * FRENTISTA / ABASTECIMENTO: Se a experiência corresponder a frentista, posto de combustíveis, troca de óleo ou abastecimento -> ATRIBUA À VAGA DE ABASTECEDOR DA GARAGEM MAIS PRÓXIMA pelo endereço do candidato.
+           * MECÂNICA: Se a experiência for em mecânica automotiva / pesada / diesel -> ATRIBUA À VAGA DE MECÂNICO DA GARAGEM MAIS PRÓXIMA (ou Motorista se tiver CNH e condução).
          - ATENÇÃO: NUNCA force em Cobrador um candidato com objetivo específico a menos que ele tenha experiência correspondente e idade compatível.
          - Se e somente se o candidato NÃO possuir nenhuma experiência profissional compatível com as vagas ativas abertas: retorne vaga_id como null, confianca como "nenhuma" e justificativa clara explicando que não há vaga aberta nem para o cargo pretendido nem compatível com a experiência.
 
@@ -973,7 +1100,7 @@ Deno.serve(async (req: Request) => {
       result.vaga_id = null
     }
 
-    // GUARDA DE SEGURANÇA: Se o objetivo do candidato era de MOTORISTA OU se o candidato possui histórico de MOTORISTA
+    // GUARDA DE SEGURANÇA: Se o objetivo do candidato era de MOTORISTA OU se o candidato possui histórico REAL de MOTORISTA (ou CNH D/E)
     // mas a IA retornou Cobrador, impedir a realocação para Cobrador e redirecionar para a vaga de Motorista mais próxima.
     if (result.vaga_id) {
       const targetVaga = vagas.find((v) => v.id === result.vaga_id)
@@ -1004,6 +1131,58 @@ Deno.serve(async (req: Request) => {
             result.justificativa = isMotoristaObjective
               ? `Candidato possui objetivo de Motorista ("${candidatoObjetivo}"). Pela regra de negócio, permanece estritamente vinculado à vaga de Motorista ("${motoristaVaga.titulo}") para avaliação/revisão humana caso necessário, sem realocação para Cobrador.`
               : `Candidato possui histórico como Motorista / critérios incompatíveis com Cobrador (idade ${candidateAge || 'N/I'}). Pela regra de negócio, foi direcionado à vaga de Motorista da garagem mais próxima ("${motoristaVaga.titulo}").`
+          }
+        }
+      } else if (normTargetTitle.includes('motorista')) {
+        // Se a IA escolheu Motorista, mas o candidato NÃO tem objetivo de Motorista, NÃO tem histórico de Motorista e NÃO tem CNH D/E comprovada:
+        // Verificar se ele tem histórico de Cobrador / Caixa / Atendimento e idade compatível (como no caso Henrique Amâncio),
+        // corrigindo qualquer alucinação de associar termos de ambiente (estacionamento, loja, leve mobilidade) a Motorista!
+        if (!isMotoristaObjective && !candidatoTemExpMotorista) {
+          const candidateAgeForCheck = extractCandidateAge(parsedDadosExtraidos)
+          const isAgeOkCobrador =
+            candidateAgeForCheck === null ||
+            (candidateAgeForCheck >= 18 && candidateAgeForCheck <= 56)
+
+          const allExpList = getExperiencesList(parsedDadosExtraidos || cvDataToAnalyze)
+          const hasCaixaOrAtendimentoExp = allExpList.some((item: any) => {
+            const c = normalizeString(
+              typeof item === 'string' ? item : item.cargo || item.funcao || item.titulo || '',
+            )
+            const d =
+              typeof item === 'object' && item !== null
+                ? normalizeString(item.descricao || item.atividades || item.resumo || '')
+                : ''
+            return (
+              c.includes('caixa') ||
+              c.includes('atendimento') ||
+              c.includes('cobranca') ||
+              c.includes('vigil') ||
+              c.includes('loja') ||
+              c.includes('cobrador') ||
+              c.includes('bilheteiro') ||
+              c.includes('balconista') ||
+              d.includes('operador de caixa') ||
+              d.includes('atendimento ao cliente')
+            )
+          })
+
+          if (hasCaixaOrAtendimentoExp && isAgeOkCobrador) {
+            const cobradorVagas = vagas.filter((v) =>
+              normalizeString(v.titulo || '').includes('cobrador'),
+            )
+            if (cobradorVagas.length > 0) {
+              const { vaga: cobradorVaga, menorDistanciaKm } = await pickBestVagaByProximity(
+                candidatoEndereco,
+                cobradorVagas,
+                googleApiKey,
+              )
+              console.log(
+                `[identify-vaga-from-cv] Salvaguarda anti-falso-motorista acionada: IA associou erroneamente a Motorista ("${targetVaga?.titulo}"), mas candidato não tem cargo de condução nem CNH D/E. Possui experiência em Caixa/Atendimento/Loja. Redirecionando para Cobrador ("${cobradorVaga.titulo}").`,
+              )
+              result.vaga_id = cobradorVaga.id
+              result.confianca = 'alta'
+              result.justificativa = `Candidato não possui experiência em condução de veículos nem CNH D/E comprovada. O histórico profissional comprova atuação em Operador de Caixa / Atendimento / Loja, sendo direcionado para a vaga de Cobrador da garagem mais próxima ("${cobradorVaga.titulo}").`
+            }
           }
         }
       } else if (isMotoristaObjective && !normTargetTitle.includes('motorista')) {
@@ -1054,7 +1233,7 @@ Deno.serve(async (req: Request) => {
           )
           result.vaga_id = motoristaVaga.id
           result.confianca = 'media'
-          result.justificativa = `Candidato possui objetivo sem vaga aberta ("${candidatoObjetivo || 'N/I'}"), mas o histórico profissional comprova experiência como Motorista. Direcionado para a vaga de Motorista da garagem mais próxima ("${motoristaVaga.titulo}").`
+          result.justificativa = `Candidato possui objetivo sem vaga aberta ("${candidatoObjetivo || 'N/I'}"), mas o histórico profissional comprova experiência como Motorista ou CNH D/E. Direcionado para a vaga de Motorista da garagem mais próxima ("${motoristaVaga.titulo}").`
         }
       } else if (
         allExpTexts.includes('frentista') ||
@@ -1075,6 +1254,33 @@ Deno.serve(async (req: Request) => {
           result.vaga_id = chosenAbastecedor.id
           result.confianca = 'media'
           result.justificativa = `Candidato possui objetivo sem vaga aberta ("${candidatoObjetivo || 'N/I'}"), mas o histórico profissional comprova experiência em posto/abastecimento (Frentista). Direcionado para a vaga de Abastecedor da garagem mais próxima ("${chosenAbastecedor.titulo}").`
+        }
+      } else if (
+        allExpTexts.includes('caixa') ||
+        allExpTexts.includes('atendimento') ||
+        allExpTexts.includes('cobranca') ||
+        allExpTexts.includes('vigil') ||
+        allExpTexts.includes('loja') ||
+        allExpTexts.includes('cobrador') ||
+        allExpTexts.includes('bilheteiro') ||
+        allExpTexts.includes('balconista')
+      ) {
+        const candidateAge = extractCandidateAge(parsedDadosExtraidos)
+        const isAgeCompatible = candidateAge === null || (candidateAge >= 18 && candidateAge <= 56)
+        if (isAgeCompatible) {
+          const cobradorVagas = vagas.filter((v) =>
+            normalizeString(v.titulo || '').includes('cobrador'),
+          )
+          if (cobradorVagas.length > 0) {
+            const { vaga: chosenCobrador } = await pickBestVagaByProximity(
+              candidatoEndereco,
+              cobradorVagas,
+              googleApiKey,
+            )
+            result.vaga_id = chosenCobrador.id
+            result.confianca = 'media'
+            result.justificativa = `Candidato possui objetivo sem vaga aberta ("${candidatoObjetivo || 'N/I'}"), mas o histórico profissional comprova experiência em atendimento/caixa/loja. Direcionado para a vaga de Cobrador da garagem mais próxima ("${chosenCobrador.titulo}").`
+          }
         }
       }
     }
