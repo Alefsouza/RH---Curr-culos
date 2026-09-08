@@ -64,11 +64,14 @@ function isMotoristaObjectiveString(str: string): boolean {
   if (!str) return false
   const norm = normalizeString(str)
   if (!norm) return false
+  // Excluir expressamente ajudante/auxiliar de motorista do objetivo de motorista
+  if (norm.includes('ajudante') || norm.includes('auxiliar')) {
+    return false
+  }
   // Deve conter palavras como 'motorista', 'condutor', 'carreteiro', 'manobrista', etc.
   return (
     norm.includes('motorista') ||
     norm.includes('condutor') ||
-    norm.includes('motor apoio') ||
     norm.includes('carreteiro') ||
     norm.includes('transporte coletivo')
   )
@@ -156,9 +159,12 @@ function hasCnhCategoriaDouE(cvData: any): boolean {
   return false
 }
 
-// Verifica se o candidato tem experiência profissional real como motorista ou condução de veículos
-// IMPORTANTE: Termos de ambiente (estacionamento, loja, shopping, leve mobilidade) NÃO contam como motorista!
-// Exige CARGO/FUNÇÃO de condução (motorista, condutor, carreteiro, manobrista) OU CNH D/E comprovada.
+// Verifica se o candidato tem experiência profissional real como motorista ou condução de veículos.
+// IMPORTANTE E MANDATÓRIO:
+// - Termos de ambiente/empresa (estacionamento, loja, shopping, leve mobilidade, lavador, fiscal, etc.) NÃO contam como condução!
+// - "Ajudante de motorista", "auxiliar de motorista", "ajudante de entrega" NÃO é condução (é carga/descarga)!
+// - Exige CARGO/FUNÇÃO REAL de condução de veículos (motorista de ônibus, caminhão, van, carreteiro, condutor)
+//   OU CNH D/E comprovada.
 function hasMotoristaExperience(cvData: any): boolean {
   if (!cvData) return false
 
@@ -167,15 +173,32 @@ function hasMotoristaExperience(cvData: any): boolean {
     return true
   }
 
+  const isNonDrivingRole = (text: string): boolean => {
+    return (
+      text.includes('ajudante') ||
+      text.includes('auxiliar') ||
+      text.includes('fiscal') ||
+      text.includes('lavador') ||
+      text.includes('operador de loja') ||
+      text.includes('operador de caixa') ||
+      text.includes('vigilancia') ||
+      text.includes('vigilante') ||
+      text.includes('repositor') ||
+      text.includes('balconista') ||
+      text.includes('estoquista') ||
+      text.includes('atendente')
+    )
+  }
+
   // Se cvData for string, analisar o texto por declarações explícitas de cargo
   if (typeof cvData === 'string') {
     const norm = normalizeString(cvData)
-    return (
+    if (
       norm.includes('cargo motorista') ||
       norm.includes('funcao motorista') ||
       norm.includes('motorista de onibus') ||
       norm.includes('motorista coletivo') ||
-      norm.includes('motor apoio') ||
+      norm.includes('motorista de caminhao') ||
       norm.includes('motorista carreteiro') ||
       norm.includes('motorista toco') ||
       norm.includes('motorista truck') ||
@@ -183,7 +206,12 @@ function hasMotoristaExperience(cvData: any): boolean {
       norm.includes('motorista e') ||
       norm.includes('cargo condutor') ||
       norm.includes('funcao condutor')
-    )
+    ) {
+      if (!isNonDrivingRole(norm)) {
+        return true
+      }
+    }
+    return false
   }
 
   // Se for objeto estruturado
@@ -193,12 +221,15 @@ function hasMotoristaExperience(cvData: any): boolean {
     for (const item of expList) {
       if (typeof item === 'string') {
         const norm = normalizeString(item)
+        if (isNonDrivingRole(norm)) {
+          continue
+        }
         if (
           norm.includes('cargo motorista') ||
           norm.includes('cargo condutor') ||
           norm.includes('motorista de onibus') ||
-          norm.includes('motorista carreteiro') ||
-          norm.includes('motor apoio')
+          norm.includes('motorista de caminhao') ||
+          norm.includes('motorista carreteiro')
         ) {
           return true
         }
@@ -206,11 +237,16 @@ function hasMotoristaExperience(cvData: any): boolean {
         const cargo = normalizeString(item.cargo || item.funcao || item.titulo || item.role || '')
         const desc = normalizeString(item.descricao || item.atividades || item.resumo || '')
 
-        // Verifica estritamente o CARGO/FUNÇÃO: deve ser de condução de veículos
+        // Se o cargo contém termos explícitos de NÃO-condução (ajudante de motorista, auxiliar, lavador, caixa, etc.):
+        // NUNCA considerar como motorista!
+        if (isNonDrivingRole(cargo)) {
+          continue
+        }
+
+        // Verifica estritamente o CARGO/FUNÇÃO: deve ser de condução real de veículos
         const cargoIsMotorista =
           cargo.includes('motorista') ||
           cargo.includes('condutor') ||
-          cargo.includes('motor apoio') ||
           cargo.includes('carreteiro') ||
           cargo.includes('manobrista')
 
@@ -218,15 +254,19 @@ function hasMotoristaExperience(cvData: any): boolean {
           return true
         }
 
-        // Se o cargo não era motorista (ex: "Operador de Caixa", "Vigilante", "Operador de loja"),
+        // Se o cargo não era motorista (ex: outros cargos),
         // termos genéricos da empresa/ambiente ("Propark Estacionamento", "Leve Mobilidade") NÃO qualificam.
-        // Apenas atividades inequívocas e explícitas de condução de ônibus/veículo pesado na descrição:
+        // Apenas atividades inequívocas e explícitas de condução de ônibus/veículo pesado na descrição,
+        // DESDE QUE a descrição não diga "ajudante" ou "carga e descarga":
         if (
-          desc.includes('conducao de onibus') ||
-          desc.includes('conducao de veiculos de grande porte') ||
-          desc.includes('transporte coletivo de passageiros') ||
-          desc.includes('motorista de onibus') ||
-          desc.includes('motorista de caminhao')
+          !isNonDrivingRole(desc) &&
+          !desc.includes('carga e descarga') &&
+          !desc.includes('cargas e descargas') &&
+          (desc.includes('conducao de onibus') ||
+            desc.includes('conducao de veiculos de grande porte') ||
+            desc.includes('transporte coletivo de passageiros') ||
+            desc.includes('motorista de onibus') ||
+            desc.includes('motorista de caminhao'))
         ) {
           return true
         }
@@ -237,11 +277,12 @@ function hasMotoristaExperience(cvData: any): boolean {
   // Verificar resumo_cv somente por menção inequívoca a ter trabalhado como motorista/condutor
   const resumo = normalizeString(cvData.resumo_cv || cvData.resumo || '')
   if (
-    resumo.includes('atuou como motorista') ||
-    resumo.includes('experiencia como motorista') ||
-    resumo.includes('motorista profissional') ||
-    resumo.includes('motorista de transporte') ||
-    resumo.includes('motorista de onibus')
+    !isNonDrivingRole(resumo) &&
+    (resumo.includes('atuou como motorista') ||
+      resumo.includes('experiencia como motorista') ||
+      resumo.includes('motorista profissional') ||
+      resumo.includes('motorista de transporte') ||
+      resumo.includes('motorista de onibus'))
   ) {
     return true
   }
@@ -1065,8 +1106,9 @@ Deno.serve(async (req: Request) => {
          - NUNCA descarte imediatamente como "sem vaga compatível" se o candidato possuir EXPERIÊNCIA PROFISSIONAL em áreas correspondentes a alguma vaga ativa aberta no sistema.
          - USE A EXPERIÊNCIA PROFISSIONAL COMO FALLBACK para escolher a vaga mais compatível seguindo RIGOROSAMENTE as regras abaixo:
            * CARGOS REAIS: A associação da experiência deve ser feita estritamente pelos CARGOS REAIS do histórico profissional (Operador de Caixa, Atendimento, Cobrança, Vigilância de loja, Operador de loja, Balconista, Balcão etc.) -> ATRIBUA À VAGA DE COBRADOR DA GARAGEM MAIS PRÓXIMA (respeitando a restrição de idade de 18 a 56 anos das vagas de Cobrador).
-           * TERMOS DE AMBIENTE NÃO SÃO MOTORISTA: Termos de ambiente/setor/empresa como "estacionamento", "loja", "leve mobilidade", "shopping", "garagem", "pátio" NÃO devem ser interpretados como experiência de Motorista! Ter trabalhado como Caixa ou Vigilante em um estacionamento (ex: Propark Estacionamento / Leve Mobilidade) NÃO É experiência de motorista.
-           * MOTORISTA SOMENTE SE: Vaga de Motorista SOMENTE se houver cargo/função real de condução de veículos no histórico (ex: "motorista", "condutor", "carreteiro") OU CNH categoria D/E comprovada no currículo. Se NÃO houver comprovação de condução nem CNH D/E, NUNCA atribua vaga de Motorista nem envie para revisão de Motorista.
+           * TERMOS DE AMBIENTE E APOIO NÃO SÃO MOTORISTA: Termos de ambiente/setor/empresa como "estacionamento", "loja", "leve mobilidade", "shopping", "garagem", "pátio", "lavador", "fiscal", "operador de loja" NÃO devem ser interpretados como experiência de Motorista! Ter trabalhado como Caixa ou Vigilante em um estacionamento (ex: Propark Estacionamento / Leve Mobilidade) NÃO É experiência de motorista.
+           * AJUDANTE DE MOTORISTA NÃO É MOTORISTA: Cargos como "Ajudante de motorista", "Auxiliar de motorista", "Ajudante de entrega", "Ajudante geral" ou carga/descarga NÃO são condução nem experiência de motorista! NUNCA conte "ajudante de motorista" como motorista!
+           * MOTORISTA SOMENTE SE: Vaga de Motorista SOMENTE se houver cargo/função real e comprovada de CONDUÇÃO de veículos no histórico (ex: "motorista de ônibus", "motorista de caminhão", "motorista carreteiro", "condutor") OU CNH categoria D/E comprovada no currículo. Se NÃO houver comprovação de condução real nem CNH D/E, NUNCA atribua vaga de Motorista nem envie para revisão de Motorista. Reverte para Cobrador da garagem mais próxima caso haja experiência em caixa/atendimento/loja/vigilância ou objetivo genérico/sem vaga.
            * FRENTISTA / ABASTECIMENTO: Se a experiência corresponder a frentista, posto de combustíveis, troca de óleo ou abastecimento -> ATRIBUA À VAGA DE ABASTECEDOR DA GARAGEM MAIS PRÓXIMA pelo endereço do candidato.
            * MECÂNICA: Se a experiência for em mecânica automotiva / pesada / diesel -> ATRIBUA À VAGA DE MECÂNICO DA GARAGEM MAIS PRÓXIMA (ou Motorista se tiver CNH e condução).
          - ATENÇÃO: NUNCA force em Cobrador um candidato com objetivo específico a menos que ele tenha experiência correspondente e idade compatível.
@@ -1136,54 +1178,42 @@ Deno.serve(async (req: Request) => {
         }
       } else if (normTargetTitle.includes('motorista')) {
         // Se a IA escolheu Motorista, mas o candidato NÃO tem objetivo de Motorista, NÃO tem histórico de Motorista e NÃO tem CNH D/E comprovada:
-        // Verificar se ele tem histórico de Cobrador / Caixa / Atendimento e idade compatível (como no caso Henrique Amâncio),
-        // corrigindo qualquer alucinação de associar termos de ambiente (estacionamento, loja, leve mobilidade) a Motorista!
+        // Excluir expressamente termos como "ajudante", "estacionamento", "leve mobilidade", "lavador", "fiscal", "operador de loja" como evidência de condução.
+        // Se a IA sugerir Motorista e o candidato não passar no crivo estrito, reverter automaticamente para a vaga de Cobrador da garagem mais próxima,
+        // validando faixa 18-56 anos somente quando a idade existir (se null, segue sem validar idade).
         if (!isMotoristaObjective && !candidatoTemExpMotorista) {
           const candidateAgeForCheck = extractCandidateAge(parsedDadosExtraidos)
           const isAgeOkCobrador =
             candidateAgeForCheck === null ||
             (candidateAgeForCheck >= 18 && candidateAgeForCheck <= 56)
 
-          const allExpList = getExperiencesList(parsedDadosExtraidos || cvDataToAnalyze)
-          const hasCaixaOrAtendimentoExp = allExpList.some((item: any) => {
-            const c = normalizeString(
-              typeof item === 'string' ? item : item.cargo || item.funcao || item.titulo || '',
-            )
-            const d =
-              typeof item === 'object' && item !== null
-                ? normalizeString(item.descricao || item.atividades || item.resumo || '')
-                : ''
-            return (
-              c.includes('caixa') ||
-              c.includes('atendimento') ||
-              c.includes('cobranca') ||
-              c.includes('vigil') ||
-              c.includes('loja') ||
-              c.includes('cobrador') ||
-              c.includes('bilheteiro') ||
-              c.includes('balconista') ||
-              d.includes('operador de caixa') ||
-              d.includes('atendimento ao cliente')
-            )
-          })
-
-          if (hasCaixaOrAtendimentoExp && isAgeOkCobrador) {
+          if (isAgeOkCobrador) {
             const cobradorVagas = vagas.filter((v) =>
               normalizeString(v.titulo || '').includes('cobrador'),
             )
             if (cobradorVagas.length > 0) {
-              const { vaga: cobradorVaga, menorDistanciaKm } = await pickBestVagaByProximity(
+              const { vaga: cobradorVaga } = await pickBestVagaByProximity(
                 candidatoEndereco,
                 cobradorVagas,
                 googleApiKey,
               )
               console.log(
-                `[identify-vaga-from-cv] Salvaguarda anti-falso-motorista acionada: IA associou erroneamente a Motorista ("${targetVaga?.titulo}"), mas candidato não tem cargo de condução nem CNH D/E. Possui experiência em Caixa/Atendimento/Loja. Redirecionando para Cobrador ("${cobradorVaga.titulo}").`,
+                `[identify-vaga-from-cv] Salvaguarda anti-falso-motorista acionada: IA associou a Motorista ("${targetVaga?.titulo}"), mas candidato NÃO possui cargo real de condução nem CNH D/E (termos como ajudante, estacionamento, leve mobilidade, loja ou lavador não contam). Revertendo automaticamente para Cobrador da garagem mais próxima ("${cobradorVaga.titulo}").`,
               )
               result.vaga_id = cobradorVaga.id
               result.confianca = 'alta'
-              result.justificativa = `Candidato não possui experiência em condução de veículos nem CNH D/E comprovada. O histórico profissional comprova atuação em Operador de Caixa / Atendimento / Loja, sendo direcionado para a vaga de Cobrador da garagem mais próxima ("${cobradorVaga.titulo}").`
+              result.justificativa = `Candidato não possui experiência em condução real de veículos nem CNH D/E comprovada (cargos como ajudante de motorista, lavador, operador de caixa ou empresa de estacionamento não qualificam como motorista). Pela salvaguarda estrita, foi direcionado para a vaga de Cobrador da garagem mais próxima ("${cobradorVaga.titulo}").`
+            } else {
+              result.vaga_id = null
+              result.confianca = 'nenhuma'
+              result.justificativa =
+                'Candidato não possui condução real nem CNH D/E para a vaga de Motorista, e não há vaga de Cobrador aberta no momento.'
             }
+          } else {
+            // Se a idade existe e é comprovadamente fora da faixa de Cobrador (<18 ou >56), não colocar em Cobrador
+            result.vaga_id = null
+            result.confianca = 'nenhuma'
+            result.justificativa = `Candidato não possui perfil de Motorista (sem condução real/CNH D/E) e possui idade (${candidateAgeForCheck} anos) fora da faixa etária de 18 a 56 anos para Cobrador.`
           }
         }
       } else if (isMotoristaObjective && !normTargetTitle.includes('motorista')) {

@@ -213,7 +213,7 @@ Deno.serve(async (req: Request) => {
 - telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11974697877"]) ou [] se nenhum
 - endereco: Cidade e estado ou endereço completo (ex: "São Bernardo do Campo - SP"), ou null se não identificado
 - idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
-- data_nascimento: Data de nascimento informada (ex: "16/01/1993" ou "1993-01-16"), ou null se não constar
+- data_nascimento: Data de nascimento informada em qualquer formato (ex: "16/01/1993", "16-01-1993", "16.01.1993", "1993-01-16", "nascido em 16 de janeiro de 1993", "Nascimento: 16/01/93"), ou null se não constar
 - objetivo: Cargo pretendido, objetivo profissional ou área de interesse expressamente informada no currículo (ex: "Cobrador de Ônibus", "Motorista", "Auxiliar Administrativo", "Mecânico"), ou null se não identificado
 - experiencia_profissional: Lista de experiências anteriores com cargos e empresas, ou []
 - skills: Lista de habilidades técnicas e competências, ou []
@@ -264,8 +264,16 @@ ${extractedText.substring(0, 18000)}`
     )
     let hasEmail = Boolean(extractedData?.email || email)
 
+    const hasDataNascimento = Boolean(
+      extractedData?.data_nascimento && String(extractedData.data_nascimento).trim().length > 0,
+    )
     const isHeaderIncomplete =
-      !cleanName || !hasTelefone || !hasEndereco || !hasEmail || !hasSufficientText
+      !cleanName ||
+      !hasTelefone ||
+      !hasEndereco ||
+      !hasEmail ||
+      !hasDataNascimento ||
+      !hasSufficientText
 
     // 3.1 OCR via Google Cloud Vision como principal recurso quando falta cabeçalho
     if (isHeaderIncomplete && !isDocx && fileBytes.length > 0) {
@@ -572,6 +580,16 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
     }
 
     const finalEmail = cleanEmail
+
+    // Tenta também pré-processar regex de data de nascimento no texto extraído se ainda não foi identificada
+    if (!extractedData.data_nascimento && extractedText) {
+      const birthDateRegex =
+        /(?:nasc(?:ido|imento|ida)?(?:\s+em)?[:\s]+)?\b([0-3]?\d[\/\-\.][0-1]?\d[\/\-\.](?:19|20)\d{2})\b/i
+      const matchDate = extractedText.match(birthDateRegex)
+      if (matchDate && matchDate[1]) {
+        extractedData.data_nascimento = matchDate[1]
+      }
+    }
 
     // Recalcular e sobrescrever idade caso haja data de nascimento
     const resolvedAge = resolveCandidateAge(extractedData.idade, extractedData.data_nascimento)

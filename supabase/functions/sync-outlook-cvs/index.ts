@@ -62,7 +62,7 @@ Extraia com cuidado preservando a grafia correta com acentos em português:
 - telefone: Telefone celular principal ou null se não identificado
 - endereco: Cidade, estado ou endereço completo, ou null se não identificado
 - idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
-- data_nascimento: Data de nascimento informada (ex: "16/01/1993" ou "1993-01-16"), ou null se não constar
+- data_nascimento: Data de nascimento informada em qualquer formato (ex: "16/01/1993", "16-01-1993", "16.01.1993", "1993-01-16", "nascido em 16 de janeiro de 1993"), ou null se não constar
 - objetivo: Cargo pretendido, objetivo profissional ou área de interesse informada no currículo (ex: "Cobrador de Ônibus", "Motorista", "Auxiliar Administrativo"), ou null se não identificado
 - resumo_cv: Resumo das qualificações e perfil profissional, ou null se não identificado
 - experiencia_profissional: Lista de experiências anteriores com cargos e empresas, ou [] se não houver
@@ -510,12 +510,21 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
 
         const { extractedData, rawText } = extractionResult
 
+        // Tenta também pré-processar regex de data de nascimento no texto extraído se ainda não foi identificada
+        if (!extractedData.data_nascimento && extractedText) {
+          const birthDateRegex =
+            /(?:nasc(?:ido|imento|ida)?(?:\s+em)?[:\s]+)?\b([0-3]?\d[\/\-\.][0-1]?\d[\/\-\.](?:19|20)\d{2})\b/i
+          const matchDate = extractedText.match(birthDateRegex)
+          if (matchDate && matchDate[1]) {
+            extractedData.data_nascimento = matchDate[1]
+          }
+        }
+
         // Recalcular e sobrescrever idade caso haja data de nascimento
         const resolvedAge = resolveCandidateAge(extractedData.idade, extractedData.data_nascimento)
         if (resolvedAge !== null) {
           extractedData.idade = resolvedAge
         }
-
         // MUDANÇA 2: Validações rigorosas de nome e email
         const cleanCandidateName = sanitizeAndValidateName(extractedData.nome)
         const cleanCandidateEmail = sanitizeAndValidateEmail(extractedData.email)

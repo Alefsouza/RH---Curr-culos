@@ -88,6 +88,95 @@ export const sanitizeAndValidateName = (name: string | null | undefined): string
  * - "YYYY-MM-DD" ou "YYYY/MM/DD"
  * - ISO string
  */
+const MONTH_NAMES_MAP: Record<string, number> = {
+  janeiro: 0,
+  jan: 0,
+  fevereiro: 1,
+  fev: 1,
+  marco: 2,
+  mar: 2,
+  abril: 3,
+  abr: 3,
+  maio: 4,
+  mai: 4,
+  junho: 5,
+  jun: 5,
+  julho: 6,
+  jul: 6,
+  agosto: 7,
+  ago: 7,
+  setembro: 8,
+  set: 8,
+  outubro: 9,
+  out: 9,
+  novembro: 10,
+  nov: 10,
+  dezembro: 11,
+  dez: 11,
+}
+
+/**
+ * Tenta extrair e normalizar uma data de nascimento a partir de uma string livre
+ * (suporta DD/MM/AAAA, DD-MM-AAAA, DD.MM.AAAA, ISO AAAA-MM-DD, e frases como "nascido em 12/03/1990", "nascimento: 15 de maio de 1985").
+ */
+export const extractBirthDateFromString = (input: string | null | undefined): string | null => {
+  if (!input || typeof input !== 'string') return null
+  const clean = input.trim()
+  if (!clean) return null
+
+  // 1. Procura formatos numéricos: DD/MM/AAAA, DD-MM-AAAA, DD.MM.AAAA
+  const dmyMatch = clean.match(/\b([0-3]?\d)[\/\-\.]([0-1]?\d)[\/\-\.]((?:19|20)\d{2})\b/)
+  if (dmyMatch) {
+    const day = dmyMatch[1].padStart(2, '0')
+    const month = dmyMatch[2].padStart(2, '0')
+    const year = dmyMatch[3]
+    const dNum = parseInt(day, 10)
+    const mNum = parseInt(month, 10)
+    if (dNum >= 1 && dNum <= 31 && mNum >= 1 && mNum <= 12) {
+      return `${day}/${month}/${year}`
+    }
+  }
+
+  // 2. Formato ISO AAAA-MM-DD ou AAAA/MM/DD ou AAAA.MM.DD
+  const ymdMatch = clean.match(/\b((?:19|20)\d{2})[\/\-\.]([0-1]?\d)[\/\-\.]([0-3]?\d)\b/)
+  if (ymdMatch) {
+    const year = ymdMatch[1]
+    const month = ymdMatch[2].padStart(2, '0')
+    const day = ymdMatch[3].padStart(2, '0')
+    const dNum = parseInt(day, 10)
+    const mNum = parseInt(month, 10)
+    if (dNum >= 1 && dNum <= 31 && mNum >= 1 && mNum <= 12) {
+      return `${day}/${month}/${year}`
+    }
+  }
+
+  // 3. Formato textual brasileiro: "15 de maio de 1985", "nascido a 10 de marco de 1992"
+  const normText = clean
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+  const textualMatch = normText.match(/\b([0-3]?\d)\s+de\s+([a-z]+)\s+de\s+((?:19|20)\d{2})\b/)
+  if (textualMatch) {
+    const day = textualMatch[1].padStart(2, '0')
+    const monthStr = textualMatch[2]
+    const year = textualMatch[3]
+    if (MONTH_NAMES_MAP[monthStr] !== undefined) {
+      const month = String(MONTH_NAMES_MAP[monthStr] + 1).padStart(2, '0')
+      return `${day}/${month}/${year}`
+    }
+  }
+
+  return null
+}
+
+/**
+ * Calcula a idade em anos completos a partir de uma data de nascimento ou string de data.
+ * Suporta formatos:
+ * - "DD/MM/YYYY", "DD-MM-YYYY", "DD.MM.YYYY"
+ * - "YYYY-MM-DD", "YYYY/MM/DD", "YYYY.MM.DD"
+ * - Frases: "nascido em 12/03/1990", "15 de maio de 1985"
+ * - ISO string
+ */
 export const calculateAgeFromBirthDate = (
   birthDateInput: string | Date | null | undefined,
   referenceDate: Date = new Date(),
@@ -104,32 +193,21 @@ export const calculateAgeFromBirthDate = (
     const dStr = birthDateInput.trim()
     if (!dStr) return null
 
-    // Formato brasileiro DD/MM/YYYY ou DD-MM-YYYY
-    const brMatch = dStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/)
-    if (brMatch) {
-      const day = parseInt(brMatch[1], 10)
-      const month = parseInt(brMatch[2], 10) - 1
-      const year = parseInt(brMatch[3], 10)
+    // Extrai no formato padronizado DD/MM/AAAA
+    const extractedFormatted = extractBirthDateFromString(dStr)
+    if (extractedFormatted) {
+      const parts = extractedFormatted.split('/')
+      const day = parseInt(parts[0], 10)
+      const month = parseInt(parts[1], 10) - 1
+      const year = parseInt(parts[2], 10)
       const parsed = new Date(year, month, day)
       if (!isNaN(parsed.getTime()) && parsed.getMonth() === month && parsed.getDate() === day) {
         birthDate = parsed
       }
     } else {
-      // Formato ISO YYYY-MM-DD ou YYYY/MM/DD
-      const isoMatch = dStr.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/)
-      if (isoMatch) {
-        const year = parseInt(isoMatch[1], 10)
-        const month = parseInt(isoMatch[2], 10) - 1
-        const day = parseInt(isoMatch[3], 10)
-        const parsed = new Date(year, month, day)
-        if (!isNaN(parsed.getTime()) && parsed.getMonth() === month && parsed.getDate() === day) {
-          birthDate = parsed
-        }
-      } else {
-        const parsed = new Date(dStr)
-        if (!isNaN(parsed.getTime())) {
-          birthDate = parsed
-        }
+      const parsed = new Date(dStr)
+      if (!isNaN(parsed.getTime())) {
+        birthDate = parsed
       }
     }
   }

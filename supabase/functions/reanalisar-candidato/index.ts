@@ -180,7 +180,7 @@ Deno.serve(async (req: Request) => {
 - telefone: Telefone principal ou null
 - endereco: Endereço completo ou cidade/estado (ex: "São Bernardo do Campo - SP"), ou null se não identificado
 - idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
-- data_nascimento: Data de nascimento informada (ex: "16/01/1993" ou "1993-01-16"), ou null se não constar
+- data_nascimento: Data de nascimento informada em qualquer formato (ex: "16/01/1993", "16-01-1993", "16.01.1993", "1993-01-16", "nascido em 16 de janeiro de 1993"), ou null se não constar
 - objetivo: Cargo pretendido, objetivo profissional ou área informada no currículo (ex: "Cobrador de Ônibus", "Motorista", "Auxiliar Administrativo"), ou null se não identificado
 - resumo_cv: Resumo das qualificações, ou null
 - experiencia_profissional: Lista de experiências anteriores, ou []
@@ -214,13 +214,19 @@ ${extractedText.substring(0, 18000)}`
             )
             let hasNewEmail = Boolean(newlyExtracted?.email)
 
+            const hasDataNascimento = Boolean(
+              newlyExtracted?.data_nascimento &&
+              String(newlyExtracted.data_nascimento).trim().length > 0,
+            )
+
             const isHeaderMissing =
               !parsedName ||
               !hasNewTelefone ||
               !hasNewEndereco ||
               !hasNewEmail ||
+              !hasDataNascimento ||
               !extractedText ||
-              extractedText.trim().length < 30
+              extractedText.trim().length < 50
 
             const hasNewlyExtractedExperiencia =
               Array.isArray(newlyExtracted?.experiencia_profissional) &&
@@ -539,6 +545,16 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
               }
             }
             if (newlyExtracted) {
+              // Tenta regex adicional se data_nascimento estiver ausente
+              if (!newlyExtracted.data_nascimento && extractedText) {
+                const birthDateRegex =
+                  /(?:nasc(?:ido|imento|ida)?(?:\s+em)?[:\s]+)?\b([0-3]?\d[\/\-\.][0-1]?\d[\/\-\.](?:19|20)\d{2})\b/i
+                const matchDate = extractedText.match(birthDateRegex)
+                if (matchDate && matchDate[1]) {
+                  newlyExtracted.data_nascimento = matchDate[1]
+                }
+              }
+
               // Recalcular e sobrescrever idade caso haja data de nascimento
               const resolvedAge = resolveCandidateAge(
                 newlyExtracted.idade,
@@ -547,7 +563,6 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
               if (resolvedAge !== null) {
                 newlyExtracted.idade = resolvedAge
               }
-
               const cleanName = sanitizeAndValidateName(newlyExtracted.nome)
               const cleanEmail = sanitizeAndValidateEmail(newlyExtracted.email)
 
