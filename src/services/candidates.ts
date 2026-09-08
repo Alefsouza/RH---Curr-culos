@@ -268,20 +268,75 @@ export async function updateAnaliseStatus(
   }
 
   // Se o status for alterado para 'qualificado', reativar o candidato no Kanban (reversibilidade)
+  // E se estiver sem etapa, mover automaticamente para "Triagem" e registrar no histórico
   if (status === 'qualificado') {
-    await supabase
+    const { data: candidatoAtual } = await supabase
       .from('candidatos')
-      .update({
-        ativo_kanban: true,
-        motivo_inativo: null,
-      })
+      .select('etapa_id')
       .eq('id', cv_id)
-  } else if (status === 'retirado_kanban') {
+      .maybeSingle()
+
+    const updatePayload: { ativo_kanban: boolean; motivo_inativo: null; etapa_id?: string } = {
+      ativo_kanban: true,
+      motivo_inativo: null,
+    }
+
+    let assignedTriagemEtapaId: string | null = null
+
+    if (!candidatoAtual?.etapa_id) {
+      // Buscar a etapa "Triagem" ou a primeira etapa do funil (menor ordem)
+      const { data: triagemEtapa } = await supabase
+        .from('etapas')
+        .select('id')
+        .ilike('nome', 'Triagem')
+        .limit(1)
+        .maybeSingle()
+
+      if (triagemEtapa?.id) {
+        assignedTriagemEtapaId = triagemEtapa.id
+      } else {
+        const { data: firstEtapa } = await supabase
+          .from('etapas')
+          .select('id')
+          .order('ordem', { ascending: true })
+          .limit(1)
+          .maybeSingle()
+        if (firstEtapa?.id) {
+          assignedTriagemEtapaId = firstEtapa.id
+        }
+      }
+
+      if (assignedTriagemEtapaId) {
+        updatePayload.etapa_id = assignedTriagemEtapaId
+      }
+    }
+
+    const { error: candUpdateError } = await supabase
+      .from('candidatos')
+      .update(updatePayload)
+      .eq('id', cv_id)
+
+    if (candUpdateError) throw candUpdateError
+
+    // Se a etapa foi alterada para Triagem, registrar no histórico candidato_etapa
+    if (assignedTriagemEtapaId) {
+      try {
+        await supabase.from('candidato_etapa').insert({
+          candidato_id: cv_id,
+          etapa_id: assignedTriagemEtapaId,
+          usuario_id: user_id,
+        })
+      } catch (histError) {
+        console.error('Erro ao registrar histórico de etapa Triagem:', histError)
+      }
+    }
+  } else if (status === 'retirado_kanban' || status === 'nao_qualificado') {
+    // Quando o candidato é retirado do Kanban ou marcado como Não Qualificado
     await supabase
       .from('candidatos')
       .update({
         ativo_kanban: false,
-        motivo_inativo: 'Retirado Kanban',
+        motivo_inativo: status === 'retirado_kanban' ? 'Retirado Kanban' : 'Não Qualificado',
       })
       .eq('id', cv_id)
   }

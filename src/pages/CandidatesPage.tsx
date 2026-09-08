@@ -195,8 +195,8 @@ export default function CandidatesPage() {
     currentStatus: string | null,
     vagaId: string | null,
   ) => {
-    // Se estiver qualificado, muda para 'nao_qualificado' (ou 'retirado_kanban')
-    // Se estiver em 'retirado_kanban', 'nao_qualificado', 'revisar' ou 'pendente', ao mudar para Sim vai para 'qualificado'
+    // Se estiver qualificado, muda para 'nao_qualificado' e sai do Kanban.
+    // Se estiver em 'retirado_kanban', 'nao_qualificado', 'revisar' ou 'pendente', ao mudar para Sim vai para 'qualificado'.
     const newStatus = currentStatus === 'qualificado' ? 'nao_qualificado' : 'qualificado'
     try {
       const {
@@ -210,11 +210,14 @@ export default function CandidatesPage() {
       }
 
       await updateAnaliseStatus(candidateId, vagaId, newStatus, user.id)
+      window.dispatchEvent(new CustomEvent('kanban:reload'))
+      window.dispatchEvent(new CustomEvent('kanban:delete-candidate', { detail: { candidateId } }))
+
       toast({
         title:
           newStatus === 'qualificado'
             ? 'Candidato qualificado e adicionado ao Kanban'
-            : 'Status atualizado com sucesso',
+            : 'Candidato não qualificado e retirado do Kanban',
       })
       loadData()
     } catch (err: any) {
@@ -232,7 +235,8 @@ export default function CandidatesPage() {
         'qualificado',
         pendingQualify.userId,
       )
-      toast({ title: 'Candidato qualificado com sucesso' })
+      window.dispatchEvent(new CustomEvent('kanban:reload'))
+      toast({ title: 'Candidato qualificado e adicionado ao Kanban' })
       setPendingQualify(null)
       loadData()
     } catch (err: any) {
