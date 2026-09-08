@@ -4,7 +4,7 @@
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://egferpbppisambawnhke.supabase.co'
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE || ''
 
-const CANDIDATE_ID = '9c351c31-33cd-45c9-b024-29f5abb0927e'
+const CANDIDATE_ID = 'e8e5d96f-6d4c-4b60-91e0-a06d746fdbf2'
 
 async function main() {
   console.log(`[reanalyze-henrique] Iniciando reanálise para candidato: ${CANDIDATE_ID}`)
