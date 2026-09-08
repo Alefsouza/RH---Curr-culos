@@ -118,6 +118,17 @@ Deno.serve(async (req: Request) => {
     const hasExperiencia =
       Array.isArray(currentDadosExtraidos.experiencia_profissional) &&
       currentDadosExtraidos.experiencia_profissional.length > 0
+    const hasFormacao =
+      Array.isArray(currentDadosExtraidos.formacao_academica) &&
+      currentDadosExtraidos.formacao_academica.length > 0
+    const hasSkills =
+      Array.isArray(currentDadosExtraidos.skills) && currentDadosExtraidos.skills.length > 0
+
+    // O corpo do currículo é considerado vazio quando todas as 4 chaves estão vazias/null:
+    // experiencia_profissional, formacao_academica, skills e objetivo.
+    // Se existir pelo menos um item em qualquer uma delas, isBodyEmpty será falso.
+    const isBodyEmpty = !hasExperiencia && !hasFormacao && !hasSkills && !hasObjetivo
+
     const needsReExtraction =
       force_reextract ||
       !validCurrentName ||
@@ -125,6 +136,7 @@ Deno.serve(async (req: Request) => {
       !hasCurrentTelefone ||
       !hasCurrentEndereco ||
       !currentDadosExtraidos.skills ||
+      isBodyEmpty ||
       (!hasObjetivo && !hasExperiencia) ||
       (Array.isArray(currentDadosExtraidos.skills) &&
         currentDadosExtraidos.skills.length === 0 &&
@@ -189,7 +201,7 @@ ${extractedText.substring(0, 18000)}`
               newlyExtracted = JSON.parse(rawContent)
             }
 
-            // Tentativa 2: Google Vision OCR caso falte cabeçalho (nome, telefone, endereco ou email)
+            // Tentativa 2: Google Vision OCR caso falte cabeçalho (nome, telefone, endereco ou email) OU corpo esteja vazio
             let parsedName = sanitizeAndValidateName(newlyExtracted?.nome)
             let hasNewTelefone =
               Boolean(newlyExtracted?.telefone) ||
@@ -208,10 +220,35 @@ ${extractedText.substring(0, 18000)}`
               !extractedText ||
               extractedText.trim().length < 30
 
-            if (isHeaderMissing && !isDocx && fileBytes.length > 0) {
+            const hasNewlyExtractedExperiencia =
+              Array.isArray(newlyExtracted?.experiencia_profissional) &&
+              newlyExtracted.experiencia_profissional.length > 0
+            const hasNewlyExtractedFormacao =
+              Array.isArray(newlyExtracted?.formacao_academica) &&
+              newlyExtracted.formacao_academica.length > 0
+            const hasNewlyExtractedSkills =
+              Array.isArray(newlyExtracted?.skills) && newlyExtracted.skills.length > 0
+            const hasNewlyExtractedObjetivo =
+              typeof newlyExtracted?.objetivo === 'string' &&
+              newlyExtracted.objetivo.trim().length > 0
+
+            // O corpo é considerado vazio se todas as 4 chaves estiverem vazias/null
+            const isNewlyExtractedBodyEmpty =
+              !hasNewlyExtractedExperiencia &&
+              !hasNewlyExtractedFormacao &&
+              !hasNewlyExtractedSkills &&
+              !hasNewlyExtractedObjetivo
+
+            const shouldTriggerOcr = isHeaderMissing || isNewlyExtractedBodyEmpty
+
+            if (shouldTriggerOcr && !isDocx && fileBytes.length > 0) {
               try {
                 console.log(
-                  `[reanalisar-candidato] Cabeçalho ausente/incompleto para candidato ${candidato.id}. Executando Google Vision OCR...`,
+                  `[reanalisar-candidato] Disparo de Google Vision OCR para candidato ${candidato.id}: ${
+                    isHeaderMissing
+                      ? 'cabeçalho incompleto'
+                      : 'corpo vazio (experiência, formação, skills e objetivo vazios)'
+                  }.`,
                 )
                 const ocrText = await performGoogleVisionPdfOcr(fileBytes)
                 if (ocrText && ocrText.trim().length > 20) {
@@ -291,8 +328,29 @@ ${combinedText.substring(0, 25000)}`
             }
 
             // Tentativa 3: Fallback de visão OpenAI via Files API + Responses API (gpt-4o) como último recurso
+            const hasPostOcrExperiencia =
+              Array.isArray(newlyExtracted?.experiencia_profissional) &&
+              newlyExtracted.experiencia_profissional.length > 0
+            const hasPostOcrFormacao =
+              Array.isArray(newlyExtracted?.formacao_academica) &&
+              newlyExtracted.formacao_academica.length > 0
+            const hasPostOcrSkills =
+              Array.isArray(newlyExtracted?.skills) && newlyExtracted.skills.length > 0
+            const hasPostOcrObjetivo =
+              typeof newlyExtracted?.objetivo === 'string' &&
+              newlyExtracted.objetivo.trim().length > 0
+            const isPostOcrBodyEmpty =
+              !hasPostOcrExperiencia &&
+              !hasPostOcrFormacao &&
+              !hasPostOcrSkills &&
+              !hasPostOcrObjetivo
+
             const stillNeedsVisionReextract =
-              !parsedName || !hasNewTelefone || !hasNewEndereco || !hasNewEmail
+              !parsedName ||
+              !hasNewTelefone ||
+              !hasNewEndereco ||
+              !hasNewEmail ||
+              isPostOcrBodyEmpty
 
             if (
               stillNeedsVisionReextract &&
