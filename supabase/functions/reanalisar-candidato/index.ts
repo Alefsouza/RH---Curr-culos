@@ -13,6 +13,7 @@ import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
 import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
 import { performGoogleVisionPdfOcr } from '../_shared/ocr.ts'
 
+// Reanálise de candidato com regras de fallback por experiência e salvaguarda
 // Extrai caminho relativo do storage a partir de URL pública ou storage path
 function extractStoragePathFromCurriculoUrl(urlOrPath: string): string | null {
   if (!urlOrPath) return null
@@ -668,9 +669,20 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
     }
 
     // Reanálise identifica a vaga compatível com base no currículo atualizado
+    // Envia Authorization Bearer service_role e header apikey
+    const identifyHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${supabaseKey}`,
+      apikey: supabaseKey,
+    }
+    const incomingAuth = req.headers.get('Authorization')
+    if (incomingAuth) {
+      identifyHeaders['x-forwarded-auth'] = incomingAuth
+    }
+
     const identifyRes = await fetch(`${supabaseUrl}/functions/v1/identify-vaga-from-cv`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${supabaseKey}` },
+      headers: identifyHeaders,
       body: JSON.stringify({
         candidato_id: candidato.id,
         user_id: effectiveUserId,
@@ -879,9 +891,18 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
       }
     }
 
+    const analyzeHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${supabaseKey}`,
+      apikey: supabaseKey,
+    }
+    if (incomingAuth) {
+      analyzeHeaders['x-forwarded-auth'] = incomingAuth
+    }
+
     const analyzeRes = await fetch(`${supabaseUrl}/functions/v1/analisar-cv-criterios`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${supabaseKey}` },
+      headers: analyzeHeaders,
       body: JSON.stringify({
         cv_id: candidato.id,
         vaga_id: identifiedVagaId,

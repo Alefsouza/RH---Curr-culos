@@ -11,6 +11,7 @@ import {
 } from '../_shared/proximity.ts'
 import { resolveCandidateAge } from '../_shared/validation.ts'
 
+// Regras e salvaguardas de fallback por experiência profissional
 // Padrões de objetivo genérico (normalizados sem acento)
 const GENERIC_OBJECTIVE_PATTERNS = [
   'a disposicao da empresa',
