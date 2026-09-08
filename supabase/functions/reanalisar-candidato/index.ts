@@ -14,6 +14,7 @@ import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
 import { performGoogleVisionPdfOcr } from '../_shared/ocr.ts'
 
 // Reanálise de candidato com regras de fallback por experiência e salvaguarda
+// Deploy e execução da correção do falso motorista (Henrique Amâncio)
 // Extrai caminho relativo do storage a partir de URL pública ou storage path
 function extractStoragePathFromCurriculoUrl(urlOrPath: string): string | null {
   if (!urlOrPath) return null
