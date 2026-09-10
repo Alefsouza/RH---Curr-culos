@@ -502,6 +502,7 @@ Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
           }
 
           // PÓS-VALIDAÇÃO DETERMINÍSTICA: CRITÉRIOS COM ALTERNATIVAS "OU" (EX: CNH D OU E)
+          // Critérios alternativos com "OU" (ex.: "Categoria D ou E") aceitam qualquer uma das opções.
           const critVagaLower = (criteriosText || '').toLowerCase()
           const vagaTemCnhDouE =
             critVagaLower.includes('categoria d ou e') ||

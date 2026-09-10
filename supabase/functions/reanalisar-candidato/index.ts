@@ -937,6 +937,7 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
 
     // =========================================================================
     // SALVAGUARDA 1.8: SANITIZAÇÃO DE MOTIVO PARA CRITÉRIOS ALTERNATIVOS COM "OU"
+    // Critérios alternativos com "OU" (ex.: "Categoria D ou E") aceitam qualquer uma das opções.
     // Caso a análise retorne menção errônea a "CNH deve ser E" para vagas que aceitam "D ou E"
     // quando o candidato possui CNH D, sanitizar para garantir consistência.
     // =========================================================================

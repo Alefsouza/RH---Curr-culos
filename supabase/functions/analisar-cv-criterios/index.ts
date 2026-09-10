@@ -427,9 +427,9 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
     }
 
     // PÓS-VALIDAÇÃO DETERMINÍSTICA: CORREÇÃO DE CRITÉRIOS ALTERNATIVOS COM "OU" (EX: CNH D OU E)
-    // Se o critério da vaga permite alternativas como "Categoria D ou E", e o candidato possui
-    // qualquer uma das opções (ex: tem CNH D), a IA NUNCA pode ter reprovado por exigir "somente E"
-    // ou alegar falta de CNH E.
+    // Quando qualquer critério contiver alternativas com "OU" (ex.: "Categoria D ou E"),
+    // o cumprimento de QUALQUER uma das alternativas satisfaz plenamente o critério.
+    // A IA NUNCA pode ter reprovado por exigir "somente E" ou alegar falta de CNH E se o candidato possui CNH D.
     const criteriosLower = (criteriosText || '').toLowerCase()
     const vagaPermiteCnhDouE =
       criteriosLower.includes('categoria d ou e') ||
