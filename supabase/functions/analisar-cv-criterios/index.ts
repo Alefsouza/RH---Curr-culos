@@ -265,8 +265,20 @@ Dados completos do currículo:
 ${JSON.stringify(cvData)}
 
 DIRETRIZES CRÍTICAS PARA AVALIAÇÃO DE CRITÉRIOS:
-1. REGRA CONDICIONAL AO GÊNERO / SEXO (EX: "MULHERES APENAS SE TIVER CATEGORIA D NA CNH"):
-   - Quando nos critérios da vaga houver regras condicionais do tipo "Mulheres apenas se tiver categoria D na CNH" ou "Mulheres apenas se...":
+0. REGRA MANDATÓRIA DE CRITÉRIOS ALTERNATIVOS COM "OU" (EX: "CATEGORIA D OU E", "CURSO X OU EXPERIÊNCIA Y"):
+   - Quando qualquer critério da vaga contiver opções alternativas unidas por "OU" (ex.: "Categoria D ou E", "CNH D ou E", "Ensino Médio ou Superior", "Curso X ou Y"):
+     * QUALQUER UMA das alternativas satisfaz PLENAMENTE o critério!
+     * Se o critério diz "Categoria D ou E":
+       - Candidato com CNH Categoria D atende PLENAMENTE ao critério ✅.
+       - Candidato com CNH Categoria E atende PLENAMENTE ao critério ✅.
+       - Candidato com CNH AD ou AE atende PLENAMENTE ao critério ✅.
+     * NUNCA transforme "D ou E" em "somente E" ou "apenas E"!
+     * NUNCA reprove nem afirme que o candidato não atende porque tem apenas a opção X se o critério aceita "X ou Y"!
+     * Registre esse critério como ATENDIDO em 'matched_criteria' (ex: {"nome": "Categoria da CNH", "evidencia": "Candidato possui Categoria D, atendendo ao requisito 'Categoria D ou E'"}).
+     * NUNCA inclua esse critério em 'unmatched_criteria' quando uma das alternativas for cumprida.
+     * No campo 'motivo' ou 'summary', NUNCA declare que a vaga exigia apenas uma das alternativas quando o texto original possui "ou".
+
+1. REGRA CONDICIONAL AO GÊNERO / SEXO (EX: "MULHERES APENAS SE TIVER CATEGORIA D NA CNH"):   - Quando nos critérios da vaga houver regras condicionais do tipo "Mulheres apenas se tiver categoria D na CNH" ou "Mulheres apenas se...":
      * Identifique o gênero/sexo do candidato com base no primeiro nome, pronomes, gênero informado ou pistas contextuais do currículo (ex: Maria, Ana, Camila, Juliana, etc. = Mulher; Carlos, João, Marcos, Henrique, etc. = Homem).
      * SE O CANDIDATO FOR MULHER:
        - Deve-se entender que para essa vaga SÓ se admite mulher se ela possuir a CNH especificada (ex: CNH Categoria D ou E).
@@ -306,8 +318,8 @@ DIRETRIZES CRÍTICAS PARA AVALIAÇÃO DE CRITÉRIOS:
 6. AVALIAÇÃO GERAL E RESPEITO AOS CRITÉRIOS EXPLÍCITOS:
    - Continue considerando e respeitando todos os critérios explícitos de cada vaga (ex: exigência de CNH D ou E para motorista, tempo de experiência mandatório vs desejável, etc.).
    - As regras de flexibilização de escolaridade e credencial de transporte NÃO sobrepõem critérios explícitos da vaga (por exemplo: se a vaga exige CNH D/E para todos os candidatos, o candidato ainda precisa ter CNH D/E).
+   - Critérios com alternativas "X ou Y" (como "Categoria D ou E") são atendidos por qualquer uma das alternativas (D ou E), NUNCA restrinja a uma única opção.
    - Não invente critérios eliminatórios que não constem na descrição ou critérios da vaga.
-
 7. REGRA DE CANDIDATO DIRECIONADO POR EXPERIÊNCIA / FALLBACK DE OBJETIVO:
    - Quando o candidato tiver um objetivo específico que difere do título da vaga (ex: objetivo "Manutenção" avaliado para a vaga de "Abastecedor Leste"), considere prioritariamente a EXPERIÊNCIA PROFISSIONAL do candidato compatível com a vaga (ex: experiência como Frentista, Abastecimento, Posto Shell é altamente aderente para a vaga de Abastecedor).
    - NUNCA reprove o candidato apenas pelo campo "objetivo" ter uma palavra diferente do título da vaga, desde que o histórico profissional atenda ao perfil e às exigências da vaga.
@@ -410,6 +422,146 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
           !motivoFinal.toLowerCase().includes('raio')
         ) {
           motivoFinal = `Reprovado por localização: Distância calculada de ${menorDistanciaKm.toFixed(2)} km ultrapassa o limite aceitável de ${raioKm} km. ${motivoFinal}`
+        }
+      }
+    }
+
+    // PÓS-VALIDAÇÃO DETERMINÍSTICA: CORREÇÃO DE CRITÉRIOS ALTERNATIVOS COM "OU" (EX: CNH D OU E)
+    // Se o critério da vaga permite alternativas como "Categoria D ou E", e o candidato possui
+    // qualquer uma das opções (ex: tem CNH D), a IA NUNCA pode ter reprovado por exigir "somente E"
+    // ou alegar falta de CNH E.
+    const criteriosLower = (criteriosText || '').toLowerCase()
+    const vagaPermiteCnhDouE =
+      criteriosLower.includes('categoria d ou e') ||
+      criteriosLower.includes('cnh d ou e') ||
+      criteriosLower.includes('categoria d/e') ||
+      criteriosLower.includes('d ou e')
+
+    // Verificar se o candidato possui CNH D ou E
+    const candidatoSkills = Array.isArray(cvData.skills) ? cvData.skills.join(' ') : ''
+    const candidatoCnhStr = (
+      (cvData.cnh || '') +
+      ' ' +
+      (cvData.categoria_cnh || '') +
+      ' ' +
+      (cvData.cnh_categoria || '') +
+      ' ' +
+      (cvData.habilitacao || '') +
+      ' ' +
+      candidatoSkills +
+      ' ' +
+      (cvData.resumo_cv || '')
+    ).toLowerCase()
+
+    const hasCandidateCnhD =
+      /\b(cnh|categoria|cat|habilitacao)\s*(categoria\s*)?([a-c]*d[a-e]*)\b/.test(
+        candidatoCnhStr,
+      ) ||
+      /\bcnh\s*d\b/.test(candidatoCnhStr) ||
+      /\bcategoria\s*d\b/.test(candidatoCnhStr) ||
+      /\bcat\s*d\b/.test(candidatoCnhStr) ||
+      candidatoCnhStr.includes('categoria d') ||
+      candidatoCnhStr.includes('cnh d')
+
+    const hasCandidateCnhE =
+      /\b(cnh|categoria|cat|habilitacao)\s*(categoria\s*)?([a-d]*e)\b/.test(candidatoCnhStr) ||
+      /\bcnh\s*e\b/.test(candidatoCnhStr) ||
+      /\bcategoria\s*e\b/.test(candidatoCnhStr) ||
+      /\bcat\s*e\b/.test(candidatoCnhStr) ||
+      candidatoCnhStr.includes('categoria e') ||
+      candidatoCnhStr.includes('cnh e')
+
+    const candidatoAtendeCnhDouE = hasCandidateCnhD || hasCandidateCnhE
+
+    if (vagaPermiteCnhDouE && candidatoAtendeCnhDouE) {
+      // 1. Limpar unmatched_criteria se a IA erroneamente reprovou CNH exigindo somente E
+      if (Array.isArray(resultJson.detalhes?.unmatched_criteria)) {
+        resultJson.detalhes.unmatched_criteria = resultJson.detalhes.unmatched_criteria.filter(
+          (item: any) => {
+            const nomeL = (item?.nome || '').toLowerCase()
+            const motL = (item?.motivo || '').toLowerCase()
+            const isCnhError =
+              (nomeL.includes('cnh') ||
+                nomeL.includes('categoria') ||
+                nomeL.includes('habilita')) &&
+              (motL.includes('somente e') ||
+                motL.includes('deve ser e') ||
+                motL.includes('apenas e') ||
+                motL.includes('requer categoria e') ||
+                motL.includes('apenas categoria d') ||
+                motL.includes('exigida e') ||
+                motL.includes('categoria e'))
+            return !isCnhError
+          },
+        )
+      }
+
+      // 2. Garantir que conste em matched_criteria que o candidato atende a CNH
+      if (Array.isArray(resultJson.detalhes?.matched_criteria)) {
+        const jaConstaCnhMatched = resultJson.detalhes.matched_criteria.some((m: any) => {
+          const n = (m?.nome || '').toLowerCase()
+          return n.includes('cnh') || n.includes('categoria')
+        })
+        if (!jaConstaCnhMatched) {
+          resultJson.detalhes.matched_criteria.push({
+            nome: 'Categoria da CNH',
+            evidencia: `Candidato possui Categoria ${hasCandidateCnhD ? 'D' : 'E'}, atendendo ao critério da vaga (${criteriosText.match(/categoria\s+[de]\s+ou\s+[de]/i)?.[0] || 'Categoria D ou E'}).`,
+          })
+        }
+      }
+
+      // 3. Limpar menções errôneas do motivo que afirmam que a CNH deve ser E
+      const motivoTrimLower = motivoFinal.toLowerCase()
+      if (
+        motivoTrimLower.includes('deve ser e') ||
+        motivoTrimLower.includes('somente e') ||
+        motivoTrimLower.includes('apenas e') ||
+        motivoTrimLower.includes('requer categoria e') ||
+        (motivoTrimLower.includes('categoria da cnh') && motivoTrimLower.includes('categoria e'))
+      ) {
+        // Remover a oração que fala da CNH errônea
+        motivoFinal = motivoFinal
+          .replace(/e por não atender o critério eliminatório de Categoria da CNH[^,.]*[,.]?/gi, '')
+          .replace(/por não atender o critério eliminatório de Categoria da CNH[^,.]*e /gi, '')
+          .replace(/não atender o critério eliminatório de Categoria da CNH[^,.]*[,.]?/gi, '')
+          .replace(/que deve ser E[,.]?/gi, '')
+          .replace(/requer Categoria E[^,.]*[,.]?/gi, '')
+          .trim()
+
+        // Se o motivo ficou truncado ou sem sentido, reformular com clareza
+        if (!qualificadoPorLocalizacao) {
+          motivoFinal = `Reprovado por localização: Distância calculada de ${menorDistanciaKm.toFixed(2)} km ultrapassa o limite aceitável de ${raioKm} km da garagem. O candidato atende aos demais critérios técnicos (possui CNH Categoria ${hasCandidateCnhD ? 'D' : 'E'} e experiência).`
+        } else if (motivoFinal.length < 10) {
+          motivoFinal =
+            'Candidato atende aos critérios da vaga, incluindo Categoria da CNH (D ou E).'
+        }
+      }
+
+      // Se o candidato havia sido reprovado UNICAMENTE por causa da CNH fictícia "deve ser E" e a localização está ok:
+      if (statusFinal === 'nao_qualificado' && qualificadoPorLocalizacao) {
+        const remainingUnmatched = Array.isArray(resultJson.detalhes?.unmatched_criteria)
+          ? resultJson.detalhes.unmatched_criteria
+          : []
+        if (remainingUnmatched.length === 0) {
+          statusFinal = 'qualificado'
+          motivoFinal = `Qualificado: Candidato atende aos critérios da vaga, incluindo CNH Categoria ${hasCandidateCnhD ? 'D' : 'E'}.`
+          if (resultJson.detalhes) {
+            resultJson.detalhes.score = Math.max(resultJson.detalhes.score || 0, 85)
+          }
+        }
+      }
+
+      // Atualizar summary se mencionava que CNH não foi atendida
+      if (resultJson.detalhes?.summary) {
+        let s = resultJson.detalhes.summary
+        if (
+          s.toLowerCase().includes('categoria da cnh') &&
+          s.toLowerCase().includes('não atendeu')
+        ) {
+          resultJson.detalhes.summary = s
+            .replace(/categoria da cnh e /gi, '')
+            .replace(/de categoria da cnh/gi, '')
+            .replace(/critérios de categoria da cnh/gi, 'critério')
         }
       }
     }

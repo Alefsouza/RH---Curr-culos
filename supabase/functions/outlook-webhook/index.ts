@@ -443,8 +443,15 @@ Dados estruturados do currículo:
 ${JSON.stringify(extractedData)}
 
 DIRETRIZES DE AVALIAÇÃO:
-1. REGRA CONDICIONAL AO GÊNERO / SEXO (EX: "MULHERES APENAS SE TIVER CATEGORIA D NA CNH"):
-   Quando nos critérios da vaga houver regras condicionais do tipo "Mulheres apenas se tiver categoria D na CNH" ou "Mulheres apenas se...":
+0. REGRA MANDATÓRIA DE CRITÉRIOS ALTERNATIVOS COM "OU" (EX: "CATEGORIA D OU E"):
+   Quando qualquer critério contiver alternativas com "OU" (ex: "Categoria D ou E", "CNH D ou E"):
+   - QUALQUER UMA das alternativas satisfaz plenamente o critério!
+   - Candidato com CNH Categoria D atende plenamente ao critério "Categoria D ou E" ✅.
+   - Candidato com CNH Categoria E atende plenamente ao critério "Categoria D ou E" ✅.
+   - NUNCA transforme "D ou E" em "somente E" ou "apenas E"!
+   - NUNCA reprove nem afirme que a vaga exige somente E quando o critério disser "D ou E".
+
+1. REGRA CONDICIONAL AO GÊNERO / SEXO (EX: "MULHERES APENAS SE TIVER CATEGORIA D NA CNH"):   Quando nos critérios da vaga houver regras condicionais do tipo "Mulheres apenas se tiver categoria D na CNH" ou "Mulheres apenas se...":
    - Identifique o gênero/sexo do candidato com base no primeiro nome ou dados do currículo.
    - SE O CANDIDATO FOR MULHER:
      * Para essa vaga só se admite mulher se ela tiver CNH categoria D (ou superior, ex: D, E, AD, AE).
@@ -461,8 +468,7 @@ DIRETRIZES DE AVALIAÇÃO:
 3. ESCOLARIDADE (ENSINO FUNDAMENTAL / MÉDIO / SUPERIOR): Todo critério de escolaridade expressa a escolaridade mínima. Se a vaga exige Ensino Fundamental (incompleto ou completo), candidatos com Ensino Fundamental, Ensino Médio ou Ensino Superior atendem plenamente ao requisito e não podem ser reprovados por escolaridade.
 4. CURSOS DE TRANSPORTE COLETIVO E CREDENCIAL: Quando a vaga exigir ou mencionar curso de transporte coletivo, considere válido qualquer curso relativo a transporte coletivo. Considere também quando o candidato colocar "Credencial de Transporte Coletivo" como curso/formação.
 5. REGRA DE MOTORISTA E STATUS "REVISAR": Para vagas de MOTORISTA, caso falte comprovação clara ou haja dúvidas sobre categoria da CNH, experiência ou cursos que justifiquem validação humana, o resultado DEVE ser "revisar" (para a Paola revisar manualmente) e NÃO deve ser alterado para outra vaga nem aprovado como Cobrador.
-6. CRITÉRIOS EXPLÍCITOS: Continue considerando os critérios explícitos de cada vaga (ex: CNH D/E para Motorista). As novas regras não sobrepõem critérios explícitos da vaga. Não invente requisitos que não estejam expressos na vaga.
-
+6. CRITÉRIOS EXPLÍCITOS: Continue considerando os critérios explícitos de cada vaga (ex: CNH D/E para Motorista). As novas regras não sobrepõem critérios explícitos da vaga. Critérios alternativos com "ou" (como "Categoria D ou E") são atendidos por qualquer uma das opções. Não invente requisitos que não estejam expressos na vaga.
 Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
 {
   "resultado": "qualificado" | "nao_qualificado" | "revisar",
@@ -492,6 +498,84 @@ Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
               ) {
                 motivoFinal = `Reprovado por localização: Distância de ${menorDistanciaKm?.toFixed(2)} km excede o raio de ${raioKm} km. ${motivoFinal}`
               }
+            }
+          }
+
+          // PÓS-VALIDAÇÃO DETERMINÍSTICA: CRITÉRIOS COM ALTERNATIVAS "OU" (EX: CNH D OU E)
+          const critVagaLower = (criteriosText || '').toLowerCase()
+          const vagaTemCnhDouE =
+            critVagaLower.includes('categoria d ou e') ||
+            critVagaLower.includes('cnh d ou e') ||
+            critVagaLower.includes('categoria d/e') ||
+            critVagaLower.includes('d ou e')
+
+          const cvSkillsStr = Array.isArray(extractedData.skills)
+            ? extractedData.skills.join(' ')
+            : ''
+          const cvCnhFull = (
+            (extractedData.cnh || '') +
+            ' ' +
+            (extractedData.categoria_cnh || '') +
+            ' ' +
+            (extractedData.cnh_categoria || '') +
+            ' ' +
+            (extractedData.habilitacao || '') +
+            ' ' +
+            cvSkillsStr +
+            ' ' +
+            (extractedData.resumo_cv || '')
+          ).toLowerCase()
+
+          const cvHasD =
+            /\b(cnh|categoria|cat|habilitacao)\s*(categoria\s*)?([a-c]*d[a-e]*)\b/.test(
+              cvCnhFull,
+            ) ||
+            /\bcnh\s*d\b/.test(cvCnhFull) ||
+            /\bcategoria\s*d\b/.test(cvCnhFull) ||
+            cvCnhFull.includes('categoria d') ||
+            cvCnhFull.includes('cnh d')
+
+          const cvHasE =
+            /\b(cnh|categoria|cat|habilitacao)\s*(categoria\s*)?([a-d]*e)\b/.test(cvCnhFull) ||
+            /\bcnh\s*e\b/.test(cvCnhFull) ||
+            /\bcategoria\s*e\b/.test(cvCnhFull) ||
+            cvCnhFull.includes('categoria e') ||
+            cvCnhFull.includes('cnh e')
+
+          if (vagaTemCnhDouE && (cvHasD || cvHasE)) {
+            const mLower = motivoFinal.toLowerCase()
+            if (
+              mLower.includes('deve ser e') ||
+              mLower.includes('somente e') ||
+              mLower.includes('apenas e') ||
+              mLower.includes('requer categoria e') ||
+              (mLower.includes('categoria da cnh') && mLower.includes('categoria e'))
+            ) {
+              motivoFinal = motivoFinal
+                .replace(
+                  /e por não atender o critério eliminatório de Categoria da CNH[^,.]*[,.]?/gi,
+                  '',
+                )
+                .replace(
+                  /por não atender o critério eliminatório de Categoria da CNH[^,.]*e /gi,
+                  '',
+                )
+                .replace(/não atender o critério eliminatório de Categoria da CNH[^,.]*[,.]?/gi, '')
+                .replace(/que deve ser E[,.]?/gi, '')
+                .replace(/requer Categoria E[^,.]*[,.]?/gi, '')
+                .trim()
+
+              if (!qualificadoPorLocalizacao) {
+                motivoFinal = `Reprovado por localização: Distância de ${menorDistanciaKm?.toFixed(2)} km excede o raio de ${raioKm} km. O candidato atende à CNH Categoria ${cvHasD ? 'D' : 'E'}.`
+              } else if (motivoFinal.length < 10) {
+                motivoFinal =
+                  'Candidato atende aos critérios da vaga, incluindo Categoria da CNH (D ou E).'
+              }
+            }
+
+            if (statusFinal === 'nao_qualificado' && qualificadoPorLocalizacao) {
+              statusFinal = 'qualificado'
+              motivoFinal = `Qualificado: Candidato atende aos critérios da vaga, incluindo CNH Categoria ${cvHasD ? 'D' : 'E'}.`
             }
           }
 

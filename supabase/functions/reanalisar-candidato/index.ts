@@ -936,6 +936,52 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
     }
 
     // =========================================================================
+    // SALVAGUARDA 1.8: SANITIZAÇÃO DE MOTIVO PARA CRITÉRIOS ALTERNATIVOS COM "OU"
+    // Caso a análise retorne menção errônea a "CNH deve ser E" para vagas que aceitam "D ou E"
+    // quando o candidato possui CNH D, sanitizar para garantir consistência.
+    // =========================================================================
+    try {
+      const analiseObj = analyzeData?.data?.analise
+      if (analiseObj && analiseObj.detalhes) {
+        let motivoDetalhes = analiseObj.detalhes.motivo || ''
+        const motivoLow = motivoDetalhes.toLowerCase()
+        if (
+          motivoLow.includes('deve ser e') ||
+          motivoLow.includes('somente e') ||
+          motivoLow.includes('requer categoria e')
+        ) {
+          const { data: vagaObjParaCnh } = await supabase
+            .from('vagas')
+            .select('criterios_qualificacao')
+            .eq('id', identifiedVagaId)
+            .maybeSingle()
+
+          const vCrit = JSON.stringify(vagaObjParaCnh?.criterios_qualificacao || '').toLowerCase()
+          if (vCrit.includes('categoria d ou e') || vCrit.includes('d ou e')) {
+            motivoDetalhes = motivoDetalhes
+              .replace(
+                /e por não atender o critério eliminatório de Categoria da CNH[^,.]*[,.]?/gi,
+                '',
+              )
+              .replace(/por não atender o critério eliminatório de Categoria da CNH[^,.]*e /gi, '')
+              .replace(/não atender o critério eliminatório de Categoria da CNH[^,.]*[,.]?/gi, '')
+              .replace(/que deve ser E[,.]?/gi, '')
+              .replace(/requer Categoria E[^,.]*[,.]?/gi, '')
+              .trim()
+
+            analiseObj.detalhes.motivo = motivoDetalhes
+            await supabase
+              .from('analises')
+              .update({ detalhes: analiseObj.detalhes })
+              .eq('id', analiseObj.id)
+          }
+        }
+      }
+    } catch (cleanErr: any) {
+      console.warn('[reanalisar-candidato] Erro ao sanitizar motivo de análise:', cleanErr?.message)
+    }
+
+    // =========================================================================
     // SALVAGUARDA 2: PÓS-ANÁLISE E PRIORIDADE MOTORISTA
     // Se o candidato foi analisado para Motorista e tiver análises anteriores de Cobrador,
     // ou se o candidato atende a Motorista e Cobrador:
