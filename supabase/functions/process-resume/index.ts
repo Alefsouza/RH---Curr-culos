@@ -9,6 +9,7 @@ import {
   sanitizeAndValidateEmail,
   resolveCandidateAge,
 } from '../_shared/validation.ts'
+import { findExistingCandidate } from '../_shared/candidates.ts'
 import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
 import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
 import { performGoogleVisionPdfOcr } from '../_shared/ocr.ts'
@@ -597,52 +598,45 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
       extractedData.idade = resolvedAge
     }
 
-    // 4. Deduplication
-    const orConditions = []
-    if (finalEmail) {
-      const safeEmail = finalEmail.replace(/"/g, '')
-      orConditions.push(`email.eq."${safeEmail}"`)
-    }
-    if (finalTelefone) {
-      const tels = finalTelefone
-        .split(',')
-        .map((t: string) => t.trim())
-        .filter(Boolean)
-      for (const tel of tels) {
-        const safeTel = tel.replace(/"/g, '')
-        orConditions.push(`telefone.ilike."%${safeTel}%"`)
-      }
-    }
-
+    // 4. Deduplication & Upsert
     const { data: publicUrlData } = supabase.storage.from('curriculos').getPublicUrl(filePath)
 
-    let candidatoId
+    const existingCandidate = await findExistingCandidate(supabase, {
+      userId: user_id,
+      nome: finalNome,
+      email: finalEmail,
+      telefones: finalTelefone ? finalTelefone.split(',') : telefonesArr,
+    })
 
-    if (orConditions.length > 0) {
-      const { data: duplicates } = await supabase
-        .from('candidatos')
-        .select('id, vaga_id')
-        .eq('user_id', user_id)
-        .or(orConditions.join(','))
+    let candidatoId: string
+    let isUpdate = false
 
-      if (duplicates && duplicates.length > 0) {
-        candidatoId = duplicates[0].id
+    if (existingCandidate) {
+      candidatoId = existingCandidate.id
+      isUpdate = true
 
-        await supabase
-          .from('candidatos')
-          .update({
-            nome: finalNome,
-            email: finalEmail,
-            telefone: finalTelefone,
-            curriculo_url: publicUrlData.publicUrl,
-            dados_extraidos: extractedData,
-            vaga_id: vaga_id || duplicates[0].vaga_id,
-          })
-          .eq('id', candidatoId)
+      const updatePayload: Record<string, any> = {
+        nome: finalNome || existingCandidate.nome,
+        email: finalEmail || existingCandidate.email,
+        telefone: finalTelefone || existingCandidate.telefone,
+        curriculo_url: publicUrlData.publicUrl,
+        dados_extraidos: extractedData,
+        duplicado_de: existingCandidate.id, // ID do registro que já existia quando houver atualização por duplicidade
       }
-    }
+      if (vaga_id) {
+        updatePayload.vaga_id = vaga_id
+      }
 
-    if (!candidatoId) {
+      const { error: updateError } = await supabase
+        .from('candidatos')
+        .update(updatePayload)
+        .eq('id', candidatoId)
+
+      if (updateError) {
+        console.error('Erro ao atualizar candidato duplicado:', updateError)
+        throw updateError
+      }
+    } else {
       // 5. Insert Candidate
       const { data: newCandidate, error: insertCandidateError } = await supabase
         .from('candidatos')
@@ -704,14 +698,35 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
       }
     }
 
+    // 6.5. Identificar Vaga se ainda não informada
+    let targetVagaId = vaga_id
+    if (!targetVagaId) {
+      try {
+        const identifyRes = await supabase.functions.invoke('identify-vaga-from-cv', {
+          body: {
+            candidato_id: candidatoId,
+            user_id: user_id,
+            texto_cv: extractedText || '',
+            dados_extraidos: extractedData,
+          },
+        })
+        if (identifyRes.data?.vaga_id) {
+          targetVagaId = identifyRes.data.vaga_id
+          await supabase.from('candidatos').update({ vaga_id: targetVagaId }).eq('id', candidatoId)
+        }
+      } catch (idErr: any) {
+        console.warn('Erro ao identificar vaga pelo CV em process-resume:', idErr?.message)
+      }
+    }
+
     // 7. Analyze against job criteria
     const analisesRealizadas = []
-    if (vaga_id) {
+    if (targetVagaId) {
       try {
         const critRes = await supabase.functions.invoke('analisar-cv-criterios', {
           body: {
             cv_id: candidatoId,
-            vaga_id: vaga_id,
+            vaga_id: targetVagaId,
             user_id: user_id,
           },
         })
@@ -719,7 +734,7 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
           analisesRealizadas.push(critRes.data.data.analise)
         }
       } catch (e: any) {
-        console.error(`Erro ao analisar a vaga ${vaga_id}:`, e?.message)
+        console.error(`Erro ao analisar a vaga ${targetVagaId}:`, e?.message)
       }
     }
 

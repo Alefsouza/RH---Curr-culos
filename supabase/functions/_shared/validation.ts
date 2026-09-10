@@ -47,6 +47,20 @@ const INVALID_NAME_PATTERNS = [
   /.*nome\s+n[aã]o\s+identificado.*/i,
 ]
 
+/**
+ * Normaliza uma string para comparação fonética/textual estrita:
+ * minúsculas, sem acentos, sem pontuações desnecessárias, espaços únicos.
+ */
+export const normalizeCandidateName = (name: string | null | undefined): string => {
+  if (!name || typeof name !== 'string') return ''
+  return name
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+}
+
 export const sanitizeAndValidateName = (name: string | null | undefined): string | null => {
   if (!name || typeof name !== 'string') return null
   let trimmed = name.trim().replace(/\s+/g, ' ')

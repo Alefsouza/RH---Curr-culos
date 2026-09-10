@@ -9,6 +9,7 @@ import {
   sanitizeAndValidateEmail,
   resolveCandidateAge,
 } from '../_shared/validation.ts'
+import { findExistingCandidate } from '../_shared/candidates.ts'
 import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
 import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
 
@@ -578,43 +579,32 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
           normalizedTelefone = uniqueParts.length > 0 ? uniqueParts.join(',') : null
         }
 
-        // Checagem de duplicação do candidato
-        const orConds = []
-        if (cleanCandidateName) {
-          orConds.push(`nome.eq."${cleanCandidateName.replace(/"/g, '')}"`)
-        }
-        if (finalEmail) {
-          orConds.push(`email.eq."${finalEmail.replace(/"/g, '')}"`)
-        }
+        // Checagem de duplicação do candidato (robusta via unaccent/normalização)
+        const existingCandidate = await findExistingCandidate(supabase, {
+          userId: userId,
+          nome: finalNome,
+          email: finalEmail,
+          telefones: normalizedTelefone ? normalizedTelefone.split(',') : telefonesArr,
+        })
 
         let candidatoId: string | null = null
         let isDuplicate = false
 
-        if (orConds.length > 0) {
-          const { data: dups } = await supabase
+        if (existingCandidate) {
+          candidatoId = existingCandidate.id
+          isDuplicate = true
+          await supabase
             .from('candidatos')
-            .select('id')
-            .eq('user_id', userId)
-            .or(orConds.join(','))
-            .limit(1)
-
-          if (dups && dups.length > 0) {
-            candidatoId = dups[0].id
-            isDuplicate = true
-            await supabase
-              .from('candidatos')
-              .update({
-                nome: finalNome,
-                email: finalEmail,
-                telefone: normalizedTelefone,
-                dados_extraidos: extractedData,
-              })
-              .eq('id', candidatoId)
-            cvsSkippedDuplicate++
-          }
-        }
-
-        if (!candidatoId) {
+            .update({
+              nome: finalNome || existingCandidate.nome,
+              email: finalEmail || existingCandidate.email,
+              telefone: normalizedTelefone || existingCandidate.telefone,
+              dados_extraidos: extractedData,
+              duplicado_de: existingCandidate.id, // Armazena id do registro original quando atualizado por duplicidade
+            })
+            .eq('id', candidatoId)
+          cvsSkippedDuplicate++
+        } else {
           const { data: newCand, error: candError } = await supabase
             .from('candidatos')
             .insert({

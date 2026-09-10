@@ -9,6 +9,7 @@ import {
   sanitizeAndValidateEmail,
   resolveCandidateAge,
 } from '../_shared/validation.ts'
+import { findExistingCandidate } from '../_shared/candidates.ts'
 import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
 import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
 import { performGoogleVisionPdfOcr } from '../_shared/ocr.ts'
@@ -638,67 +639,76 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
       extractedData.idade = resolvedAge
     }
 
-    // Deduplicação (apenas se tiver e-mail ou telefone válido)
-    const orConditions = []
-    if (finalEmail) {
-      orConditions.push(`email.eq."${finalEmail.replace(/"/g, '')}"`)
-    }
-    if (finalTelefone) {
-      const tels = finalTelefone
-        .split(',')
-        .map((t: string) => t.trim())
-        .filter(Boolean)
-      for (const tel of tels) {
-        orConditions.push(`telefone.ilike."%${tel.replace(/"/g, '')}%"`)
-      }
-    }
-
+    // Deduplicação e Identificação de vaga
     const { data: publicUrlData } = supabase.storage.from('curriculos').getPublicUrl(filePath)
     let finalVagaId = vaga_id
 
-    // Se não veio vaga_id, tenta identificar vaga compatível
-    if (!finalVagaId) {
-      try {
-        const identifyRes = await supabase.functions.invoke('identify-vaga-from-cv', {
-          body: {
-            user_id: user_id,
-            texto_cv: extractedText || '',
-            dados_extraidos: extractedData,
-          },
-        })
-        finalVagaId = identifyRes.data?.vaga_id || null
-      } catch (idErr: any) {
-        console.warn('Erro ao identificar vaga:', idErr?.message)
-      }
-    }
+    const existingCandidate = await findExistingCandidate(supabase, {
+      userId: user_id,
+      nome: finalNome,
+      email: finalEmail,
+      telefones: finalTelefone ? finalTelefone.split(',') : telefonesArr,
+    })
 
     let candidatoId: string | null = null
 
-    if (orConditions.length > 0) {
-      const { data: duplicates } = await supabase
-        .from('candidatos')
-        .select('id, vaga_id, etapa_id')
-        .eq('user_id', user_id)
-        .or(orConditions.join(','))
-        .limit(1)
+    if (existingCandidate) {
+      candidatoId = existingCandidate.id
+      finalVagaId = vaga_id || existingCandidate.vaga_id || null
 
-      if (duplicates && duplicates.length > 0) {
-        candidatoId = duplicates[0].id
-        await supabase
-          .from('candidatos')
-          .update({
-            nome: finalNome,
-            email: finalEmail,
-            telefone: finalTelefone,
-            curriculo_url: publicUrlData.publicUrl,
-            dados_extraidos: extractedData,
-            vaga_id: finalVagaId || duplicates[0].vaga_id,
+      // Se ainda não tem vaga_id, tenta identificar vaga compatível
+      if (!finalVagaId) {
+        try {
+          const identifyRes = await supabase.functions.invoke('identify-vaga-from-cv', {
+            body: {
+              candidato_id: candidatoId,
+              user_id: user_id,
+              texto_cv: extractedText || '',
+              dados_extraidos: extractedData,
+            },
           })
-          .eq('id', candidatoId)
+          finalVagaId = identifyRes.data?.vaga_id || null
+        } catch (idErr: any) {
+          console.warn('Erro ao identificar vaga:', idErr?.message)
+        }
       }
-    }
 
-    if (!candidatoId) {
+      const updatePayload: Record<string, any> = {
+        nome: finalNome || existingCandidate.nome,
+        email: finalEmail || existingCandidate.email,
+        telefone: finalTelefone || existingCandidate.telefone,
+        curriculo_url: publicUrlData.publicUrl,
+        dados_extraidos: extractedData,
+        vaga_id: finalVagaId,
+        duplicado_de: existingCandidate.id, // Armazena id do registro original ao ser atualizado por duplicidade
+      }
+
+      const { error: updateError } = await supabase
+        .from('candidatos')
+        .update(updatePayload)
+        .eq('id', candidatoId)
+
+      if (updateError) {
+        console.error('Erro ao atualizar candidato duplicado:', updateError)
+        throw updateError
+      }
+    } else {
+      // Se não veio vaga_id, tenta identificar vaga compatível
+      if (!finalVagaId) {
+        try {
+          const identifyRes = await supabase.functions.invoke('identify-vaga-from-cv', {
+            body: {
+              user_id: user_id,
+              texto_cv: extractedText || '',
+              dados_extraidos: extractedData,
+            },
+          })
+          finalVagaId = identifyRes.data?.vaga_id || null
+        } catch (idErr: any) {
+          console.warn('Erro ao identificar vaga:', idErr?.message)
+        }
+      }
+
       const { data: newCandidate, error: insertCandidateError } = await supabase
         .from('candidatos')
         .insert({
