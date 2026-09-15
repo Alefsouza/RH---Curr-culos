@@ -100,8 +100,10 @@ export async function getCandidatesList(
 
   // Se o filtro de status da análise IA estiver ativo, precisamos consultar ou filtrar com base no status resolvido
   // Para filtros padrão (busca textual por nome/email, datas, ordenação), aplicamos server-side diretamente com count exact e range
-  let query = supabase.from('candidatos').select(
-    `
+  let query = supabase
+    .from('candidatos')
+    .select(
+      `
       id,
       nome,
       email,
@@ -116,8 +118,9 @@ export async function getCandidatesList(
       etapas (nome, cor),
       analises (id, vaga_id, resultado, criado_em, detalhes)
     `,
-    { count: 'exact' },
-  )
+      { count: 'exact' },
+    )
+    .is('duplicado_de', null)
 
   if (trimmedSearch) {
     // Busca textual por nome ou email via ilike

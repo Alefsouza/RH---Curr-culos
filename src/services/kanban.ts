@@ -35,6 +35,7 @@ export async function fetchCandidates() {
       vagas (titulo),
       analises (vaga_id, resultado, detalhes, criado_em)
     `)
+    .is('duplicado_de', null)
     .neq('ativo_kanban', false)
     .order('criado_em', { ascending: false })
   if (error) throw error

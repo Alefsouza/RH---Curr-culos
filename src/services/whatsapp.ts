@@ -27,6 +27,7 @@ export async function getWhatsappDashboardData() {
   const { data: candsData, error: candsError } = await supabase
     .from('candidatos')
     .select('id, nome, telefone, etapa_id, ativo_kanban, vaga_id, ultima_resposta_whatsapp')
+    .is('duplicado_de', null)
     .not('etapa_id', 'is', null)
     .neq('ativo_kanban', false)
 

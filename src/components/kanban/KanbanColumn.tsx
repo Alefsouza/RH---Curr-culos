@@ -224,8 +224,8 @@ export function KanbanColumn({
       const { count, error } = await supabase
         .from('candidatos')
         .select('*', { count: 'exact', head: true })
+        .is('duplicado_de', null)
         .eq('etapa_id', stage.id)
-
       if (error) throw error
 
       if (count && count > 0) {

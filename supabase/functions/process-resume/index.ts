@@ -637,7 +637,6 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
         telefone: finalTelefone || existingCandidate.telefone,
         curriculo_url: publicUrlData.publicUrl,
         dados_extraidos: extractedData,
-        duplicado_de: existingCandidate.id, // ID do registro que já existia quando houver atualização por duplicidade
       }
       if (vaga_id) {
         updatePayload.vaga_id = vaga_id

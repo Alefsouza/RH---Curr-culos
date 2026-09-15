@@ -35,6 +35,7 @@ export default function Layout() {
           vagas ( titulo ),
           analises ( resultado )
         `)
+        .is('duplicado_de', null)
         .gte('criado_em', fiveMinsAgo)
         .order('criado_em', { ascending: false })
 

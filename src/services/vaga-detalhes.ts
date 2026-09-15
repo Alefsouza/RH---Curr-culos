@@ -30,11 +30,15 @@ export const vagaDetalhesService = {
     if (error) throw error
 
     // In edge cases, Supabase might return an array for relationships if not strict one-to-one.
-    // We map it to ensure exactly one object or null at runtime.
-    return (data || []).map((row: any) => ({
-      ...row,
-      candidato: Array.isArray(row.candidato) ? row.candidato[0] : row.candidato,
-    })) as AnalisesComCandidato[]
+    // We map it to ensure exactly one object or null at runtime, e desconsideramos duplicados.
+    return (data || [])
+      .map((row: any) => ({
+        ...row,
+        candidato: Array.isArray(row.candidato) ? row.candidato[0] : row.candidato,
+      }))
+      .filter(
+        (row: any) => !row.candidato || row.candidato.duplicado_de === null,
+      ) as AnalisesComCandidato[]
   },
 
   async updateStatus(analiseId: string, status: string): Promise<void> {

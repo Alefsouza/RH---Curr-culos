@@ -614,7 +614,6 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
               email: finalEmail || existingCandidate.email,
               telefone: normalizedTelefone || existingCandidate.telefone,
               dados_extraidos: extractedData,
-              duplicado_de: existingCandidate.id, // Armazena id do registro original quando atualizado por duplicidade
             })
             .eq('id', candidatoId)
           cvsSkippedDuplicate++

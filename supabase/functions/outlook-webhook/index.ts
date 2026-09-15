@@ -274,7 +274,6 @@ ${pdfText.substring(0, 15000)}
           email: extractedData.email || existingCandidate.email,
           telefone: extractedTelefone || existingCandidate.telefone,
           dados_extraidos: extractedData,
-          duplicado_de: existingCandidate.id, // Armazena id do registro original quando atualizado por duplicidade
         })
         .eq('id', candidatoId)
 

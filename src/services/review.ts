@@ -30,6 +30,7 @@ export async function getPendingReviews(filters?: {
         titulo
       )
     `)
+    .is('duplicado_de', null)
     .order('criado_em', { ascending: true })
 
   if (filters?.vaga_id && filters.vaga_id !== 'all') {

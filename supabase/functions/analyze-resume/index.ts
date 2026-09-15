@@ -699,7 +699,6 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
         curriculo_url: publicUrlData.publicUrl,
         dados_extraidos: extractedData,
         vaga_id: finalVagaId,
-        duplicado_de: existingCandidate.id, // Armazena id do registro original ao ser atualizado por duplicidade
       }
 
       const { error: updateError } = await supabase

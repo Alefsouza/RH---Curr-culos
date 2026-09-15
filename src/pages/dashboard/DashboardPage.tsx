@@ -56,13 +56,12 @@ export default function DashboardPage() {
     setError(null)
     try {
       const [candRes, etapasRes, vagasRes, analisesRes, ceRes] = await Promise.all([
-        supabase.from('candidatos').select('*'),
+        supabase.from('candidatos').select('*').is('duplicado_de', null),
         supabase.from('etapas').select('*').order('ordem'),
         supabase.from('vagas').select('*'),
         supabase.from('analises').select('*'),
         supabase.from('candidato_etapa').select('*').order('data_entrada'),
       ])
-
       if (candRes.error) throw candRes.error
       if (analisesRes.error) throw analisesRes.error
 

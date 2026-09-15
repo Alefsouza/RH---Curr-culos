@@ -470,14 +470,6 @@ export function CandidateTable({
                     )}
                     <span className="text-xs text-slate-500">{c.email}</span>
                   </div>
-                  {c.duplicado_de && (
-                    <Badge
-                      variant="secondary"
-                      className="mt-1 text-[10px] bg-amber-100 text-amber-800 border-amber-200"
-                    >
-                      Duplicado
-                    </Badge>
-                  )}
                 </TableCell>
                 <TableCell className="min-w-[180px] max-w-[240px]">
                   <div className="flex items-center gap-1.5">
@@ -623,14 +615,6 @@ export function CandidateTable({
                       </div>
                     )}
                     <p className="text-xs text-slate-500 truncate">{c.email}</p>
-                    {c.duplicado_de && (
-                      <Badge
-                        variant="secondary"
-                        className="mt-1 text-[10px] bg-amber-100 text-amber-800 border-amber-200"
-                      >
-                        Duplicado
-                      </Badge>
-                    )}
                   </div>
                 </div>
                 <ActionMenu candidate={c} />

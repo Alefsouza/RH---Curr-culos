@@ -18,7 +18,10 @@ export const vagasService = {
   async getVagasComEstatisticas(): Promise<VagaComEstatisticas[]> {
     const vagasQuery = supabase.from('vagas').select('*').order('criado_em', { ascending: false })
 
-    const analisesQuery = supabase.from('analises').select('vaga_id, resultado')
+    const analisesQuery = supabase
+      .from('analises')
+      .select('vaga_id, resultado, candidatos!inner(duplicado_de)')
+      .is('candidatos.duplicado_de', null)
 
     const { data: vagas, error: vagasError } = await vagasQuery
     if (vagasError) throw vagasError
