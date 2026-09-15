@@ -275,6 +275,10 @@ Deno.serve(async (req: Request) => {
 - Distância até a vaga: ${distanciaCalculada ? menorDistanciaKm.toFixed(2) : 0} km
 - Raio aceito: ${raioKm} km
 - Qualificado por localização: ${qualificadoPorLocalizacao}
+DIRETRIZ CRÍTICA DE LOCALIZAÇÃO PARA AVALIAÇÃO:
+O valor "Qualificado por localização" acima foi determinado pelo sistema através de geocodificação/matriz de distância.
+Se "Qualificado por localização: true", o candidato ATENDE PLENAMENTE à localização! NUNCA reprove nem aponte problema de distância/localização quando Qualificado por localização for true!
+Se "Qualificado por localização: false", registre a reprovação de localização.
 
 Dados completos do currículo:
 ${JSON.stringify(cvData)}
@@ -462,6 +466,56 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
             !motivoFinal.toLowerCase().includes('raio')
           ) {
             motivoFinal = `Reprovado por localização: Distância calculada de ${menorDistanciaKm.toFixed(2)} km ultrapassa o limite aceitável de ${raioKm} km. ${motivoFinal}`
+          }
+        }
+      } else if (distanciaCalculada && qualificadoPorLocalizacao) {
+        // Candidato está dentro do raio aceitável!
+        // Garantir que a IA não inventou reprovação de localização nem menções no motivo/summary
+        if (Array.isArray(resultJson.detalhes?.unmatched_criteria)) {
+          resultJson.detalhes.unmatched_criteria = resultJson.detalhes.unmatched_criteria.filter(
+            (item: any) => {
+              const n = (item?.nome || '').toLowerCase()
+              const m = (item?.motivo || '').toLowerCase()
+              return (
+                !n.includes('localiz') &&
+                !n.includes('dist') &&
+                !m.includes('localiz') &&
+                !m.includes('dist')
+              )
+            },
+          )
+        }
+        if (Array.isArray(resultJson.detalhes?.matched_criteria)) {
+          const hasLocMatched = resultJson.detalhes.matched_criteria.some((m: any) => {
+            const n = (m?.nome || '').toLowerCase()
+            return n.includes('localiz') || n.includes('dist') || n.includes('regi')
+          })
+          if (!hasLocMatched) {
+            resultJson.detalhes.matched_criteria.push({
+              nome: 'Localização',
+              evidencia: `Candidato reside a ${menorDistanciaKm.toFixed(2)} km da garagem, dentro do raio aceitável de ${raioKm} km.`,
+            })
+          }
+        }
+        if (Array.isArray(resultJson.detalhes?.pontos_fracos)) {
+          resultJson.detalhes.pontos_fracos = resultJson.detalhes.pontos_fracos.filter(
+            (pf: string) => {
+              const p = pf.toLowerCase()
+              return !p.includes('localiz') && !p.includes('distante') && !p.includes('dist')
+            },
+          )
+        }
+        // Se status estava nao_qualificado apenas por causa da localização errônea da IA
+        if (statusFinal === 'nao_qualificado') {
+          const remainingUnmatched = Array.isArray(resultJson.detalhes?.unmatched_criteria)
+            ? resultJson.detalhes.unmatched_criteria
+            : []
+          if (remainingUnmatched.length === 0) {
+            statusFinal = 'qualificado'
+            motivoFinal = `Qualificado: Candidato reside a ${menorDistanciaKm.toFixed(2)} km da garagem (raio aceitável de ${raioKm} km) e atende aos requisitos da vaga.`
+            if (resultJson.detalhes) {
+              resultJson.detalhes.score = Math.max(resultJson.detalhes.score || 0, 85)
+            }
           }
         }
       }
