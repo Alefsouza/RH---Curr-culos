@@ -980,7 +980,6 @@ Deno.serve(async (req: Request) => {
               fallbackVagasGroup,
               googleApiKey,
             )
-
             let proxText = ''
             if (menorDistanciaKm !== null) {
               proxText = ` Selecionada a garagem mais próxima do endereço do candidato (${candidatoEndereco || 'N/I'}), a aproximadamente ${menorDistanciaKm.toFixed(1)} km.`

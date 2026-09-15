@@ -1,4 +1,5 @@
 // Helper para cálculo de distância Haversine e geocodificação de proximidade geográfica
+// Define localizações de referência (Cursino e Sapopemba), cálculo Haversine e resolução de coordenadas
 
 export interface Coordinates {
   lat: number
