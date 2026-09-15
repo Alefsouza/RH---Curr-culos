@@ -10,6 +10,7 @@ import {
   resolveCandidateAge,
 } from '../_shared/validation.ts'
 import { findExistingCandidate } from '../_shared/candidates.ts'
+import { extractCep, isTruncatedOrIncompleteAddress } from '../_shared/proximity.ts'
 import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
 import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
 import { performGoogleVisionPdfOcr } from '../_shared/ocr.ts'
@@ -226,6 +227,7 @@ Deno.serve(async (req: Request) => {
       telefones_celulares: [],
       telefone: null,
       endereco: null,
+      cep: null,
       idade: null,
       data_nascimento: null,
       objetivo: null,
@@ -240,7 +242,8 @@ Deno.serve(async (req: Request) => {
 - email: Endereço de e-mail REAL válido (ex: "valdineiadomingues82@gmail.com"), ou null se não identificado
 - telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11974697877"]) ou [] se nenhum
 - telefone: Telefone celular principal ou null
-- endereco: Cidade, estado ou endereço completo (ex: "São Bernardo do Campo - SP"), ou null se não identificado
+- endereco: Endereço COMPLETO com logradouro, número, complemento, bairro, cidade, UF e CEP se existirem no documento (ex: "R. Timóteo, 88 - Jardim Paraguaçu, São Paulo - SP, 03938-050"). NUNCA trunque para apenas "Jardim - SP" ou apenas o bairro se houver rua, número, cidade ou CEP no currículo.
+- cep: Código de Endereçamento Postal brasileiro (ex: "03938-050"), ou null se não constar
 - idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
 - data_nascimento: Data de nascimento informada em qualquer formato (ex: "16/01/1993", "16-01-1993", "16.01.1993", "1993-01-16", "nascido em 16 de janeiro de 1993"), ou null se não constar
 - objetivo: Cargo pretendido, objetivo profissional ou área de interesse expressamente informada no currículo (ex: "Cobrador de Ônibus", "Motorista", "Auxiliar Administrativo", "Mecânico"), ou null se não identificado
@@ -262,6 +265,7 @@ Formato JSON estrito esperado:
   "telefones_celulares": [],
   "telefone": null,
   "endereco": null,
+  "cep": null,
   "idade": null,
   "data_nascimento": null,
   "objetivo": null,
@@ -290,7 +294,9 @@ ${extractedText.substring(0, 20000)}`
         extractedData.telefones_celulares.length > 0) ||
       Boolean(telefone)
     let hasEndereco = Boolean(
-      extractedData?.endereco && String(extractedData.endereco).trim().length > 0,
+      extractedData?.endereco &&
+      String(extractedData.endereco).trim().length > 0 &&
+      !isTruncatedOrIncompleteAddress(String(extractedData.endereco)),
     )
     let hasEmail = Boolean(extractedData?.email || email)
 
@@ -324,7 +330,8 @@ ${extractedText.substring(0, 20000)}`
 - email: Endereço de e-mail REAL válido (ex: "exemplo@gmail.com"), ou null se não identificado
 - telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11974697877", "11988887777"]) ou [] se nenhum
 - telefone: Telefone celular principal ou null
-- endereco: Endereço completo, logradouro, bairro, cidade ou estado (ex: "Rua das Flores, 123 - São Bernardo do Campo - SP"), ou null se não identificado
+- endereco: Endereço COMPLETO com logradouro, número, complemento, bairro, cidade, UF e CEP se existirem no documento (ex: "R. Timóteo, 88 - Jardim Paraguaçu, São Paulo - SP, 03938-050"). NUNCA trunque para apenas "Jardim - SP" ou apenas o bairro se houver rua, número, cidade ou CEP no currículo.
+- cep: Código de Endereçamento Postal brasileiro (ex: "03938-050"), ou null se não constar
 - idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
 - data_nascimento: Data de nascimento informada (ex: "16/01/1993" ou "1993-01-16"), ou null se não constar
 - objetivo: Cargo pretendido, objetivo profissional ou área informada no currículo, ou null se não identificado
@@ -439,7 +446,8 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
   "email": "Endereço de e-mail real do candidato ou null",
   "telefones_celulares": ["telefones celulares reais encontrados com DDD"],
   "telefone": "Telefone principal com DDD ou null",
-  "endereco": "Endereço completo, logradouro, bairro, cidade ou estado ou null",
+  "endereco": "Endereço COMPLETO com logradouro, número, complemento, bairro, cidade, UF e CEP (ex: R. Timóteo, 88 - Jardim Paraguaçu, São Paulo - SP, 03938-050) ou null",
+  "cep": "CEP brasileiro formatado 00000-000 ou null",
   "idade": "Número inteiro da idade ou null",
   "data_nascimento": "Data de nascimento informada ou null",
   "objetivo": "Cargo pretendido, objetivo profissional ou área de interesse informada no currículo ou null",
@@ -634,6 +642,17 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
     }
 
     // Recalcular e sobrescrever idade caso haja data de nascimento
+    // Tenta extrair CEP do texto bruto caso não venha no JSON
+    if (!extractedData.cep && extractedText) {
+      const detectedCep = extractCep(extractedText)
+      if (detectedCep) extractedData.cep = detectedCep
+    }
+    if (extractedData.cep && extractedData.endereco && typeof extractedData.endereco === 'string') {
+      if (!extractedData.endereco.includes(extractedData.cep)) {
+        extractedData.endereco = `${extractedData.endereco}, ${extractedData.cep}`
+      }
+    }
+
     const resolvedAge = resolveCandidateAge(extractedData.idade, extractedData.data_nascimento)
     if (resolvedAge !== null) {
       extractedData.idade = resolvedAge

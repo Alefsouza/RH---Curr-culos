@@ -10,6 +10,7 @@ import {
   resolveCandidateAge,
 } from '../_shared/validation.ts'
 import { findExistingCandidate } from '../_shared/candidates.ts'
+import { extractCep } from '../_shared/proximity.ts'
 import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
 import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
 
@@ -61,7 +62,8 @@ Extraia com cuidado preservando a grafia correta com acentos em português:
 - email: Endereço de e-mail REAL válido, ou null se não identificado
 - telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11987654321"]) ou [] se nenhum
 - telefone: Telefone celular principal ou null se não identificado
-- endereco: Cidade, estado ou endereço completo, ou null se não identificado
+- endereco: Endereço COMPLETO com logradouro, número, complemento, bairro, cidade, UF e CEP se existirem no documento (ex: "R. Timóteo, 88 - Jardim Paraguaçu, São Paulo - SP, 03938-050"). NUNCA trunque para apenas "Jardim - SP" ou apenas o bairro se houver rua, número, cidade ou CEP no currículo.
+- cep: Código de Endereçamento Postal brasileiro (ex: "03938-050"), ou null se não constar
 - idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
 - data_nascimento: Data de nascimento informada em qualquer formato (ex: "16/01/1993", "16-01-1993", "16.01.1993", "1993-01-16", "nascido em 16 de janeiro de 1993"), ou null se não constar
 - objetivo: Cargo pretendido, objetivo profissional ou área de interesse informada no currículo (ex: "Cobrador de Ônibus", "Motorista", "Auxiliar Administrativo"), ou null se não identificado
@@ -84,6 +86,7 @@ Formato JSON estrito esperado:
   "telefones_celulares": [],
   "telefone": null,
   "endereco": null,
+  "cep": null,
   "idade": null,
   "data_nascimento": null,
   "objetivo": null,
@@ -138,6 +141,17 @@ Formato JSON estrito esperado:
   }
 
   const parsedJson: ExtractedCandidateData = await callOpenAIWithRetry(messages)
+
+  // Tenta extrair CEP do texto bruto caso não venha no JSON
+  if (!parsedJson.cep && extractedRawText) {
+    const textCep = extractCep(extractedRawText)
+    if (textCep) parsedJson.cep = textCep
+  }
+  if (parsedJson.cep && parsedJson.endereco && typeof parsedJson.endereco === 'string') {
+    if (!parsedJson.endereco.includes(parsedJson.cep)) {
+      parsedJson.endereco = `${parsedJson.endereco}, ${parsedJson.cep}`
+    }
+  }
 
   const rawTextToMatch = [
     parsedJson.objetivo ? `Objetivo / Cargo Pretendido: ${parsedJson.objetivo}` : '',

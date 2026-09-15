@@ -5,6 +5,16 @@ export interface Coordinates {
   lng: number
 }
 
+// Extrai padrão de CEP brasileiro (ex: "03938-050", "03938050")
+export function extractCep(text: string | null | undefined): string | null {
+  if (!text || typeof text !== 'string') return null
+  const match = text.match(/\b(\d{5})[-.\s]?(\d{3})\b/)
+  if (match) {
+    return `${match[1]}-${match[2]}`
+  }
+  return null
+}
+
 // Sanitiza strings de endereço removendo "n°", "nº", "nr.", "número", "s/n", etc.
 // para evitar falhas ou erros de posicionamento na Geocoding API do Google.
 export function sanitizeAddressString(raw: string | null | undefined): string {
@@ -23,8 +33,12 @@ export function sanitizeAddressString(raw: string | null | undefined): string {
   cleaned = cleaned.replace(/\b(?:s\/n[°ºªo\.]*|sem\s+n[uú]mero)\b/gi, '')
 
   // Normaliza múltiplos hífens, vírgulas e espaços
+  // ATENÇÃO: preservar o hífen do CEP se houver (ex: 03938-050)
+  cleaned = cleaned.replace(/(\d{5})\s*-\s*(\d{3})/g, '$1-$2')
+
+  // Normaliza outros hífens para vírgula
   cleaned = cleaned
-    .replace(/\s*-\s*/g, ', ')
+    .replace(/([^\d\s]|\b\d{1,4})\s+-\s+/g, '$1, ')
     .replace(/\s*,\s*,+/g, ', ')
     .replace(/,\s*,/g, ', ')
     .replace(/\s+/g, ' ')
@@ -71,17 +85,46 @@ export function calculateHaversineDistance(coord1: Coordinates, coord2: Coordina
 }
 
 // Extrai endereço em formato de string legível e sanitizado
-export function formatAddressString(endereco: any): string | null {
-  if (!endereco) return null
+// Detecta se uma string de endereço é truncada ou muito pobre (ex: apenas "Jardim - SP", "São Paulo - SP", "Centro")
+export function isTruncatedOrIncompleteAddress(addr: string | null | undefined): boolean {
+  if (!addr || typeof addr !== 'string') return true
+  const trimmed = addr.trim()
+  if (trimmed.length < 5) return true
+
+  // Se tiver CEP brasileiro, NÃO é incompleto
+  if (extractCep(trimmed)) return false
+
+  // Se for apenas formato "Bairro - UF" ou "Cidade - UF" sem logradouro/rua nem número nem CEP
+  // Ex: "Jardim - SP", "Centro - SP", "Jardim Paraguaçu - SP"
+  const isBairroUfOnly = /^([a-zà-ú\s]{2,25})\s*[-,\/]\s*([a-z]{2})$/i.test(trimmed)
+  if (isBairroUfOnly) return true
+
+  // Sem número nem indicadores de rua (rua, av, r., travessa, etc.) e muito curto
+  const hasStreetIndicator =
+    /\b(r\.|rua|av\.|avenida|al\.|alameda|travessa|tv\.|estrada|rodovia|pra[çc]a|pq\.|parque|jd\.|jardim)\b/i.test(
+      trimmed,
+    )
+  const hasNumber = /\b\d{1,5}\b/.test(trimmed)
+
+  if (!hasStreetIndicator && !hasNumber && trimmed.length < 20) {
+    return true
+  }
+
+  return false
+}
+
+// Extrai endereço em formato de string legível e sanitizado
+export function formatAddressString(endereco: any, dadosExtraidosOuTexto?: any): string | null {
+  if (!endereco && !dadosExtraidosOuTexto) return null
+
+  let directResult: string | null = null
+
   if (typeof endereco === 'string') {
     const trimmed = endereco.trim()
-    if (!trimmed || trimmed.toLowerCase() === 'null' || trimmed.toLowerCase() === 'undefined') {
-      return null
+    if (trimmed && trimmed.toLowerCase() !== 'null' && trimmed.toLowerCase() !== 'undefined') {
+      directResult = trimmed
     }
-    const sanitized = sanitizeAddressString(trimmed)
-    return sanitized || trimmed
-  }
-  if (typeof endereco === 'object') {
+  } else if (typeof endereco === 'object' && endereco !== null) {
     const parts = [
       endereco.logradouro || endereco.rua || endereco.street || endereco.endereco,
       endereco.numero || endereco.number,
@@ -94,59 +137,160 @@ export function formatAddressString(endereco: any): string | null {
       .filter((p) => p && typeof p === 'string' && p.trim().length > 0)
       .map((p) => String(p).trim())
 
-    if (parts.length === 0) return null
-    const joined = parts.join(', ')
-    const sanitized = sanitizeAddressString(joined)
-    return sanitized || joined
+    if (parts.length > 0) {
+      directResult = parts.join(', ')
+    }
   }
+
+  // Verificar se há CEP ou campos adicionais em dadosExtraidosOuTexto para enriquecer
+  let cepFound: string | null = null
+  if (typeof dadosExtraidosOuTexto === 'object' && dadosExtraidosOuTexto !== null) {
+    if (dadosExtraidosOuTexto.cep) {
+      cepFound = extractCep(String(dadosExtraidosOuTexto.cep))
+    }
+    if (!cepFound && typeof dadosExtraidosOuTexto.endereco === 'string') {
+      cepFound = extractCep(dadosExtraidosOuTexto.endereco)
+    }
+    if (!cepFound && typeof dadosExtraidosOuTexto.resumo_cv === 'string') {
+      cepFound = extractCep(dadosExtraidosOuTexto.resumo_cv)
+    }
+  } else if (typeof dadosExtraidosOuTexto === 'string') {
+    cepFound = extractCep(dadosExtraidosOuTexto)
+  }
+
+  if (directResult) {
+    if (!extractCep(directResult) && cepFound) {
+      directResult = `${directResult}, CEP ${cepFound}`
+    }
+    const sanitized = sanitizeAddressString(directResult)
+    return sanitized || directResult
+  }
+
+  // Se directResult ainda não existe mas achamos um CEP:
+  if (cepFound) {
+    return `CEP ${cepFound}, São Paulo - SP, Brasil`
+  }
+
   return null
 }
 
-// Geocodifica um endereço usando a Google Geocoding API
-export async function geocodeAddress(address: string, apiKey: string): Promise<Coordinates | null> {
-  if (!address || !apiKey) return null
+// Geocodifica um endereço usando a Google Geocoding API com fallback por CEP via ViaCEP
+export async function geocodeAddress(
+  address: string,
+  apiKey: string,
+  fallbackRawText?: string | null,
+): Promise<Coordinates | null> {
+  if (!address && !fallbackRawText) return null
+
+  // 1. Verificar se há CEP no endereço ou no fallbackRawText
+  const cep = extractCep(address) || extractCep(fallbackRawText || '')
+
+  // Se o endereço fornecido for truncado/ambíguo (ex: "Jardim - SP") e tivermos CEP ou texto bruto:
+  let addressToGeocode = address
+  if (isTruncatedOrIncompleteAddress(addressToGeocode)) {
+    if (cep) {
+      // Usar preferencialmente o CEP quando o endereço textual estiver truncado
+      addressToGeocode = `${cep}, Brasil`
+    } else if (fallbackRawText && fallbackRawText.length > 10) {
+      // Tenta buscar no fallbackRawText algum trecho de endereço mais completo
+      const lines = fallbackRawText.split(/\r?\n/)
+      for (const line of lines) {
+        if (
+          /\b(rua|r\.|av\.|avenida|travessa|alameda|estrada|jardim|jd\.|bairro|cep)\b/i.test(
+            line,
+          ) &&
+          line.trim().length > 15
+        ) {
+          addressToGeocode = line.trim()
+          break
+        }
+      }
+    }
+  }
 
   // Sanitiza o endereço antes da geocodificação
-  const cleanAddr = sanitizeAddressString(address) || address
+  let cleanAddr = sanitizeAddressString(addressToGeocode) || addressToGeocode
 
-  // Adiciona contexto de São Paulo/Brasil se não houver
-  let queryAddress = cleanAddr
-  if (!/s[aã]o paulo/i.test(queryAddress) && !/sp\b/i.test(queryAddress)) {
-    queryAddress = `${queryAddress}, São Paulo - SP, Brasil`
-  } else if (!/brasil/i.test(queryAddress) && !/brazil/i.test(queryAddress)) {
-    queryAddress = `${queryAddress}, Brasil`
+  // Qualificação inteligente:
+  // Se for endereço de bairro comum (ex: Jardim Paraguaçu, Sapopemba, São Paulo),
+  // garantir que "São Paulo, SP" seja qualificado para evitar interpretar como cidade do interior
+  if (!/s[aã]o paulo/i.test(cleanAddr) && !/sp\b/i.test(cleanAddr)) {
+    cleanAddr = `${cleanAddr}, São Paulo - SP, Brasil`
+  } else if (!/brasil/i.test(cleanAddr) && !/brazil/i.test(cleanAddr)) {
+    cleanAddr = `${cleanAddr}, Brasil`
   }
 
-  try {
-    const url = new URL('https://maps.googleapis.com/maps/api/geocode/json')
-    url.searchParams.append('address', queryAddress)
-    url.searchParams.append('key', apiKey)
-    url.searchParams.append('language', 'pt-BR')
+  // Tentativa primária no Google Maps Geocoding API
+  if (apiKey) {
+    try {
+      const url = new URL('https://maps.googleapis.com/maps/api/geocode/json')
+      url.searchParams.append('address', cleanAddr)
+      url.searchParams.append('key', apiKey)
+      url.searchParams.append('language', 'pt-BR')
 
-    const response = await fetch(url.toString())
-    if (!response.ok) {
-      console.warn(`[Geocoding] HTTP error ${response.status} for address "${address}"`)
-      return null
-    }
-
-    const data = await response.json()
-    if (data.status === 'OK' && data.results && data.results.length > 0) {
-      const location = data.results[0].geometry.location
-      return {
-        lat: location.lat,
-        lng: location.lng,
+      const response = await fetch(url.toString())
+      if (response.ok) {
+        const data = await response.json()
+        if (data.status === 'OK' && data.results && data.results.length > 0) {
+          const location = data.results[0].geometry.location
+          return {
+            lat: location.lat,
+            lng: location.lng,
+          }
+        } else {
+          console.warn(`[Geocoding] Status ${data.status} para "${cleanAddr}":`, data.error_message)
+        }
+      } else {
+        console.warn(`[Geocoding] HTTP error ${response.status} para "${cleanAddr}"`)
       }
-    } else {
-      console.warn(
-        `[Geocoding] Status ${data.status} for address "${address}":`,
-        data.error_message,
-      )
-      return null
+    } catch (error: any) {
+      console.error(`[Geocoding] Falha ao geocodificar "${cleanAddr}":`, error?.message)
     }
-  } catch (error: any) {
-    console.error(`[Geocoding] Falha ao geocodificar "${address}":`, error?.message)
-    return null
   }
+
+  // Tentativa secundária: Se temos CEP e a geocodificação direta falhou ou foi imprecisa,
+  // consultar ViaCEP para obter logradouro, bairro e cidade exatos, e depois geocodificar esse resultado
+  if (cep && apiKey) {
+    try {
+      const cleanCepNumbers = cep.replace(/\D/g, '')
+      const viaCepRes = await fetch(`https://viacep.com.br/ws/${cleanCepNumbers}/json/`)
+      if (viaCepRes.ok) {
+        const viaCepData = await viaCepRes.json()
+        if (!viaCepData.erro && viaCepData.localidade) {
+          const viaCepAddr = [
+            viaCepData.logradouro,
+            viaCepData.bairro,
+            viaCepData.localidade,
+            viaCepData.uf,
+            'Brasil',
+          ]
+            .filter(Boolean)
+            .join(', ')
+
+          const url = new URL('https://maps.googleapis.com/maps/api/geocode/json')
+          url.searchParams.append('address', viaCepAddr)
+          url.searchParams.append('key', apiKey)
+          url.searchParams.append('language', 'pt-BR')
+
+          const response = await fetch(url.toString())
+          if (response.ok) {
+            const data = await response.json()
+            if (data.status === 'OK' && data.results && data.results.length > 0) {
+              const location = data.results[0].geometry.location
+              return {
+                lat: location.lat,
+                lng: location.lng,
+              }
+            }
+          }
+        }
+      }
+    } catch (viaCepErr: any) {
+      console.warn(`[Geocoding] Falha no fallback ViaCEP para CEP ${cep}:`, viaCepErr?.message)
+    }
+  }
+
+  return null
 }
 
 // Obtém coordenadas de referência para uma dada string de endereço ou texto (ex: título/descrição da vaga, bairro do candidato)

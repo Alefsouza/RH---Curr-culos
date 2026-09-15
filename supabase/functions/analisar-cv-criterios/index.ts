@@ -11,9 +11,11 @@ import {
 } from '../_shared/validation.ts'
 import {
   calculateHaversineDistance,
+  extractCep,
   formatAddressString,
   geocodeAddress,
   getReferenceCoordsForText,
+  isTruncatedOrIncompleteAddress,
   sanitizeAddressString,
 } from '../_shared/proximity.ts'
 
@@ -128,7 +130,16 @@ Deno.serve(async (req: Request) => {
 
     const rawEndereco =
       extracted.endereco || extracted.location || extracted.cidade || extracted.estado || ''
-    const enderecoCV = formatAddressString(rawEndereco) || rawEndereco
+    let enderecoCV = formatAddressString(rawEndereco, extracted) || rawEndereco
+
+    // Se o endereço estiver truncado ou incompleto (ex: "Jardim - SP"), mas temos CEP no extracted ou no CV:
+    const detectedCep =
+      extractCep(enderecoCV) || extractCep(extracted.cep) || extractCep(JSON.stringify(extracted))
+    if (isTruncatedOrIncompleteAddress(enderecoCV) && detectedCep) {
+      if (!enderecoCV || !enderecoCV.includes(detectedCep)) {
+        enderecoCV = enderecoCV ? `${enderecoCV}, CEP ${detectedCep}` : `CEP ${detectedCep}`
+      }
+    }
 
     const googleApiKey = Deno.env.get('GOOGLE_API_KEY')
     let menorDistanciaKm: number = 0
@@ -214,7 +225,11 @@ Deno.serve(async (req: Request) => {
         // Se Distance Matrix falhou (ex: endereço mal formatado ou limite de quota), tentar fallback por geocodificação ou palavras-chave de região
         if (minC === null) {
           try {
-            let candidateCoords = await geocodeAddress(enderecoCV, googleApiKey)
+            let candidateCoords = await geocodeAddress(
+              enderecoCV,
+              googleApiKey,
+              JSON.stringify(extracted),
+            )
             if (!candidateCoords) {
               candidateCoords = getReferenceCoordsForText(enderecoCV)
             }
@@ -415,13 +430,39 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
         statusFinal = 'nao_qualificado'
         motivoFinal = `Reprovado por localização: O endereço do candidato não foi encontrado no currículo. ${motivoFinal}`
       } else if (distanciaCalculada && !qualificadoPorLocalizacao) {
-        statusFinal = 'nao_qualificado'
-        if (
-          !motivoFinal.toLowerCase().includes('localização') &&
-          !motivoFinal.toLowerCase().includes('distância') &&
-          !motivoFinal.toLowerCase().includes('raio')
-        ) {
-          motivoFinal = `Reprovado por localização: Distância calculada de ${menorDistanciaKm.toFixed(2)} km ultrapassa o limite aceitável de ${raioKm} km. ${motivoFinal}`
+        // SALVAGUARDA DE DISTÂNCIA IMPLAUSÍVEL:
+        // Distância > 150 km em regiões metropolitanas frequentemente decorre de ambiguidade de geocodificação
+        // (ex.: "Jardim - SP" resolvido para o município de Jardim em vez do bairro Jardim na capital).
+        // NUNCA reprovar automaticamente quando a distância for implausível (> 150 km) ou o endereço for truncado/ambíguo:
+        // classificar como "revisar" para análise humana, impedindo a eliminação indevida do candidato.
+        if (menorDistanciaKm > 150 || isTruncatedOrIncompleteAddress(enderecoCV)) {
+          statusFinal = 'revisar'
+          motivoFinal = `Necessário revisar localização humana: distância calculada (${menorDistanciaKm.toFixed(2)} km) excede 150 km ou o endereço extraído ("${enderecoCV}") pode conter ambiguidade de bairro/cidade. Encaminhado para validação humana sem reprovação automática.`
+          if (resultJson.detalhes) {
+            resultJson.detalhes.score = Math.max(resultJson.detalhes.score || 0, 70)
+            if (Array.isArray(resultJson.detalhes.unmatched_criteria)) {
+              resultJson.detalhes.unmatched_criteria =
+                resultJson.detalhes.unmatched_criteria.filter((item: any) => {
+                  const n = (item?.nome || '').toLowerCase()
+                  const m = (item?.motivo || '').toLowerCase()
+                  return (
+                    !n.includes('localiz') &&
+                    !n.includes('dist') &&
+                    !m.includes('localiz') &&
+                    !m.includes('dist')
+                  )
+                })
+            }
+          }
+        } else {
+          statusFinal = 'nao_qualificado'
+          if (
+            !motivoFinal.toLowerCase().includes('localização') &&
+            !motivoFinal.toLowerCase().includes('distância') &&
+            !motivoFinal.toLowerCase().includes('raio')
+          ) {
+            motivoFinal = `Reprovado por localização: Distância calculada de ${menorDistanciaKm.toFixed(2)} km ultrapassa o limite aceitável de ${raioKm} km. ${motivoFinal}`
+          }
         }
       }
     }

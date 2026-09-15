@@ -12,6 +12,7 @@ import {
 import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
 import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
 import { performGoogleVisionPdfOcr } from '../_shared/ocr.ts'
+import { extractCep, isTruncatedOrIncompleteAddress } from '../_shared/proximity.ts'
 
 // Reanálise de candidato com regras de fallback por experiência e salvaguarda
 // Deploy e execução da correção do falso motorista (Henrique Amâncio)
@@ -112,7 +113,9 @@ Deno.serve(async (req: Request) => {
       (Array.isArray(currentDadosExtraidos.telefones_celulares) &&
         currentDadosExtraidos.telefones_celulares.length > 0)
     const hasCurrentEndereco = Boolean(
-      currentDadosExtraidos.endereco && String(currentDadosExtraidos.endereco).trim().length > 0,
+      currentDadosExtraidos.endereco &&
+      String(currentDadosExtraidos.endereco).trim().length > 0 &&
+      !isTruncatedOrIncompleteAddress(String(currentDadosExtraidos.endereco)),
     )
     const hasObjetivo =
       typeof currentDadosExtraidos.objetivo === 'string' &&
@@ -178,7 +181,8 @@ Deno.serve(async (req: Request) => {
 - email: E-mail REAL do candidato (ex: "valdineiadomingues82@gmail.com"), ou null se não identificado
 - telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11974697877"]) ou [] se nenhum
 - telefone: Telefone principal ou null
-- endereco: Endereço completo ou cidade/estado (ex: "São Bernardo do Campo - SP"), ou null se não identificado
+- endereco: Endereço completo COMPLETO com logradouro, número, complemento, bairro, cidade, UF e CEP se existirem no documento (ex: "R. Timóteo, 88 - Jardim Paraguaçu, São Paulo - SP, 03938-050"). NUNCA trunque para apenas "Jardim - SP" ou apenas o bairro se houver rua, número, cidade ou CEP no currículo.
+- cep: Código de Endereçamento Postal (ex: "03938-050"), ou null se não constar no documento
 - idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
 - data_nascimento: Data de nascimento informada em qualquer formato (ex: "16/01/1993", "16-01-1993", "16.01.1993", "1993-01-16", "nascido em 16 de janeiro de 1993"), ou null se não constar
 - objetivo: Cargo pretendido, objetivo profissional ou área informada no currículo (ex: "Cobrador de Ônibus", "Motorista", "Auxiliar Administrativo"), ou null se não identificado
@@ -270,7 +274,8 @@ ${extractedText.substring(0, 18000)}`
 - email: E-mail REAL do candidato (ex: "exemplo@gmail.com"), ou null se não identificado
 - telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11974697877", "11988887777"]) ou [] se nenhum
 - telefone: Telefone principal ou null
-- endereco: Endereço completo, logradouro, bairro, cidade ou estado (ex: "Rua das Flores, 123 - São Bernardo do Campo - SP"), ou null se não identificado
+- endereco: Endereço completo COMPLETO com logradouro, número, complemento, bairro, cidade, UF e CEP se existirem no documento (ex: "R. Timóteo, 88 - Jardim Paraguaçu, São Paulo - SP, 03938-050"). NUNCA trunque para apenas "Jardim - SP" ou apenas o bairro se houver rua, número, cidade ou CEP no currículo.
+- cep: CEP brasileiro completo (ex: "03938-050"), ou null se não constar
 - idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
 - data_nascimento: Data de nascimento informada (ex: "16/01/1993" ou "1993-01-16"), ou null se não constar
 - objetivo: Cargo pretendido, objetivo profissional ou área informada no currículo, ou null se não identificado
@@ -419,7 +424,8 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
   "email": "Endereço de e-mail real do candidato ou null",
   "telefones_celulares": ["telefones celulares reais encontrados com DDD"],
   "telefone": "Telefone celular principal com DDD ou null",
-  "endereco": "Endereço completo, logradouro, bairro, cidade ou estado ou null",
+  "endereco": "Endereço COMPLETO com rua, número, bairro, cidade, UF e CEP (ex: R. Timóteo, 88 - Jardim Paraguaçu, São Paulo - SP, 03938-050) ou null",
+  "cep": "CEP formatado 00000-000 ou null",
   "idade": "Número inteiro da idade ou null",
   "data_nascimento": "Data de nascimento informada ou null",
   "objetivo": "Cargo pretendido, objetivo profissional ou área de interesse informada no currículo ou null",
@@ -545,6 +551,22 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
               }
             }
             if (newlyExtracted) {
+              // Tenta extrair CEP do texto bruto caso newlyExtracted não possua
+              if (!newlyExtracted.cep && extractedText) {
+                const textCep = extractCep(extractedText)
+                if (textCep) newlyExtracted.cep = textCep
+              }
+              // Se endereço não contém o CEP encontrado, anexa-o
+              if (
+                newlyExtracted.cep &&
+                newlyExtracted.endereco &&
+                typeof newlyExtracted.endereco === 'string'
+              ) {
+                if (!newlyExtracted.endereco.includes(newlyExtracted.cep)) {
+                  newlyExtracted.endereco = `${newlyExtracted.endereco}, ${newlyExtracted.cep}`
+                }
+              }
+
               // Tenta regex adicional se data_nascimento estiver ausente
               if (!newlyExtracted.data_nascimento && extractedText) {
                 const birthDateRegex =

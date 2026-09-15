@@ -41,6 +41,29 @@ Deno.serve(async (req: Request) => {
       return isUnanalyzed || isGenericName
     })
 
+    // Ação direta para invocar reanalisar-candidato para Robisom com force_reextract
+    if (body.reanalyzeRobisom) {
+      console.log('[batch-reanalyze-all] Executando reanálise forçada para Robisom...')
+      const robisomRes = await fetch(`${supabaseUrl}/functions/v1/reanalisar-candidato`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({
+          candidate_id: 'ad3f9fe5-905a-4e7e-adce-a803772da937',
+          force_reextract: true,
+        }),
+      })
+      const robisomJson = await robisomRes.json()
+      return new Response(
+        JSON.stringify({ robisomJson, ok: robisomRes.ok, status: robisomRes.status }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
+    }
+
     // Trigger auxiliar para rodar o backfill de proximidade se solicitado
     if (body.runBackfillProximity) {
       console.log('Disparando backfill-proximidade via batch-reanalyze-all...')

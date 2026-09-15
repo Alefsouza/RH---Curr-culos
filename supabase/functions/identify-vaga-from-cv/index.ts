@@ -4,9 +4,11 @@ import OpenAI from 'npm:openai@4'
 import { corsHeaders } from '../_shared/cors.ts'
 import {
   calculateHaversineDistance,
+  extractCep,
   formatAddressString,
   geocodeAddress,
   getReferenceCoordsForText,
+  isTruncatedOrIncompleteAddress,
   REFERENCE_LOCATIONS,
 } from '../_shared/proximity.ts'
 import { resolveCandidateAge } from '../_shared/validation.ts'
@@ -531,13 +533,25 @@ Deno.serve(async (req: Request) => {
     const candidatoObjetivo = typeof rawObjetivo === 'string' ? rawObjetivo.trim() : ''
 
     // Extrair endereço formatado do candidato
-    const candidatoEndereco =
-      formatAddressString(parsedDadosExtraidos?.endereco) ||
-      formatAddressString(parsedDadosExtraidos?.location) ||
-      formatAddressString(parsedDadosExtraidos?.cidade) ||
+    let candidatoEndereco =
+      formatAddressString(parsedDadosExtraidos?.endereco, parsedDadosExtraidos) ||
+      formatAddressString(parsedDadosExtraidos?.location, parsedDadosExtraidos) ||
+      formatAddressString(parsedDadosExtraidos?.cidade, parsedDadosExtraidos) ||
       (typeof parsedDadosExtraidos?.cidade === 'string'
         ? `${parsedDadosExtraidos.cidade}${parsedDadosExtraidos?.estado ? ` - ${parsedDadosExtraidos.estado}` : ''}`
         : null)
+
+    const rawCandidateCep =
+      extractCep(candidatoEndereco) ||
+      extractCep(parsedDadosExtraidos?.cep) ||
+      extractCep(JSON.stringify(parsedDadosExtraidos))
+    if (isTruncatedOrIncompleteAddress(candidatoEndereco) && rawCandidateCep) {
+      if (!candidatoEndereco || !candidatoEndereco.includes(rawCandidateCep)) {
+        candidatoEndereco = candidatoEndereco
+          ? `${candidatoEndereco}, CEP ${rawCandidateCep}`
+          : `CEP ${rawCandidateCep}`
+      }
+    }
 
     // =========================================================================
     // REGRA 1: DETECÇÃO DE "OBJETIVO GENÉRICO" ("A disposição da empresa", etc.)

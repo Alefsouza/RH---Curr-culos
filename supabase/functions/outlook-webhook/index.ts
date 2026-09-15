@@ -6,6 +6,7 @@ import pdf from 'npm:pdf-parse@1.1.1'
 import { findExistingCandidate } from '../_shared/candidates.ts'
 import { performGoogleVisionPdfOcr } from '../_shared/ocr.ts'
 import { resolveCandidateAge } from '../_shared/validation.ts'
+import { extractCep } from '../_shared/proximity.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -150,8 +151,9 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const extractionPrompt = `Extraia os seguintes dados do currículo: nome, email, telefones celulares, experiencia profissional, skills, formacao academica, endereço (cidade e estado ou completo), idade, data de nascimento, objetivo / cargo pretendido.
+    const extractionPrompt = `Extraia os seguintes dados do currículo: nome, email, telefones celulares, experiencia profissional, skills, formacao academica, endereço completo com logradouro, número, bairro, cidade, UF e CEP se existirem, idade, data de nascimento, objetivo / cargo pretendido.
 Extraia APENAS números de telefone celular brasileiros (DDD + 9 dígitos, começando com 9). Ignore telefones fixos. Formato: 11999999999.
+No campo "endereco", traga o endereço mais completo possível (ex: "R. Timóteo, 88 - Jardim Paraguaçu, São Paulo - SP, 03938-050"). NUNCA trunque para apenas "Jardim - SP" ou apenas o bairro.
 Se algum dado não for encontrado, retorne null ou um array vazio.
 Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
 {
@@ -159,6 +161,7 @@ Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
   "email": "string ou null",
   "telefones_celulares": ["string"],
   "endereco": "string ou null",
+  "cep": "string ou null",
   "idade": "number ou null",
   "data_nascimento": "string ou null",
   "objetivo": "string ou null",
@@ -189,6 +192,20 @@ ${pdfText.substring(0, 15000)}
         )
         if (calculatedAge !== null) {
           extractedData.idade = calculatedAge
+        }
+
+        if (!extractedData.cep && pdfText) {
+          const foundCep = extractCep(pdfText)
+          if (foundCep) extractedData.cep = foundCep
+        }
+        if (
+          extractedData.cep &&
+          extractedData.endereco &&
+          typeof extractedData.endereco === 'string'
+        ) {
+          if (!extractedData.endereco.includes(extractedData.cep)) {
+            extractedData.endereco = `${extractedData.endereco}, ${extractedData.cep}`
+          }
         }
       }
     } catch (err) {
