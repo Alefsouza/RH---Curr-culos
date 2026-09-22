@@ -19,6 +19,7 @@ const statusConfig: Record<string, any> = {
   error: { label: 'Erro', icon: XCircle, color: 'bg-red-100 text-red-800' },
   failed: { label: 'Falha', icon: XCircle, color: 'bg-red-100 text-red-800' },
   partial: { label: 'Parcial', icon: AlertTriangle, color: 'bg-yellow-100 text-yellow-800' },
+  substituida: { label: 'Substituída', icon: XCircle, color: 'bg-slate-100 text-slate-700' },
 }
 
 const formatDate = (d: string) =>

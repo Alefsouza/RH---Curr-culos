@@ -343,6 +343,40 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
   let cvsSkippedDuplicate = 0
   let cvsSkippedInternal = 0
 
+  // Helper para persistir progresso incrementalmente a cada e-mail processado
+  const updateRunProgress = async (finalStatus?: string) => {
+    if (!syncRunId) return
+    try {
+      const payload: Record<string, any> = {
+        emails_scanned: emailsScanned,
+        cvs_imported: cvsImported,
+        cvs_skipped_no_match: cvsSkippedNoMatch,
+        cvs_skipped_duplicate: cvsSkippedDuplicate,
+        cvs_skipped_internal: cvsSkippedInternal,
+        last_synced_at: new Date().toISOString(),
+      }
+      if (errors.length > 0) {
+        payload.errors = errors
+      }
+      if (finalStatus) {
+        payload.status = finalStatus
+        payload.finished_at = new Date().toISOString()
+      }
+      await supabase.from('sync_runs').update(payload).eq('id', syncRunId)
+    } catch (progErr: any) {
+      console.warn(
+        '[performSync] Falha ao atualizar progresso incremental de sync_runs:',
+        progErr?.message,
+      )
+    }
+  }
+
+  // Timeout guard: Edge function tem timeout padrão de ~150s.
+  // Paramos o processamento em lote em ~115s para ter margem segura de persistência e finalização limpa.
+  const startTime = Date.now()
+  const MAX_EXECUTION_TIME_MS = 115 * 1000 // 115 segundos
+  let reachedTimeBudget = false
+
   try {
     const clientId = Deno.env.get('MS_CLIENT_ID')
     const clientSecret = Deno.env.get('MS_CLIENT_SECRET')
@@ -426,9 +460,21 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
       `Outlook Sync: Total de ${messages.length} e-mails únicos coletados em todas as pastas da caixa ${mailboxEmail}`,
     )
 
+    // Atualiza imediatamente o total de emails scaneados para a interface exibir
+    await updateRunProgress()
+
     const replyPrefixes = /^(re:|fwd:|res:|enc:)/i
 
     for (const msg of messages) {
+      // Checa se atingiu o orçamento de tempo para caber com segurança no timeout da edge function
+      if (Date.now() - startTime > MAX_EXECUTION_TIME_MS) {
+        console.warn(
+          `Outlook Sync: Limite de tempo de execução seguro atingido (${Math.round((Date.now() - startTime) / 1000)}s). Finalizando lote atual; restante continuará na próxima rodada.`,
+        )
+        reachedTimeBudget = true
+        break
+      }
+
       const subject = msg.subject || ''
       const senderEmail = msg.from?.emailAddress?.address || ''
       const senderDomain = senderEmail.split('@')[1]?.toLowerCase() || ''
@@ -875,45 +921,27 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
         } else {
           await supabase.from('email_importacoes').insert(errPayload)
         }
+      } finally {
+        // Atualiza o progresso no banco a cada e-mail processado
+        await updateRunProgress()
       }
     }
   } catch (err: any) {
     console.error('Erro geral durante sincronização Outlook:', err)
     errors.push({ general: true, error: err.message })
   } finally {
-    // Atualiza registro de sync_runs
+    // Atualiza registro de sync_runs com status e data final
     const hasGeneralError = errors.some((e: any) => e.general)
     let finalRunStatus = 'success'
     if (hasGeneralError) {
       finalRunStatus = 'error'
-    } else if (errors.length > 0 && cvsImported > 0) {
-      finalRunStatus = 'partial'
-    } else if (errors.length > 0 && cvsImported === 0) {
+    } else if (errors.length > 0) {
       finalRunStatus = 'partial'
     } else {
       finalRunStatus = 'success'
     }
 
-    if (syncRunId) {
-      try {
-        await supabase
-          .from('sync_runs')
-          .update({
-            finished_at: new Date().toISOString(),
-            status: finalRunStatus,
-            emails_scanned: emailsScanned,
-            cvs_imported: cvsImported,
-            cvs_skipped_no_match: cvsSkippedNoMatch,
-            cvs_skipped_duplicate: cvsSkippedDuplicate,
-            cvs_skipped_internal: cvsSkippedInternal,
-            errors: errors.length > 0 ? errors : null,
-            last_synced_at: new Date().toISOString(),
-          })
-          .eq('id', syncRunId)
-      } catch (updateErr: any) {
-        console.error('Erro ao atualizar sync_runs no finally:', updateErr)
-      }
-    }
+    await updateRunProgress(finalRunStatus)
 
     console.log('Outlook Sync finalizado:', {
       syncRunId,
@@ -922,6 +950,7 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
       cvsImported,
       cvsSkippedDuplicate,
       cvsSkippedNoMatch,
+      reachedTimeBudget,
       errorsCount: errors.length,
     })
 
@@ -982,10 +1011,45 @@ Deno.serve(async (req: Request) => {
       throw new Error('Nenhum usuário administrador encontrado no sistema.')
     }
 
-    // Criar registro na tabela sync_runs
+    // 1. Encerrar rodadas anteriores que ainda estejam 'running' para nunca haver duas em andamento
+    try {
+      const nowIso = new Date().toISOString()
+      const { data: orphanRuns } = await supabase
+        .from('sync_runs')
+        .select('id, started_at, emails_scanned, cvs_imported')
+        .eq('status', 'running')
+
+      if (orphanRuns && orphanRuns.length > 0) {
+        console.log(
+          `[sync-outlook-cvs] Encerrando ${orphanRuns.length} rodada(s) anterior(es) órfã(s)...`,
+        )
+        for (const orphan of orphanRuns) {
+          await supabase
+            .from('sync_runs')
+            .update({
+              status: 'substituida',
+              finished_at: nowIso,
+              errors: [{ error: 'Rodada substituída automaticamente por uma nova execução.' }],
+            })
+            .eq('id', orphan.id)
+        }
+      }
+    } catch (orphanErr: any) {
+      console.warn('[sync-outlook-cvs] Erro ao encerrar rodadas órfãs:', orphanErr?.message)
+    }
+
+    // 2. Criar registro da rodada atual na tabela sync_runs
     const { data: syncRun } = await supabase
       .from('sync_runs')
-      .insert({ status: 'running', started_at: new Date().toISOString() })
+      .insert({
+        status: 'running',
+        started_at: new Date().toISOString(),
+        emails_scanned: 0,
+        cvs_imported: 0,
+        cvs_skipped_no_match: 0,
+        cvs_skipped_duplicate: 0,
+        cvs_skipped_internal: 0,
+      })
       .select('id')
       .single()
 
