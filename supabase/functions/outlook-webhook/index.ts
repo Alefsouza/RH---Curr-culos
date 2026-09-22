@@ -6,7 +6,7 @@ import pdf from 'npm:pdf-parse@1.1.1'
 import { findExistingCandidate } from '../_shared/candidates.ts'
 import { performGoogleVisionPdfOcr } from '../_shared/ocr.ts'
 import { resolveCandidateAge } from '../_shared/validation.ts'
-import { extractCep } from '../_shared/proximity.ts'
+import { extractCep, isTruncatedOrIncompleteAddress } from '../_shared/proximity.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -205,6 +205,28 @@ ${pdfText.substring(0, 15000)}
         ) {
           if (!extractedData.endereco.includes(extractedData.cep)) {
             extractedData.endereco = `${extractedData.endereco}, ${extractedData.cep}`
+          }
+        }
+
+        // Se o endereço veio incompleto ou truncado e ainda não tínhamos feito OCR no webhook
+        if (
+          (!extractedData.endereco ||
+            isTruncatedOrIncompleteAddress(String(extractedData.endereco))) &&
+          pdfBuffer.length > 0
+        ) {
+          try {
+            console.log(
+              '[outlook-webhook] Endereço incompleto/truncado, executando OCR para capturar cabeçalho/endereço...',
+            )
+            const ocrText = await performGoogleVisionPdfOcr(new Uint8Array(pdfBuffer))
+            if (ocrText && ocrText.trim().length > 30) {
+              const ocrCep = extractCep(ocrText)
+              if (ocrCep && !extractedData.cep) {
+                extractedData.cep = ocrCep
+              }
+            }
+          } catch (e: any) {
+            console.warn('[outlook-webhook] Aviso no OCR secundário:', e?.message)
           }
         }
       }

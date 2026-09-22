@@ -10,9 +10,10 @@ import {
   resolveCandidateAge,
 } from '../_shared/validation.ts'
 import { findExistingCandidate } from '../_shared/candidates.ts'
-import { extractCep } from '../_shared/proximity.ts'
+import { extractCep, isTruncatedOrIncompleteAddress } from '../_shared/proximity.ts'
 import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
 import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
+import { performGoogleVisionPdfOcr } from '../_shared/ocr.ts'
 
 interface ExtractedCandidateData {
   nome: string | null
@@ -45,10 +46,28 @@ async function extractCandidateData(
     extractedRawText = await extractTextFromPdfBytes(fileBytes)
   }
 
-  // Se o texto extraído for vazio ou muito curto (< 50 caracteres), arquivo escaneado/imagem/sem texto legível
-  if (!extractedRawText || extractedRawText.trim().length < 50) {
+  // Se o texto extraído for vazio ou muito curto (< 50 caracteres) e for PDF, tenta OCR antes de descartar
+  if ((!extractedRawText || extractedRawText.trim().length < 50) && ext !== 'docx') {
+    try {
+      console.log(
+        `[extractCandidateData] Arquivo ${fileName} com texto insuficiente (${extractedRawText?.trim().length || 0} caracteres). Executando Google Vision OCR...`,
+      )
+      const ocrText = await performGoogleVisionPdfOcr(fileBytes)
+      if (ocrText && ocrText.trim().length >= 40) {
+        extractedRawText = ocrText
+        console.log(
+          `[extractCandidateData] OCR bem-sucedido para ${fileName}: ${extractedRawText.length} caracteres extraídos.`,
+        )
+      }
+    } catch (ocrErr: any) {
+      console.warn(`[extractCandidateData] Falha no Google Vision OCR:`, ocrErr?.message)
+    }
+  }
+
+  // Se mesmo após OCR o texto continuar vazio ou insuficiente (< 40 caracteres)
+  if (!extractedRawText || extractedRawText.trim().length < 40) {
     console.warn(
-      `[extractCandidateData] Arquivo ${fileName} não possui texto legível suficiente (${extractedRawText?.trim().length || 0} caracteres). PDF escaneado ou sem texto.`,
+      `[extractCandidateData] Arquivo ${fileName} não possui texto legível suficiente (${extractedRawText?.trim().length || 0} caracteres). Arquivo sem texto legível ou escaneado não reconhecido.`,
     )
     return null
   }
@@ -140,7 +159,58 @@ Formato JSON estrito esperado:
     }
   }
 
-  const parsedJson: ExtractedCandidateData = await callOpenAIWithRetry(messages)
+  let parsedJson: ExtractedCandidateData = await callOpenAIWithRetry(messages)
+
+  // Se o cabeçalho estiver incompleto (ex: nome, telefone ou endereço ausentes) e for PDF, tenta reforçar com OCR
+  const isHeaderIncomplete =
+    !sanitizeAndValidateName(parsedJson?.nome) ||
+    (!parsedJson?.telefone &&
+      (!Array.isArray(parsedJson?.telefones_celulares) ||
+        parsedJson.telefones_celulares.length === 0)) ||
+    !parsedJson?.endereco ||
+    isTruncatedOrIncompleteAddress(String(parsedJson.endereco))
+
+  if (isHeaderIncomplete && ext !== 'docx' && fileBytes.length > 0) {
+    try {
+      console.log(
+        `[extractCandidateData] Cabeçalho incompleto em ${fileName}. Tentando OCR complementar...`,
+      )
+      const ocrText = await performGoogleVisionPdfOcr(fileBytes)
+      if (ocrText && ocrText.trim().length > 30) {
+        const combinedText = `--- TEXTO EXTRAÍDO VIA OCR ---\n${ocrText}\n\n--- TEXTO NATIVO ---\n${extractedRawText}`
+        const ocrMessages = [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: `${promptText}\n\nTexto completo com OCR:\n${combinedText.substring(0, 25000)}`,
+          },
+        ]
+        const ocrJson = await callOpenAIWithRetry(ocrMessages)
+        if (ocrJson && typeof ocrJson === 'object') {
+          parsedJson = {
+            ...parsedJson,
+            ...ocrJson,
+            experiencia_profissional:
+              Array.isArray(ocrJson.experiencia_profissional) &&
+              ocrJson.experiencia_profissional.length > 0
+                ? ocrJson.experiencia_profissional
+                : parsedJson.experiencia_profissional,
+            skills:
+              Array.isArray(ocrJson.skills) && ocrJson.skills.length > 0
+                ? ocrJson.skills
+                : parsedJson.skills,
+            formacao_academica:
+              Array.isArray(ocrJson.formacao_academica) && ocrJson.formacao_academica.length > 0
+                ? ocrJson.formacao_academica
+                : parsedJson.formacao_academica,
+          }
+          extractedRawText = combinedText
+        }
+      }
+    } catch (ocrFollowupErr: any) {
+      console.warn(`[extractCandidateData] Erro no OCR complementar:`, ocrFollowupErr?.message)
+    }
+  }
 
   // Tenta extrair CEP do texto bruto caso não venha no JSON
   if (!parsedJson.cep && extractedRawText) {
@@ -526,12 +596,29 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
         const { extractedData, rawText } = extractionResult
 
         // Tenta também pré-processar regex de data de nascimento no texto extraído se ainda não foi identificada
-        if (!extractedData.data_nascimento && extractedText) {
+        if (!extractedData.data_nascimento && rawText) {
           const birthDateRegex =
             /(?:nasc(?:ido|imento|ida)?(?:\s+em)?[:\s]+)?\b([0-3]?\d[\/\-\.][0-1]?\d[\/\-\.](?:19|20)\d{2})\b/i
-          const matchDate = extractedText.match(birthDateRegex)
+          const matchDate = rawText.match(birthDateRegex)
           if (matchDate && matchDate[1]) {
             extractedData.data_nascimento = matchDate[1]
+          }
+        }
+
+        // Tenta também extrair CEP do rawText caso continue ausente
+        if (!extractedData.cep && rawText) {
+          const detectedCep = extractCep(rawText)
+          if (detectedCep) {
+            extractedData.cep = detectedCep
+          }
+        }
+        if (
+          extractedData.cep &&
+          extractedData.endereco &&
+          typeof extractedData.endereco === 'string'
+        ) {
+          if (!extractedData.endereco.includes(extractedData.cep)) {
+            extractedData.endereco = `${extractedData.endereco}, ${extractedData.cep}`
           }
         }
 
