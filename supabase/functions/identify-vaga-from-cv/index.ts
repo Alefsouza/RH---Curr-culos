@@ -12,6 +12,7 @@ import {
   REFERENCE_LOCATIONS,
 } from '../_shared/proximity.ts'
 import { resolveCandidateAge } from '../_shared/validation.ts'
+import { checkBusOrTruckDriverExperience, isAppOrLightVehicleDriver } from '../_shared/motorista.ts'
 
 // Regras e salvaguardas de fallback por experiência profissional
 // Padrões de objetivo genérico (normalizados sem acento)
@@ -185,10 +186,13 @@ function hasMotoristaExperience(cvData: any): boolean {
       text.includes('operador de caixa') ||
       text.includes('vigilancia') ||
       text.includes('vigilante') ||
+      text.includes('monitoramento') ||
+      text.includes('chefe de monitoramento') ||
       text.includes('repositor') ||
       text.includes('balconista') ||
       text.includes('estoquista') ||
-      text.includes('atendente')
+      text.includes('atendente') ||
+      isAppOrLightVehicleDriver(text)
     )
   }
 
@@ -239,9 +243,10 @@ function hasMotoristaExperience(cvData: any): boolean {
         const cargo = normalizeString(item.cargo || item.funcao || item.titulo || item.role || '')
         const desc = normalizeString(item.descricao || item.atividades || item.resumo || '')
 
-        // Se o cargo contém termos explícitos de NÃO-condução (ajudante de motorista, auxiliar, lavador, caixa, etc.):
-        // NUNCA considerar como motorista!
-        if (isNonDrivingRole(cargo)) {
+        // Se o cargo contém termos explícitos de NÃO-condução (ajudante de motorista, auxiliar, lavador, caixa, etc.)
+        // ou de motorista de aplicativo/veículo de passeio (Uber, 99, etc.): NUNCA considerar como motorista de ônibus/caminhão!
+        const fullItemText = `${cargo} ${item.empresa || ''} ${desc}`
+        if (isNonDrivingRole(cargo) || isAppOrLightVehicleDriver(fullItemText)) {
           continue
         }
 
@@ -1121,6 +1126,7 @@ Deno.serve(async (req: Request) => {
            * CARGOS REAIS: A associação da experiência deve ser feita estritamente pelos CARGOS REAIS do histórico profissional (Operador de Caixa, Atendimento, Cobrança, Vigilância de loja, Operador de loja, Balconista, Balcão etc.) -> ATRIBUA À VAGA DE COBRADOR DA GARAGEM MAIS PRÓXIMA (respeitando a restrição de idade de 18 a 56 anos das vagas de Cobrador).
            * TERMOS DE AMBIENTE E APOIO NÃO SÃO MOTORISTA: Termos de ambiente/setor/empresa como "estacionamento", "loja", "leve mobilidade", "shopping", "garagem", "pátio", "lavador", "fiscal", "operador de loja" NÃO devem ser interpretados como experiência de Motorista! Ter trabalhado como Caixa ou Vigilante em um estacionamento (ex: Propark Estacionamento / Leve Mobilidade) NÃO É experiência de motorista.
            * AJUDANTE DE MOTORISTA NÃO É MOTORISTA: Cargos como "Ajudante de motorista", "Auxiliar de motorista", "Ajudante de entrega", "Ajudante geral" ou carga/descarga NÃO são condução nem experiência de motorista! NUNCA conte "ajudante de motorista" como motorista!
+           * UBER / CARRO DE PASSEIO / APLICATIVO NÃO É MOTORISTA DE ÔNIBUS/CAMINHÃO: Motorista de Uber, 99, Cabify, InDrive, motorista particular, carro de passeio ou veículos de pequeno e médio porte NÃO conta como experiência profissional para vagas de Motorista (que exigem ônibus ou caminhão)! NUNCA considere Uber como experiência de motorista profissional para vaga de Motorista de ônibus ou caminhão!
            * MOTORISTA SOMENTE SE: Vaga de Motorista SOMENTE se houver cargo/função real e comprovada de CONDUÇÃO de veículos no histórico (ex: "motorista de ônibus", "motorista de caminhão", "motorista carreteiro", "condutor") OU CNH categoria D/E comprovada no currículo. Se NÃO houver comprovação de condução real nem CNH D/E, NUNCA atribua vaga de Motorista nem envie para revisão de Motorista. Reverte para Cobrador da garagem mais próxima caso haja experiência em caixa/atendimento/loja/vigilância ou objetivo genérico/sem vaga.
            * FRENTISTA / ABASTECIMENTO: Se a experiência corresponder a frentista, posto de combustíveis, troca de óleo ou abastecimento -> ATRIBUA À VAGA DE ABASTECEDOR DA GARAGEM MAIS PRÓXIMA pelo endereço do candidato.
            * MECÂNICA: Se a experiência for em mecânica automotiva / pesada / diesel -> ATRIBUA À VAGA DE MECÂNICO DA GARAGEM MAIS PRÓXIMA (ou Motorista se tiver CNH e condução).

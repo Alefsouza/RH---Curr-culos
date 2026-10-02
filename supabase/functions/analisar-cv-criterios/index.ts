@@ -18,6 +18,7 @@ import {
   isTruncatedOrIncompleteAddress,
   sanitizeAddressString,
 } from '../_shared/proximity.ts'
+import { checkBusOrTruckDriverExperience, isAppOrLightVehicleDriver } from '../_shared/motorista.ts'
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -330,8 +331,15 @@ DIRETRIZES CRÍTICAS PARA AVALIAÇÃO DE CRITÉRIOS:
    - Quando a vaga exigir ou mencionar "Curso" ou "Curso de transporte coletivo de passageiros" (ex: vagas de Motorista): considere VÁLIDO QUALQUER curso relativo a transporte coletivo (ex: "Curso de Transporte Coletivo", "Condutor de Veículo de Transporte Coletivo de Passageiros", "Resolução 168 / 789 do CONTRAN transporte coletivo", etc.).
    - CONSIDERE TAMBÉM quando o candidato colocar/informar "Credencial de Transporte Coletivo", "Credencial de Motorista de Coletivo" ou "Credencial" nas formações, cursos, certificações ou observações da CNH como atendimento pleno a essa exigência de curso/formação.
 
-5. REGRA DE VAGAS DE MOTORISTA E STATUS "REVISAR" (IMPORTANTE):
-   - Para vagas de MOTORISTA: caso falte comprovação clara ou haja dúvidas sobre tempo de experiência, categoria da CNH ou cursos/credenciais que justifiquem validação humana, o resultado DEVE ser "revisar".
+5. REGRA DE VAGAS DE MOTORISTA E SALVAGUARDA DE EXPERIÊNCIA (ÔNIBUS / CAMINHÃO vs CARRO DE APLICATIVO/PASSEIO):
+   - CRITÉRIO ELIMINATÓRIO DE EXPERIÊNCIA PARA MOTORISTA: O requisito de experiência como motorista nas vagas de Motorista exige comprovada experiência profissional anterior na condução de veículos pesados (ÔNIBUS ou CAMINHÃO / transporte coletivo de passageiros / veículos de grande porte).
+   - REGRA MANDATÓRIA: Experiência como motorista de aplicativo (Uber, 99, Cabify, InDrive), motorista de carro de passeio, veículo leve, transporte individual ou veículos de pequeno e médio porte NÃO CONTA como experiência de motorista de ônibus ou caminhão!
+   - NUNCA conte "20 anos de carteira", CNH D com EAR ou anos atuando em Uber / carro de passeio como cumprimento do critério de experiência anterior como motorista de ônibus ou caminhão.
+   - Se o candidato a vaga de Motorista tiver APENAS experiência como Uber / aplicativo / carro de passeio e NÃO comprovar condução de ônibus ou caminhão:
+     * O critério eliminatório de experiência anterior NÃO FOI ATENDIDO ❌.
+     * O candidato NÃO pode ser qualificado.
+     * Reprove ("nao_qualificado") por não atender ao critério eliminatório de experiência na função (ônibus ou caminhão) ou encaminhe para revisão se houver documentação a checar, NUNCA qualificando como aprovado.
+   - Para vagas de MOTORISTA: caso falte comprovação clara ou haja dúvidas sobre documentos ou cursos/credenciais que justifiquem validação humana, o resultado DEVE ser "revisar".
    - Quando o resultado for "revisar", o candidato NÃO deve ser considerado desqualificado nem rebaixado para outra função — ele ficará pendente na vaga de Motorista para a Paola revisar manualmente.
 
 6. AVALIAÇÃO GERAL E RESPEITO AOS CRITÉRIOS EXPLÍCITOS:
@@ -515,6 +523,108 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
             motivoFinal = `Qualificado: Candidato reside a ${menorDistanciaKm.toFixed(2)} km da garagem (raio aceitável de ${raioKm} km) e atende aos requisitos da vaga.`
             if (resultJson.detalhes) {
               resultJson.detalhes.score = Math.max(resultJson.detalhes.score || 0, 85)
+            }
+          }
+        }
+      }
+    }
+
+    // =========================================================================
+    // SALVAGUARDA DETERMINÍSTICA: EXPERIÊNCIA DE MOTORISTA (ANTI-UBER / ANTI-CARRO DE PASSEIO)
+    // Se a vaga for de Motorista e exigir experiência anterior como motorista de ônibus ou caminhão:
+    // Experiência em Uber, 99, táxi, carro de passeio ou veículos de pequeno/médio porte
+    // NÃO CONTA como experiência em ônibus/caminhão.
+    // NUNCA permitir que o candidato seja qualificado alegando "20 anos de experiência" em Uber/passeio.
+    // =========================================================================
+    const isVagaMotorista = (vaga.titulo || '').toLowerCase().includes('motorista')
+    if (isVagaMotorista) {
+      const driverCheck = checkBusOrTruckDriverExperience(cvData)
+      const motivoTrimLower = (motivoFinal || '').toLowerCase()
+      const summaryTrimLower = (resultJson.detalhes?.summary || '').toLowerCase()
+
+      // Limpar frases incorretas que elogiem anos de experiência quando na verdade é Uber/carro de passeio
+      if (
+        summaryTrimLower.includes('anos de experiencia como motorista') ||
+        motivoTrimLower.includes('anos de experiencia como motorista')
+      ) {
+        if (!driverCheck.hasValidBusOrTruckExp) {
+          if (resultJson.detalhes?.summary) {
+            resultJson.detalhes.summary = resultJson.detalhes.summary.replace(
+              /\b\d+\s+anos\s+de\s+experi[êe]ncia\s+como\s+motorista\b/gi,
+              'experiência em veículo leve/aplicativo (sem comprovação em ônibus ou caminhão)',
+            )
+          }
+        }
+      }
+
+      // Se o candidato tem APENAS experiência com aplicativo/veículo leve e NENHUMA em ônibus/caminhão
+      if (
+        driverCheck.hasOnlyLightOrAppExp ||
+        (!driverCheck.hasValidBusOrTruckExp && driverCheck.appOrLightExperiencesFound.length > 0)
+      ) {
+        // Remover de matched_criteria qualquer menção indevida a experiência como motorista atendida
+        if (Array.isArray(resultJson.detalhes?.matched_criteria)) {
+          resultJson.detalhes.matched_criteria = resultJson.detalhes.matched_criteria.filter(
+            (item: any) => {
+              const n = (item?.nome || '').toLowerCase()
+              const e = (item?.evidencia || '').toLowerCase()
+              const isDriverExp =
+                (n.includes('experi') &&
+                  (n.includes('motorista') ||
+                    n.includes('funcao') ||
+                    n.includes('onibus') ||
+                    n.includes('caminhao'))) ||
+                (e.includes('experi') &&
+                  (e.includes('motorista') || e.includes('uber') || e.includes('aplicativo')))
+              return !isDriverExp
+            },
+          )
+        }
+
+        // Adicionar a unmatched_criteria a falta de experiência em ônibus ou caminhão
+        if (Array.isArray(resultJson.detalhes?.unmatched_criteria)) {
+          const alreadyInUnmatched = resultJson.detalhes.unmatched_criteria.some((item: any) => {
+            const n = (item?.nome || '').toLowerCase()
+            return (
+              n.includes('experi') &&
+              (n.includes('onibus') || n.includes('caminhao') || n.includes('funcao'))
+            )
+          })
+          if (!alreadyInUnmatched) {
+            resultJson.detalhes.unmatched_criteria.push({
+              nome: 'Experiência anterior como motorista de ônibus ou caminhão',
+              motivo:
+                'Candidato possui experiência em transporte de passageiros por aplicativo (Uber/veículo de pequeno porte), que não atende ao critério eliminatório de experiência na função como motorista de ônibus ou caminhão.',
+            })
+          }
+        }
+
+        // Se a IA qualificou erroneamente com base no Uber, forçar reprovação ou revisão com motivo correto
+        if (statusFinal === 'qualificado') {
+          // Como o critério da vaga é eliminatório ("Experiência anterior na função como motorista de ônibus ou caminhão"),
+          // não pode ser qualificado.
+          statusFinal = 'nao_qualificado'
+          motivoFinal =
+            'Reprovado por não atender ao critério eliminatório de experiência: a vaga exige experiência anterior na função como motorista de ônibus ou caminhão. Experiência como motorista de aplicativo (Uber/veículos de pequeno e médio porte) não é aceita para a função.'
+          if (resultJson.detalhes) {
+            resultJson.detalhes.score = Math.min(resultJson.detalhes.score || 50, 45)
+            resultJson.detalhes.motivo = motivoFinal
+            if (Array.isArray(resultJson.detalhes.pontos_fracos)) {
+              resultJson.detalhes.pontos_fracos.push(
+                'Não possui experiência comprovada com condução de ônibus ou caminhão (histórico profissional em Uber/veículos leves).',
+              )
+            }
+          }
+        } else {
+          // Se já estava em revisar ou nao_qualificado, certificar que o motivo reflete a ausência de ônibus/caminhão
+          if (
+            motivoFinal.includes('20 anos de experiência') ||
+            motivoFinal.includes('atende a todos os critérios')
+          ) {
+            motivoFinal =
+              'Não atende ao critério eliminatório de experiência na função: candidato possui histórico em aplicativo (Uber/veículo leve), sem comprovação em ônibus ou caminhão.'
+            if (resultJson.detalhes) {
+              resultJson.detalhes.motivo = motivoFinal
             }
           }
         }

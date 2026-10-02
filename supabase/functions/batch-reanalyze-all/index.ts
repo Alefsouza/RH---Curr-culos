@@ -41,6 +41,29 @@ Deno.serve(async (req: Request) => {
       return isUnanalyzed || isGenericName
     })
 
+    // Ação direta para invocar reanalisar-candidato para Leonardo Augusto Damasceno
+    if (body.reanalyzeLeonardo) {
+      console.log('[batch-reanalyze-all] Executando reanálise para Leonardo Augusto Damasceno...')
+      const leonardoRes = await fetch(`${supabaseUrl}/functions/v1/reanalisar-candidato`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({
+          candidate_id: '45251712-9216-42da-811c-4ba82e4fd993',
+          force_reextract: false,
+        }),
+      })
+      const leonardoJson = await leonardoRes.json()
+      return new Response(
+        JSON.stringify({ leonardoJson, ok: leonardoRes.ok, status: leonardoRes.status }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
+    }
+
     // Ação direta para invocar reanalisar-candidato para Robisom com force_reextract
     if (body.reanalyzeRobisom) {
       console.log('[batch-reanalyze-all] Executando reanálise forçada para Robisom...')
@@ -95,7 +118,11 @@ Deno.serve(async (req: Request) => {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${supabaseKey}`,
         },
-        body: JSON.stringify({ candidate_id: body.candidate_id }),
+        body: JSON.stringify({
+          candidate_id: body.candidate_id,
+          vaga_id: body.vaga_id,
+          force_reextract: body.force_reextract || false,
+        }),
       })
       const resJson = await res.json()
       return new Response(

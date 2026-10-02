@@ -16,3 +16,14 @@ export async function triggerOutlookSync() {
   if (data?.error) throw new Error(data.error)
   return data
 }
+
+export async function triggerLeonardoReanalysis() {
+  const { data, error } = await supabase.functions.invoke('reanalisar-candidato', {
+    body: {
+      candidate_id: '45251712-9216-42da-811c-4ba82e4fd993',
+      force_reextract: false,
+    },
+  })
+  if (error) throw error
+  return data
+}

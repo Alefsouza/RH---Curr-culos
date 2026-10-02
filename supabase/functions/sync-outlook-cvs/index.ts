@@ -977,6 +977,33 @@ Deno.serve(async (req: Request) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
     const supabase = createClient(supabaseUrl, supabaseKey)
 
+    let body: any = {}
+    try {
+      body = await req.json()
+    } catch {
+      body = {}
+    }
+
+    if (body?.reanalyzeLeonardo) {
+      console.log('[sync-outlook-cvs] Ação especial: reanalisar Leonardo Augusto Damasceno...')
+      const reanRes = await fetch(`${supabaseUrl}/functions/v1/reanalisar-candidato`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({
+          candidate_id: '45251712-9216-42da-811c-4ba82e4fd993',
+          force_reextract: false,
+        }),
+      })
+      const reanJson = await reanRes.json()
+      return new Response(JSON.stringify({ leonardoResult: reanJson, ok: reanRes.ok }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     // Fallback de usuário administrador
     let { data: adminUser } = await supabase
       .from('usuarios')

@@ -788,7 +788,7 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
           /\bcategoria\s*e\b/.test(cnhStr) ||
           /\bcat\s*e\b/.test(cnhStr)
 
-        // Checar cargos de condução
+        // Checar cargos de condução pesada/ônibus/caminhão (aplicativo/carro leve não conta!)
         const exps = Array.isArray(currentDadosExtraidos?.experiencia_profissional)
           ? currentDadosExtraidos.experiencia_profissional
           : []
@@ -796,11 +796,30 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
           const cargo = (
             typeof item === 'string' ? item : item.cargo || item.funcao || item.titulo || ''
           ).toLowerCase()
+          const empresa = (
+            typeof item === 'object' && item !== null ? item.empresa || '' : ''
+          ).toLowerCase()
+          const desc = (
+            typeof item === 'object' && item !== null ? item.descricao || '' : ''
+          ).toLowerCase()
+          const fullItem = `${cargo} ${empresa} ${desc}`
+
+          // Termos de aplicativo/carro de passeio
+          const isApp =
+            fullItem.includes('uber') ||
+            fullItem.includes('99') ||
+            fullItem.includes('aplicativo') ||
+            fullItem.includes('pequeno porte') ||
+            fullItem.includes('passeio')
+          if (isApp) return false
+
           return (
-            cargo.includes('motorista') ||
-            cargo.includes('condutor') ||
+            cargo.includes('motorista de onibus') ||
+            cargo.includes('motorista de caminhao') ||
+            cargo.includes('motorista coletivo') ||
             cargo.includes('carreteiro') ||
-            cargo.includes('manobrista')
+            cargo.includes('manobrista') ||
+            (cargo.includes('motorista') && !cargo.includes('aplicativo'))
           )
         })
 
