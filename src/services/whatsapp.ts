@@ -14,6 +14,7 @@ export interface WhatsappCandidate {
     texto: string
     direcao: 'enviada' | 'recebida'
     criado_em: string
+    status?: string | null
     respostaAssociada?: string | null
   }[]
 }
@@ -56,7 +57,7 @@ export async function getWhatsappDashboardData() {
   // Se não houver candidatos ativos no Kanban, retorna dashboard vazio
   if (candidateIds.length === 0) {
     return {
-      stats: { sent: 0, yes: 0, no: 0 },
+      stats: { sent: 0, failed: 0, yes: 0, no: 0 },
       statsByStage: {},
       candidates: [],
     }
@@ -73,7 +74,7 @@ export async function getWhatsappDashboardData() {
         supabase
           .from('mensagens_whatsapp')
           .select(
-            'id, candidato_id, conteudo, direcao, criado_em, uazapi_message_id, external_id, numero_whatsapp, template_id, tipo, candidatos(nome, telefone, user_id, ultima_resposta_whatsapp, etapa_id)',
+            'id, candidato_id, conteudo, direcao, status, criado_em, uazapi_message_id, external_id, numero_whatsapp, template_id, tipo, candidatos(nome, telefone, user_id, ultima_resposta_whatsapp, etapa_id)',
           )
           .in('candidato_id', batch)
           .not('conteudo', 'is', null)
@@ -111,11 +112,58 @@ export async function getWhatsappDashboardData() {
     console.warn('Aviso: Falha ao buscar respostas (ignorado)', resError)
   }
 
-  const statsByStage: Record<string, { sent: number; yes: number; no: number }> = {}
-  const allStats = { sent: 0, yes: 0, no: 0 }
+  const statsByStage: Record<string, { sent: number; failed: number; yes: number; no: number }> = {}
+  const allStats = { sent: 0, failed: 0, yes: 0, no: 0 }
 
   const isTemplateMsg = (c: any): boolean =>
     c.direcao === 'enviada' && (c.template_id != null || c.tipo === 'interativa')
+
+  // Identifica todos os candidatos que possuem ao menos uma mensagem de template
+  // (mesmo recorte da lista de chats exibida na tela)
+  const templateCandidateIds = new Set<string>()
+  convData?.forEach((c) => {
+    if (c.candidato_id && isTemplateMsg(c)) {
+      templateCandidateIds.add(c.candidato_id)
+    }
+  })
+
+  // Alinha os cards ao mesmo recorte da lista de conversas:
+  // somente mensagens de candidatos do Kanban que possuem mensagem de template
+  convData?.forEach((c) => {
+    if (!c.candidato_id || !templateCandidateIds.has(c.candidato_id)) return
+
+    if (c.direcao === 'enviada') {
+      const isFailed = c.status === 'falha'
+      const etapaId = candidatoEtapaMap[c.candidato_id]
+
+      if (isFailed) {
+        allStats.failed++
+        if (etapaId) {
+          if (!statsByStage[etapaId]) {
+            statsByStage[etapaId] = { sent: 0, failed: 0, yes: 0, no: 0 }
+          }
+          statsByStage[etapaId].failed++
+        }
+      } else {
+        // Mensagem enviada com sucesso (exclui status 'falha')
+        allStats.sent++
+        if (etapaId) {
+          if (!statsByStage[etapaId]) {
+            statsByStage[etapaId] = { sent: 0, failed: 0, yes: 0, no: 0 }
+          }
+          statsByStage[etapaId].sent++
+        }
+      }
+    }
+  })
+
+  // Agrupa as mensagens dos candidatos com template por candidato, em ordem crescente de criado_em
+  const msgsByCandidate: Record<string, any[]> = {}
+  convData?.forEach((c) => {
+    if (!c.candidato_id || !templateCandidateIds.has(c.candidato_id)) return
+    if (!msgsByCandidate[c.candidato_id]) msgsByCandidate[c.candidato_id] = []
+    msgsByCandidate[c.candidato_id].push(c)
+  })
 
   const detectResponse = (conteudo: string | null | undefined): 'sim' | 'nao' | null => {
     if (!conteudo) return null
@@ -144,35 +192,15 @@ export async function getWhatsappDashboardData() {
     return null
   }
 
-  // Total de mensagens enviadas (mantido como estava: conta toda mensagem 'enviada')
-  convData?.forEach((c) => {
-    if (c.direcao === 'enviada') {
-      allStats.sent++
-      const etapaId = c.candidato_id ? candidatoEtapaMap[c.candidato_id] : null
-      if (etapaId) {
-        if (!statsByStage[etapaId]) statsByStage[etapaId] = { sent: 0, yes: 0, no: 0 }
-        statsByStage[etapaId].sent++
-      }
-    }
-  })
-
-  // Agrupa as mensagens por candidato, em ordem crescente de criado_em
-  const msgsByCandidate: Record<string, any[]> = {}
-  convData?.forEach((c) => {
-    if (!c.candidato_id) return
-    if (!msgsByCandidate[c.candidato_id]) msgsByCandidate[c.candidato_id] = []
-    msgsByCandidate[c.candidato_id].push(c)
-  })
-
-  // Conta "Sim"/"Não" por template: somente respostas recebidas APÓS uma mensagem
-  // de template, e no máximo uma por template (desempate por template_id).
+  // Conta "Sim"/"Não" por template dentro do recorte dos candidatos exibidos na lista:
+  // somente respostas recebidas APÓS uma mensagem de template entregue/enviada com sucesso.
   Object.values(msgsByCandidate).forEach((msgs) => {
     msgs.sort((a, b) => new Date(a.criado_em).getTime() - new Date(b.criado_em).getTime())
     let currentTemplateKey: string | null = null
     const credited = new Map<string, { sim: boolean; nao: boolean }>()
 
     msgs.forEach((m) => {
-      if (isTemplateMsg(m)) {
+      if (isTemplateMsg(m) && m.status !== 'falha') {
         currentTemplateKey = m.template_id || m.id
       } else if (m.direcao === 'recebida') {
         const resp = detectResponse(m.conteudo)
@@ -183,7 +211,9 @@ export async function getWhatsappDashboardData() {
             allStats.yes++
             const etapaId = candidatoEtapaMap[m.candidato_id]
             if (etapaId) {
-              if (!statsByStage[etapaId]) statsByStage[etapaId] = { sent: 0, yes: 0, no: 0 }
+              if (!statsByStage[etapaId]) {
+                statsByStage[etapaId] = { sent: 0, failed: 0, yes: 0, no: 0 }
+              }
               statsByStage[etapaId].yes++
             }
           }
@@ -192,7 +222,9 @@ export async function getWhatsappDashboardData() {
             allStats.no++
             const etapaId = candidatoEtapaMap[m.candidato_id]
             if (etapaId) {
-              if (!statsByStage[etapaId]) statsByStage[etapaId] = { sent: 0, yes: 0, no: 0 }
+              if (!statsByStage[etapaId]) {
+                statsByStage[etapaId] = { sent: 0, failed: 0, yes: 0, no: 0 }
+              }
               statsByStage[etapaId].no++
             }
           }
@@ -210,15 +242,8 @@ export async function getWhatsappDashboardData() {
     }
   })
 
-  // Somente conversas que possuem ao menos uma mensagem de template
-  const templateCandidateIds = new Set<string>()
-  convData?.forEach((c) => {
-    if (c.candidato_id && isTemplateMsg(c)) templateCandidateIds.add(c.candidato_id)
-  })
-
   const listRows =
     convData?.filter((c) => c.candidato_id && templateCandidateIds.has(c.candidato_id)) || []
-
   const candMap = new Map<string, WhatsappCandidate>()
 
   listRows.forEach((c) => {
@@ -287,6 +312,7 @@ export async function getWhatsappDashboardData() {
       texto: c.conteudo,
       direcao: c.direcao as 'enviada' | 'recebida',
       criado_em: c.criado_em,
+      status: c.status || null,
       respostaAssociada: resposta,
     })
     cand.lastMessage = c.conteudo

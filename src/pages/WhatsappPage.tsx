@@ -40,8 +40,8 @@ import { useIsMobile } from '@/hooks/use-mobile'
 
 export default function WhatsappPage() {
   const [data, setData] = useState<{
-    stats: { sent: number; yes: number; no: number }
-    statsByStage: Record<string, { sent: number; yes: number; no: number }>
+    stats: { sent: number; failed: number; yes: number; no: number }
+    statsByStage: Record<string, { sent: number; failed: number; yes: number; no: number }>
     candidates: WhatsappCandidate[]
   } | null>(null)
   const [stages, setStages] = useState<{ id: string; name: string }[]>([])
@@ -168,13 +168,14 @@ export default function WhatsappPage() {
 
   if (loading && !data) {
     return (
-      <div className="p-6 space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Skeleton className="h-24 w-full" />
-          <Skeleton className="h-24 w-full" />
-          <Skeleton className="h-24 w-full" />
+      <div className="p-4 sm:p-6 space-y-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
         </div>
-        <Skeleton className="h-[600px] w-full" />
+        <Skeleton className="h-[500px] w-full" />
       </div>
     )
   }
@@ -251,8 +252,8 @@ export default function WhatsappPage() {
           </Tabs>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3 mb-2">
-          <Card className="shadow-sm border-slate-200 col-span-2 md:col-span-1">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3 mb-2">
+          <Card className="shadow-sm border-slate-200">
             <CardHeader className="flex flex-row items-center justify-between py-2 px-3 sm:px-4">
               <CardTitle className="text-xs font-medium text-slate-600">Total Enviadas</CardTitle>
               <MessageCircle className="h-3.5 w-3.5 text-blue-500" />
@@ -262,6 +263,19 @@ export default function WhatsappPage() {
                 {activeStageId === 'todos'
                   ? data?.stats.sent || 0
                   : data?.statsByStage[activeStageId]?.sent || 0}
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="shadow-sm border-slate-200">
+            <CardHeader className="flex flex-row items-center justify-between py-2 px-3 sm:px-4">
+              <CardTitle className="text-xs font-medium text-slate-600">Falhas</CardTitle>
+              <AlertCircle className="h-3.5 w-3.5 text-amber-500" />
+            </CardHeader>
+            <CardContent className="pt-0 pb-2 px-3 sm:px-4">
+              <div className="text-lg sm:text-xl font-bold text-slate-800">
+                {activeStageId === 'todos'
+                  ? data?.stats.failed || 0
+                  : data?.statsByStage[activeStageId]?.failed || 0}
               </div>
             </CardContent>
           </Card>
@@ -530,6 +544,15 @@ export default function WhatsappPage() {
                                   {msg.respostaAssociada?.toLowerCase() === 'nao' && (
                                     <span className="flex items-center gap-1 text-[9px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-medium border border-red-200">
                                       <XCircle className="w-2.5 h-2.5" /> Não
+                                    </span>
+                                  )}
+                                  {msg.direcao === 'enviada' && msg.status === 'falha' && (
+                                    <span
+                                      title="Falha no envio (erro de comunicação/503)"
+                                      className="flex items-center gap-1 text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-medium border border-amber-300"
+                                    >
+                                      <AlertCircle className="w-2.5 h-2.5 text-amber-600" /> Falha
+                                      no envio
                                     </span>
                                   )}
                                   <span className="text-[10px] text-slate-500 font-medium leading-none whitespace-nowrap mt-[1px]">
