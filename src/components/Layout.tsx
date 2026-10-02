@@ -1,4 +1,4 @@
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import { SidebarProvider, SidebarTrigger, SidebarInset } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/AppSidebar'
 import { Input } from '@/components/ui/input'
@@ -10,10 +10,13 @@ import { supabase } from '@/lib/supabase/client'
 import { useToast } from '@/hooks/use-toast'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { cn } from '@/lib/utils'
 
 export default function Layout() {
   const { user, signOut } = useAuth()
   const { toast } = useToast()
+  const location = useLocation()
+  const isWhatsappPage = location.pathname.startsWith('/whatsapp')
 
   const [isNotificationOpen, setIsNotificationOpen] = useState(false)
   const [hasUnread, setHasUnread] = useState(false)
@@ -231,7 +234,12 @@ export default function Layout() {
             </div>
           </header>
 
-          <main className="flex-1 flex flex-col p-4 md:p-6 overflow-y-auto min-h-0">
+          <main
+            className={cn(
+              'flex-1 flex flex-col min-h-0',
+              isWhatsappPage ? 'overflow-hidden p-0' : 'p-4 md:p-6 overflow-y-auto',
+            )}
+          >
             <Outlet />
           </main>
         </SidebarInset>
