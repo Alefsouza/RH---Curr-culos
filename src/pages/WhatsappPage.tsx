@@ -169,8 +169,7 @@ export default function WhatsappPage() {
   if (loading && !data) {
     return (
       <div className="p-4 sm:p-6 space-y-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
-          <Skeleton className="h-16 w-full" />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
           <Skeleton className="h-16 w-full" />
           <Skeleton className="h-16 w-full" />
           <Skeleton className="h-16 w-full" />
@@ -252,7 +251,7 @@ export default function WhatsappPage() {
           </Tabs>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3 mb-2">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 mb-2">
           <Card className="shadow-sm border-slate-200">
             <CardHeader className="flex flex-row items-center justify-between py-2 px-3 sm:px-4">
               <CardTitle className="text-xs font-medium text-slate-600">Total Enviadas</CardTitle>
@@ -263,19 +262,6 @@ export default function WhatsappPage() {
                 {activeStageId === 'todos'
                   ? data?.stats.sent || 0
                   : data?.statsByStage[activeStageId]?.sent || 0}
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="shadow-sm border-slate-200">
-            <CardHeader className="flex flex-row items-center justify-between py-2 px-3 sm:px-4">
-              <CardTitle className="text-xs font-medium text-slate-600">Falhas</CardTitle>
-              <AlertCircle className="h-3.5 w-3.5 text-amber-500" />
-            </CardHeader>
-            <CardContent className="pt-0 pb-2 px-3 sm:px-4">
-              <div className="text-lg sm:text-xl font-bold text-slate-800">
-                {activeStageId === 'todos'
-                  ? data?.stats.failed || 0
-                  : data?.statsByStage[activeStageId]?.failed || 0}
               </div>
             </CardContent>
           </Card>
