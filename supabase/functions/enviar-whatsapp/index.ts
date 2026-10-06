@@ -12,21 +12,14 @@ Deno.serve(async (req: Request) => {
     const authHeader = req.headers.get('authorization') || req.headers.get('Authorization')
     const token = authHeader?.replace('Bearer ', '')
 
-    let userId = null
+    let userId: string | null = null
     if (token) {
       try {
         const decoded = jwt.decode(token) as any
-        userId = decoded?.sub
+        userId = decoded?.sub || null
       } catch (e) {
         console.log('Erro ao decodificar token:', e)
       }
-    }
-
-    if (!userId) {
-      return new Response(JSON.stringify({ error: 'Usuário não autenticado' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
     }
 
     let body
@@ -56,6 +49,26 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
     const supabase = createClient(supabaseUrl, supabaseKey)
+
+    // Se userId não foi extraído do token JWT, busca usuário admin ou primeiro usuário do sistema
+    if (!userId) {
+      const { data: adminUser } = await supabase
+        .from('usuarios')
+        .select('id')
+        .order('is_admin', { ascending: false })
+        .order('criado_em', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+
+      userId = adminUser?.id || null
+    }
+
+    if (!userId) {
+      return new Response(JSON.stringify({ error: 'Usuário não autenticado' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
 
     // UAZAPI configuration (defined at top level)
     const uazapiUrl = Deno.env.get('UAZAPI_URL') || 'https://cvviasudeste.uazapi.com'
@@ -338,16 +351,37 @@ Deno.serve(async (req: Request) => {
     const errors: string[] = []
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
 
+    // Texto base gerado para esta mensagem (usado tanto no envio quanto na comparação de idempotência)
+    // Para chatbot interativo, o texto principal é o título (se houver) + pergunta
+    const generatedContent = isChatbot
+      ? (tituloTexto ? `*${tituloTexto}*\n\n` : '') + perguntaTexto
+      : mensagemTexto
+
+    const normalizeForComparison = (str: string | null | undefined): string => {
+      if (!str) return ''
+      return str
+        .replace(/\r\n/g, '\n')
+        .replace(/\r/g, '\n')
+        .split('\n')
+        .map((line) => line.trim())
+        .join('\n')
+        .trim()
+    }
+
+    const currentNormalized = normalizeForComparison(generatedContent)
+
     for (const phone of validPhones) {
       let isSuccess = false
       let errorMessage: string | null = null
       let externalId: string | null = null
       let responseData: any = null
 
-      // Idempotency: skip if a non-failed message was already sent recently
-      const { data: existingMsg } = await supabase
+      // Idempotency: verificar a última mensagem enviada com sucesso na última hora
+      // Se o conteúdo for IDÊNTICO ao gerado atualmente -> pular por idempotência
+      // Se o conteúdo for DIFERENTE (ex.: RH corrigiu template, data ou salário) -> permitir novo envio
+      const { data: recentMsgs } = await supabase
         .from('mensagens_whatsapp')
-        .select('id, status')
+        .select('id, status, conteudo, criado_em')
         .eq('candidato_id', candidato.id)
         .eq('numero_whatsapp', phone)
         .eq('etapa_id', etapa_id)
@@ -355,12 +389,28 @@ Deno.serve(async (req: Request) => {
         .eq('direcao', 'enviada')
         .neq('status', 'falha')
         .gte('criado_em', oneHourAgo)
+        .order('criado_em', { ascending: false })
         .limit(1)
-        .maybeSingle()
 
-      if (existingMsg) {
-        console.log(`[enviar-whatsapp] Mensagem já enviada para ${phone} (idempotência). Pulando.`)
-        continue
+      const lastSentMsg = recentMsgs && recentMsgs.length > 0 ? recentMsgs[0] : null
+
+      if (lastSentMsg) {
+        const lastNormalized = normalizeForComparison(lastSentMsg.conteudo)
+        // Comparação estrita e tolerante a fallback com opções no rodapé
+        const isIdentical =
+          lastNormalized === currentNormalized ||
+          (isChatbot && lastNormalized.startsWith(currentNormalized))
+
+        if (isIdentical) {
+          console.log(
+            `[enviar-whatsapp] Mensagem com conteúdo idêntico já enviada para ${phone} na última hora (idempotência). Pulando.`,
+          )
+          continue
+        } else {
+          console.log(
+            `[enviar-whatsapp] Conteúdo atualizado detectado para ${phone}. Permitindo reenvio legítimo.`,
+          )
+        }
       }
 
       try {
