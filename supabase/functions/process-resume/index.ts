@@ -288,6 +288,8 @@ ${extractedText.substring(0, 18000)}`
       !hasDataNascimento ||
       !hasSufficientText
 
+    let ocrCapturedText: string | null = null
+
     // 3.1 OCR via Google Cloud Vision como principal recurso quando falta cabeçalho
     if (isHeaderIncomplete && !isDocx && fileBytes.length > 0) {
       try {
@@ -295,6 +297,7 @@ ${extractedText.substring(0, 18000)}`
           `[process-resume] Cabeçalho incompleto ou ausente. Executando Google Vision OCR para ${filePath}...`,
         )
         const ocrText = await performGoogleVisionPdfOcr(fileBytes)
+        ocrCapturedText = ocrText
         if (ocrText && ocrText.trim().length > 20) {
           console.log(
             `[process-resume] OCR obteve ${ocrText.length} caracteres. Concatenando com texto existente e reextraindo...`,
@@ -626,7 +629,7 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
     }
 
     // Pós-processamento determinístico de CNH / Habilitação com fallback Regex
-    extractedData = mergeExtractedCnh(extractedData, [extractedText])
+    extractedData = mergeExtractedCnh(extractedData, [extractedText, ocrCapturedText])
 
     // 4. Deduplication & Upsert
     const { data: publicUrlData } = supabase.storage.from('curriculos').getPublicUrl(filePath)

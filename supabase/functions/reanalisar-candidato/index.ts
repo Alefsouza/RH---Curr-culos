@@ -257,6 +257,7 @@ ${extractedText.substring(0, 18000)}`
             const shouldTriggerOcr = isHeaderMissing || isNewlyExtractedBodyEmpty
 
             let visionOcrError: any = null
+            let ocrCapturedText: string | null = null
 
             if (shouldTriggerOcr && !isDocx && fileBytes.length > 0) {
               try {
@@ -269,6 +270,7 @@ ${extractedText.substring(0, 18000)}`
                 )
                 const ocrDetail = await performGoogleVisionPdfOcrDetailed(fileBytes)
                 const ocrText = ocrDetail.text
+                ocrCapturedText = ocrText
                 if (!ocrDetail.success && ocrDetail.error) {
                   visionOcrError = ocrDetail.error
                   console.error(
@@ -687,7 +689,7 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
               // Pós-processamento determinístico de CNH / Habilitação com fallback Regex
               currentDadosExtraidos = mergeExtractedCnh(currentDadosExtraidos, [
                 extractedText,
-                typeof ocrText !== 'undefined' ? ocrText : null,
+                ocrCapturedText,
               ])
               candidateUpdate.dados_extraidos = currentDadosExtraidos
 
