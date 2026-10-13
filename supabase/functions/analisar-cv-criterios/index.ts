@@ -976,8 +976,9 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
     console.error('Erro interno:', error)
     return new Response(
       JSON.stringify({
-        error: 'Ocorreu um erro interno no servidor.',
+        error: `Ocorreu um erro interno no servidor: ${error.message || error}`,
         detalhes: error.message,
+        stack: error.stack,
       }),
       {
         status: 500,

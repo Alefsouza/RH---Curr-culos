@@ -159,6 +159,8 @@ export function checkBusOrTruckDriverExperience(cvData: any): DriverExperienceCh
       continue
     }
 
+    const normEmpresa = normalizeText(empresa)
+
     const isLightOrApp =
       isAppOrLightVehicleDriver(fullExpText) ||
       normCargo.includes('uber') ||
@@ -168,8 +170,6 @@ export function checkBusOrTruckDriverExperience(cvData: any): DriverExperienceCh
       normEmpresa.includes('99') ||
       normEmpresa.includes('cabify') ||
       normEmpresa.includes('indrive')
-
-    const normEmpresa = normalizeText(empresa)
 
     const isHeavyDriving =
       heavyDrivingKeywords.some(

@@ -11,7 +11,7 @@ import {
 } from '../_shared/validation.ts'
 import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
 import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
-import { performGoogleVisionPdfOcr } from '../_shared/ocr.ts'
+import { performGoogleVisionPdfOcrDetailed } from '../_shared/ocr.ts'
 import { extractCep, isTruncatedOrIncompleteAddress } from '../_shared/proximity.ts'
 
 // Reanálise de candidato com regras de fallback por experiência e salvaguarda
@@ -253,6 +253,8 @@ ${extractedText.substring(0, 18000)}`
 
             const shouldTriggerOcr = isHeaderMissing || isNewlyExtractedBodyEmpty
 
+            let visionOcrError: any = null
+
             if (shouldTriggerOcr && !isDocx && fileBytes.length > 0) {
               try {
                 console.log(
@@ -262,7 +264,15 @@ ${extractedText.substring(0, 18000)}`
                       : 'corpo vazio (experiência, formação, skills e objetivo vazios)'
                   }.`,
                 )
-                const ocrText = await performGoogleVisionPdfOcr(fileBytes)
+                const ocrDetail = await performGoogleVisionPdfOcrDetailed(fileBytes)
+                const ocrText = ocrDetail.text
+                if (!ocrDetail.success && ocrDetail.error) {
+                  visionOcrError = ocrDetail.error
+                  console.error(
+                    `[reanalisar-candidato] Falha explícita no Google Vision OCR:`,
+                    ocrDetail.error,
+                  )
+                }
                 if (ocrText && ocrText.trim().length > 20) {
                   console.log(
                     `[reanalisar-candidato] OCR obteve ${ocrText.length} caracteres. Concatenando e reextraindo com GPT-4o-mini...`,
@@ -333,10 +343,23 @@ ${combinedText.substring(0, 25000)}`
                   }
                 }
               } catch (ocrErr: any) {
+                visionOcrError = { message: ocrErr?.message || String(ocrErr) }
                 console.warn(
                   `[reanalisar-candidato] Falha no fluxo Google Vision OCR:`,
                   ocrErr?.message,
                 )
+              }
+            }
+
+            // Se o OCR falhou e nenhum dado pôde ser extraído (PDF puramente imagem), registrar o erro do Google Vision
+            if (
+              visionOcrError &&
+              (!extractedText || extractedText.trim().length < 20) &&
+              (!newlyExtracted?.nome || !newlyExtracted?.endereco)
+            ) {
+              currentDadosExtraidos = {
+                ...currentDadosExtraidos,
+                google_vision_error: visionOcrError,
               }
             }
 
@@ -970,10 +993,17 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
     const analyzeData = await analyzeRes.json()
 
     if (analyzeData.error) {
-      return new Response(JSON.stringify({ error: analyzeData.error }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      console.error('[reanalisar-candidato] Erro retornado de analisar-cv-criterios:', analyzeData)
+      return new Response(
+        JSON.stringify({
+          error: analyzeData.error,
+          detalhes: analyzeData.detalhes || analyzeData,
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
     }
 
     // =========================================================================

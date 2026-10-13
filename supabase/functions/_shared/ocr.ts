@@ -33,13 +33,31 @@ function extractTextFromPageResponses(responses: any[]): string {
   return pageTexts.join('\n\n').trim()
 }
 
-export async function performGoogleVisionPdfOcr(pdfBytes: Uint8Array): Promise<string> {
-  if (!pdfBytes || pdfBytes.length === 0) return ''
+export interface VisionOcrResult {
+  text: string
+  success: boolean
+  error?: {
+    status?: number
+    message: string
+    details?: any
+  }
+}
+
+export async function performGoogleVisionPdfOcrDetailed(
+  pdfBytes: Uint8Array,
+): Promise<VisionOcrResult> {
+  if (!pdfBytes || pdfBytes.length === 0) {
+    return { text: '', success: false, error: { message: 'PDF vazio ou sem bytes fornecidos.' } }
+  }
 
   const apiKey = Deno.env.get('GOOGLE_API_KEY')
   if (!apiKey) {
     console.error('[ocr] GOOGLE_API_KEY não configurada no ambiente.')
-    return ''
+    return {
+      text: '',
+      success: false,
+      error: { message: 'GOOGLE_API_KEY não configurada no ambiente.' },
+    }
   }
 
   try {
@@ -86,7 +104,14 @@ export async function performGoogleVisionPdfOcr(pdfBytes: Uint8Array): Promise<s
         `[ocr] Google Vision files:annotate falhou com status ${postResponse.status}:`,
         errText,
       )
-      return ''
+      return {
+        text: '',
+        success: false,
+        error: {
+          status: postResponse.status,
+          message: `Google Vision API files:annotate retornou HTTP ${postResponse.status}: ${errText}`,
+        },
+      }
     }
 
     const initialData = await postResponse.json()
@@ -98,7 +123,7 @@ export async function performGoogleVisionPdfOcr(pdfBytes: Uint8Array): Promise<s
       console.log(
         `[ocr] Google Vision OCR executado diretamente (síncrono): ${extractedText.length} caracteres extraídos.`,
       )
-      return extractedText
+      return { text: extractedText, success: true }
     }
 
     const operationName = initialData?.name
@@ -106,13 +131,22 @@ export async function performGoogleVisionPdfOcr(pdfBytes: Uint8Array): Promise<s
       // Caso não tenha name nem responses reconhecíveis
       if (initialData?.responses?.[0]?.responses) {
         const responses = initialData.responses[0].responses
-        return extractTextFromPageResponses(responses)
+        const text = extractTextFromPageResponses(responses)
+        return { text, success: true }
       }
       console.error(
         '[ocr] Resposta inesperada do Google Vision files:annotate (sem campo name nem responses):',
         initialData,
       )
-      return ''
+      return {
+        text: '',
+        success: false,
+        error: {
+          message:
+            'Resposta inesperada do Google Vision files:annotate (sem campo name nem responses)',
+          details: initialData,
+        },
+      }
     }
 
     // Polling da operação assíncrona por até ~25 segundos
@@ -141,7 +175,14 @@ export async function performGoogleVisionPdfOcr(pdfBytes: Uint8Array): Promise<s
           `[ocr] Google Vision polling da operação ${operationName} falhou com status ${pollResponse.status}:`,
           pollErrText,
         )
-        return ''
+        return {
+          text: '',
+          success: false,
+          error: {
+            status: pollResponse.status,
+            message: `Polling Google Vision operação ${operationName} retornou HTTP ${pollResponse.status}: ${pollErrText}`,
+          },
+        }
       }
 
       const operationData = await pollResponse.json()
@@ -151,7 +192,14 @@ export async function performGoogleVisionPdfOcr(pdfBytes: Uint8Array): Promise<s
           `[ocr] Operação do Google Vision ${operationName} terminou com erro:`,
           operationData.error,
         )
-        return ''
+        return {
+          text: '',
+          success: false,
+          error: {
+            message: operationData.error.message || 'Erro na operação assíncrona do Google Vision',
+            details: operationData.error,
+          },
+        }
       }
 
       if (operationData?.done === true) {
@@ -163,20 +211,40 @@ export async function performGoogleVisionPdfOcr(pdfBytes: Uint8Array): Promise<s
         console.log(
           `[ocr] Google Vision OCR (polling concluído): ${fullOcrText.length} caracteres extraídos de ${pageResponses.length} página(s).`,
         )
-        return fullOcrText
+        return { text: fullOcrText, success: true }
       }
     }
 
     console.error(
       `[ocr] Timeout no polling da operação do Google Vision ${operationName} após ${MAX_POLL_DURATION_MS}ms.`,
     )
-    return ''
+    return {
+      text: '',
+      success: false,
+      error: {
+        message: `Timeout no polling da operação do Google Vision após ${MAX_POLL_DURATION_MS}ms`,
+      },
+    }
   } catch (err: any) {
     if (err?.name === 'AbortError') {
       console.error('[ocr] Timeout ao chamar Google Vision API.')
+      return {
+        text: '',
+        success: false,
+        error: { message: 'Timeout ao conectar com Google Vision API (AbortError)' },
+      }
     } else {
       console.error('[ocr] Erro ao executar OCR via Google Vision:', err?.message || err)
+      return {
+        text: '',
+        success: false,
+        error: { message: err?.message || String(err) },
+      }
     }
-    return ''
   }
+}
+
+export async function performGoogleVisionPdfOcr(pdfBytes: Uint8Array): Promise<string> {
+  const result = await performGoogleVisionPdfOcrDetailed(pdfBytes)
+  return result.text
 }
