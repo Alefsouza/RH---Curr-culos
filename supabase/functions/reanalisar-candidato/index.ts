@@ -231,7 +231,6 @@ ${extractedText.substring(0, 18000)}`
               !hasNewTelefone ||
               !hasNewEndereco ||
               !hasNewEmail ||
-              !hasDataNascimento ||
               !extractedText ||
               extractedText.trim().length < 50
 
@@ -284,9 +283,8 @@ ${extractedText.substring(0, 18000)}`
                   )
                   const combinedText = `--- TEXTO EXTRAÍDO VIA OCR (DOCUMENT_TEXT_DETECTION) ---\n${ocrText}\n\n--- TEXTO NATIVO DO ARQUIVO ---\n${extractedText || ''}`
 
-                  const ocrPromptText = `Extraia com máxima atenção todos os dados cadastrais (especialmente cabeçalho/contatos) e profissionais do currículo com OCR:
-- nome: Nome completo REAL do candidato em destaque no cabeçalho ou topo (ex: "JOÃO BATISTA DA SILVA", "VALDINÉIA DOMINGUES"). Preserve todos os acentos e retorne null apenas se não houver nome de pessoa física.
-- email: E-mail REAL do candidato (ex: "exemplo@gmail.com"), ou null se não identificado
+                  const ocrPromptText = `Extraia com máxima atenção todos os dados cadastrais (especialmente cabeçalho/contatos, nome em imagem de topo, Canva ou layout estilizado) e profissionais do currículo com OCR:
+    - nome: Nome completo REAL da pessoa física em destaque no cabeçalho, topo ou faixa colorida superior (ex: "JOÃO BATISTA DA SILVA", "VALDINÉIA DOMINGUES"). Em currículos do Canva ou editores gráficos, o nome frequentemente aparece nas primeiras linhas do OCR como título principal. Preserve todos os acentos e retorne null apenas se absolutamente não houver nome de pessoa física. NUNCA retorne "Candidato" ou nome genérico.- email: E-mail REAL do candidato (ex: "exemplo@gmail.com"), ou null se não identificado
 - telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11974697877", "11988887777"]) ou [] se nenhum
 - telefone: Telefone principal ou null
 - endereco: Endereço completo COMPLETO com logradouro, número, complemento, bairro, cidade, UF e CEP se existirem no documento (ex: "R. Timóteo, 88 - Jardim Paraguaçu, São Paulo - SP, 03938-050"). NUNCA trunque para apenas "Jardim - SP" ou apenas o bairro se houver rua, número, cidade ou CEP no currículo.
@@ -368,7 +366,9 @@ ${combinedText.substring(0, 25000)}`
                   ocrCapturedText = ocrText
                 }
                 if (ocrText && ocrText.trim().length > 20) {
-                  const headerPrompt = `Identifique exclusivamente o NOME COMPLETO REAL da pessoa física deste currículo a partir do texto lido via OCR (Google Vision). O nome costuma ser o título principal no topo/cabeçalho da página ou antes dos contatos.
+                  const headerPrompt = `Identifique exclusivamente o NOME COMPLETO REAL da pessoa física deste currículo a partir do texto lido via OCR (Google Vision).
+Em currículos do Canva ou editores visuais, o nome da pessoa fica no topo superior, na primeira linha ou no cabeçalho, mesmo que isolado.
+Seja meticuloso: analise as primeiras 20 linhas do texto OCR e extraia o nome completo da pessoa dona do currículo.
 Retorne um JSON estrito: {"nome": "Nome Completo" ou null, "email": "email" ou null, "telefone": "telefone" ou null, "cnh": "cnh" ou null, "idade": número ou null}
 
 Texto OCR:
@@ -379,7 +379,7 @@ ${ocrText.substring(0, 15000)}`
                       {
                         role: 'system',
                         content:
-                          'Você é um assistente de RH de alta precisão. Preserve todos os acentos originais.',
+                          'Você é um assistente de RH de altíssima precisão. O nome do candidato frequentemente está nas primeiras linhas do texto OCR. NUNCA invente dados e preserve todos os acentos originais.',
                       },
                       { role: 'user', content: headerPrompt },
                     ],
@@ -448,16 +448,13 @@ ${ocrText.substring(0, 15000)}`
 
             const stillNeedsVisionReextract =
               !parsedName ||
-              !hasNewTelefone ||
-              !hasNewEndereco ||
-              !hasNewEmail ||
-              isPostOcrBodyEmpty
+              (!hasNewTelefone && !hasNewEndereco && !hasNewEmail && isPostOcrBodyEmpty)
 
             if (
               stillNeedsVisionReextract &&
               !isDocx &&
               fileBytes.length > 0 &&
-              fileBytes.length < 15 * 1024 * 1024
+              fileBytes.length < 5 * 1024 * 1024
             ) {
               try {
                 console.log(
