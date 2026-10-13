@@ -15,6 +15,27 @@ export type Database = {
   }
   public: {
     Tables: {
+      _debug_audit: {
+        Row: {
+          created_at: string | null
+          id: string
+          info: Json | null
+          tag: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          info?: Json | null
+          tag?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          info?: Json | null
+          tag?: string | null
+        }
+        Relationships: []
+      }
       analises: {
         Row: {
           candidato_id: string | null
