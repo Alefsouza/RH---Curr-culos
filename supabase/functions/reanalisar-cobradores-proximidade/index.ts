@@ -97,8 +97,23 @@ const KNOWN_CEP_COORDS: Record<string, Coordinates> = {
   // Distância até Cursino: ~15,3 km. Distância até Leandro de Sevilha (Sapopemba): ~24,3 km.
   '05366-220': { lat: -23.576, lng: -46.745 },
   '05366220': { lat: -23.576, lng: -46.745 },
-}
 
+  // Anthony Silva Nascimento
+  '08340-190': { lat: -23.601, lng: -46.452 },
+  '08340190': { lat: -23.601, lng: -46.452 },
+
+  // Clayton Freire de lima
+  '08380-010': { lat: -23.605, lng: -46.46 },
+  '08380010': { lat: -23.605, lng: -46.46 },
+
+  // Iverton Justino de Andrade
+  '08341-350': { lat: -23.602, lng: -46.445 },
+  '08341350': { lat: -23.602, lng: -46.445 },
+
+  // Anthony Guimarães
+  '03983-020': { lat: -23.607, lng: -46.514 },
+  '03983020': { lat: -23.607, lng: -46.514 },
+}
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -213,8 +228,28 @@ Deno.serve(async (req: Request) => {
       const vagaAtual = cand.vaga_id === vagaCursino.id ? 'cursino' : 'leste'
       const targetVaga = unidadeMaisProxima === 'leste' ? vagaLeste : vagaCursino
 
-      if (vagaAtual === unidadeMaisProxima) {
-        // Já está na vaga correta! Atualizar campo proximidade se não estiver setado
+      // Buscar última análise para verificar se precisa ser corrigida mesmo se já mantida na vaga correta
+      const { data: ultAnaliseCand } = await supabase
+        .from('analises')
+        .select('id, resultado, detalhes')
+        .eq('candidato_id', cand.id)
+        .order('criado_em', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      const distGravada = (ultAnaliseCand?.detalhes as any)?.distancia_km
+      const motivoGravado = String((ultAnaliseCand?.detalhes as any)?.motivo || '').toLowerCase()
+      const temInconsistenciaDistancia =
+        ultAnaliseCand?.resultado === 'nao_qualificado' &&
+        distGravada !== undefined &&
+        Number(distGravada) <= 20 &&
+        (motivoGravado.includes('dist') ||
+          motivoGravado.includes('localiz') ||
+          motivoGravado.includes('raio') ||
+          motivoGravado.includes('exced'))
+
+      if (vagaAtual === unidadeMaisProxima && !temInconsistenciaDistancia) {
+        // Já está na vaga correta e sem inconsistência! Atualizar campo proximidade se não estiver setado
         if (cand.proximidade !== (unidadeMaisProxima === 'leste' ? 'sapopemba' : 'cursino')) {
           await supabase
             .from('candidatos')
@@ -241,19 +276,41 @@ Deno.serve(async (req: Request) => {
           })
           .eq('id', cand.id)
 
-        // 2. Buscar análise recente para atualizar ou criar nova
-        const { data: ultAnalise } = await supabase
-          .from('analises')
-          .select('id, resultado, detalhes')
-          .eq('candidato_id', cand.id)
-          .order('criado_em', { ascending: false })
-          .limit(1)
-          .maybeSingle()
+        // 2. Invocar reanálise real de IA contra a vaga de destino
+        const ultAnalise = ultAnaliseCand
 
         const menorDist = unidadeMaisProxima === 'leste' ? distLeste : distCursino
         const distFormatada = menorDist ? Number(menorDist.toFixed(1)) : 5.0
 
-        if (ultAnalise) {
+        // Em vez de apenas clonar detalhes antigos de outra garagem com distâncias errôneas,
+        // invocar a reanálise real de IA através da edge function analisar-cv-criterios
+        let analiseSucesso = false
+        try {
+          const reanaliseRes = await fetch(`${supabaseUrl}/functions/v1/analisar-cv-criterios`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${supabaseKey}`,
+              apikey: supabaseKey,
+            },
+            body: JSON.stringify({
+              cv_id: cand.id,
+              vaga_id: targetVaga.id,
+              user_id: cand.user_id,
+            }),
+          })
+          const reanaliseData = await reanaliseRes.json()
+          if (reanaliseData?.data?.analise) {
+            analiseSucesso = true
+          }
+        } catch (callErr: any) {
+          console.error(
+            `Erro ao invocar analisar-cv-criterios para ${cand.nome}:`,
+            callErr?.message,
+          )
+        }
+
+        if (!analiseSucesso && ultAnalise) {
           const det = { ...ultAnalise.detalhes }
           det.distancia_km = distFormatada
           det.unidade_mais_proxima =

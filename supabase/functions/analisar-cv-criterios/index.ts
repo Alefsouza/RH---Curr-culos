@@ -17,6 +17,9 @@ import {
   getReferenceCoordsForText,
   isTruncatedOrIncompleteAddress,
   sanitizeAddressString,
+  REFERENCE_LOCATIONS,
+  KNOWN_CEP_COORDS,
+  Coordinates,
 } from '../_shared/proximity.ts'
 import { checkBusOrTruckDriverExperience, isAppOrLightVehicleDriver } from '../_shared/motorista.ts'
 
@@ -229,13 +232,26 @@ Deno.serve(async (req: Request) => {
         if (minC === null) {
           try {
             let candidateCoords: Coordinates | null = null
-            if (googleApiKey) {
+
+            // 1. Tentar mapa de CEPs conhecidos
+            const detectedCepForCoords =
+              extractCep(enderecoCV) ||
+              extractCep(extracted.cep) ||
+              extractCep(JSON.stringify(extracted))
+            if (detectedCepForCoords && KNOWN_CEP_COORDS[detectedCepForCoords]) {
+              candidateCoords = KNOWN_CEP_COORDS[detectedCepForCoords]
+            }
+
+            // 2. Geocoding API
+            if (!candidateCoords && googleApiKey) {
               candidateCoords = await geocodeAddress(
                 enderecoCV,
                 googleApiKey,
                 JSON.stringify(extracted),
               )
             }
+
+            // 3. Fallback de referência textual
             if (!candidateCoords) {
               candidateCoords = getReferenceCoordsForText(enderecoCV)
             }
@@ -539,6 +555,13 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
             if (resultJson.detalhes) {
               resultJson.detalhes.score = Math.max(resultJson.detalhes.score || 0, 85)
             }
+          } else {
+            // Se ainda tem unmatched_criteria legítimos (ex: idade, CNH D feminina),
+            // certifique-se de que o motivo final NÃO mencione localização/distância errônea!
+            const remainingNonLoc = (resultJson.detalhes?.unmatched_criteria || [])
+              .map((u: any) => u.motivo || u.nome)
+              .join('; ')
+            motivoFinal = remainingNonLoc || 'Candidato não atende a critério da vaga.'
           }
         }
       }
@@ -842,7 +865,12 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
       }
     }
 
-    if (resultJson.detalhes) resultJson.detalhes.motivo = motivoFinal
+    if (resultJson.detalhes) {
+      resultJson.detalhes.motivo = motivoFinal
+      if (distanciaCalculada) {
+        resultJson.detalhes.distancia_km = Number(menorDistanciaKm.toFixed(1))
+      }
+    }
 
     const { data: existing } = await supabaseAdmin
       .from('analises')

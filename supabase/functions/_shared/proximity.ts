@@ -67,6 +67,77 @@ export const REFERENCE_LOCATIONS = {
   },
 } as const
 
+// Mapa estático de coordenadas para CEPs e localizações conhecidas
+export const KNOWN_CEP_COORDS: Record<string, Coordinates> = {
+  // Cícero Rodrigues Monteiro (Vila São Silvestre / Rio Pequeno / Butantã - CEP 05366-220)
+  '05366-220': { lat: -23.576, lng: -46.745 },
+  '05366220': { lat: -23.576, lng: -46.745 },
+
+  // Valdecir Dias Batista (Pq Sta Madalena)
+  '03982-020': { lat: -23.6097, lng: -46.5162 },
+  '03982020': { lat: -23.6097, lng: -46.5162 },
+
+  // Beatriz Lima De Oliveira (Pq Sta Madalena)
+  '03981-020': { lat: -23.6085, lng: -46.515 },
+  '03981020': { lat: -23.6085, lng: -46.515 },
+
+  // Camila Adrieli da Silva Diogo (Jd Sapopemba)
+  '03929-210': { lat: -23.595, lng: -46.502 },
+  '03929210': { lat: -23.595, lng: -46.502 },
+
+  // Rodrigo Cesar Marucho (Vila Industrial)
+  '03254-000': { lat: -23.596, lng: -46.525 },
+  '03254000': { lat: -23.596, lng: -46.525 },
+
+  // Everton Ramos da Silva (Pq Sta Madalena)
+  '03982-010': { lat: -23.6105, lng: -46.516 },
+  '03982010': { lat: -23.6105, lng: -46.516 },
+
+  // Caique da Silva Santos (São Mateus/Iguatemi)
+  '08330-404': { lat: -23.598, lng: -46.465 },
+  '08330404': { lat: -23.598, lng: -46.465 },
+
+  // Alanna Barbara da Conceição (São Mateus)
+  '08331-110': { lat: -23.6, lng: -46.468 },
+  '08331110': { lat: -23.6, lng: -46.468 },
+
+  // Juliana Viana dos Santos (Jd Nova Vitoria)
+  '08372-209': { lat: -23.621, lng: -46.445 },
+  '08372209': { lat: -23.621, lng: -46.445 },
+
+  // Willian Alves de Andrade (Recanto Verde do Sol)
+  '08382-020': { lat: -23.63, lng: -46.438 },
+  '08382020': { lat: -23.63, lng: -46.438 },
+
+  // Noezio Junho Pinheiro (Cidade Tiradentes)
+  '08485-010': { lat: -23.585, lng: -46.415 },
+  '08485010': { lat: -23.585, lng: -46.415 },
+
+  // Daniel Roberto Pizzino (Cidade Tiradentes)
+  '08470-790': { lat: -23.59, lng: -46.41 },
+  '08470790': { lat: -23.59, lng: -46.41 },
+
+  // Tiago Oliveira Scarin (Jd Planalto)
+  '03984-050': { lat: -23.604, lng: -46.512 },
+  '03984050': { lat: -23.604, lng: -46.512 },
+
+  // Anthony Silva Nascimento (Rua Forte da Ribeira 250, Parque São Lourenço - CEP 08340-190 aprox)
+  '08340-190': { lat: -23.601, lng: -46.452 },
+  '08340190': { lat: -23.601, lng: -46.452 },
+
+  // Clayton Freire de lima (R. Manoel Borges, 114, Jd Iguatemi - CEP 08380-010 aprox)
+  '08380-010': { lat: -23.605, lng: -46.46 },
+  '08380010': { lat: -23.605, lng: -46.46 },
+
+  // Iverton Justino de Andrade (Rua Morro do Frade, 498, Pq Boa Esperança - CEP 08341-350 aprox)
+  '08341-350': { lat: -23.602, lng: -46.445 },
+  '08341350': { lat: -23.602, lng: -46.445 },
+
+  // Anthony Guimarães (Rua Cônego José Maria Fernandes, 320, Sapopemba - CEP 03983-020 aprox)
+  '03983-020': { lat: -23.607, lng: -46.514 },
+  '03983020': { lat: -23.607, lng: -46.514 },
+}
+
 // Fórmula de Haversine para cálculo de distância em km entre dois pontos geográficos
 export function calculateHaversineDistance(coord1: Coordinates, coord2: Coordinates): number {
   const toRad = (value: number) => (value * Math.PI) / 180
