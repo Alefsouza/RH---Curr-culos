@@ -214,11 +214,13 @@ Deno.serve(async (req: Request) => {
         }
 
         let minC: number | null = null
-        for (const locVaga of localizacoesVaga) {
-          const dist = await callGoogleMapsWithRetry(enderecoCV, locVaga)
-          if (dist !== null) {
-            if (minC === null || dist < minC) {
-              minC = dist
+        if (googleApiKey) {
+          for (const locVaga of localizacoesVaga) {
+            const dist = await callGoogleMapsWithRetry(enderecoCV, locVaga)
+            if (dist !== null) {
+              if (minC === null || dist < minC) {
+                minC = dist
+              }
             }
           }
         }
@@ -226,17 +228,30 @@ Deno.serve(async (req: Request) => {
         // Se Distance Matrix falhou (ex: endereço mal formatado ou limite de quota), tentar fallback por geocodificação ou palavras-chave de região
         if (minC === null) {
           try {
-            let candidateCoords = await geocodeAddress(
-              enderecoCV,
-              googleApiKey,
-              JSON.stringify(extracted),
-            )
+            let candidateCoords: Coordinates | null = null
+            if (googleApiKey) {
+              candidateCoords = await geocodeAddress(
+                enderecoCV,
+                googleApiKey,
+                JSON.stringify(extracted),
+              )
+            }
             if (!candidateCoords) {
               candidateCoords = getReferenceCoordsForText(enderecoCV)
             }
             if (candidateCoords) {
               for (const locVaga of localizacoesVaga) {
-                let vagaCoords = await geocodeAddress(locVaga, googleApiKey)
+                let vagaCoords: Coordinates | null = null
+                const lowerTitulo = vaga.titulo ? vaga.titulo.toLowerCase() : ''
+                if (lowerTitulo.includes('cursino')) {
+                  vagaCoords = REFERENCE_LOCATIONS.cursino.approxCoords
+                } else if (lowerTitulo.includes('leste') || lowerTitulo.includes('sapopemba')) {
+                  vagaCoords = REFERENCE_LOCATIONS.sapopemba.approxCoords
+                }
+
+                if (!vagaCoords && googleApiKey) {
+                  vagaCoords = await geocodeAddress(locVaga, googleApiKey)
+                }
                 if (!vagaCoords) {
                   vagaCoords =
                     getReferenceCoordsForText(locVaga) ||

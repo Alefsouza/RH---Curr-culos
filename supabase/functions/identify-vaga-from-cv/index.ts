@@ -382,67 +382,63 @@ async function pickBestVagaByProximity(
     // Cache de coordenadas das localizações das vagas para evitar geocodificação duplicada
     const locationCoordsCache = new Map<string, any>()
 
+    // Pré-carregar referências padrão conhecidas de Cursino e Leste/Sapopemba no cache
+    locationCoordsCache.set(
+      'Av. do Cursino, 5797, São Paulo, SP, Brasil',
+      REFERENCE_LOCATIONS.cursino.approxCoords,
+    )
+    locationCoordsCache.set(
+      'Av. do Cursino, 5797, São Paulo - SP',
+      REFERENCE_LOCATIONS.cursino.approxCoords,
+    )
+    locationCoordsCache.set(
+      'Rua Leandro de Sevilha, 95, São Paulo, SP, Brasil',
+      REFERENCE_LOCATIONS.sapopemba.approxCoords,
+    )
+    locationCoordsCache.set(
+      'Rua Leandro de Sevilha, 95, São Paulo - SP',
+      REFERENCE_LOCATIONS.sapopemba.approxCoords,
+    )
+
     let bestVaga = vagasList[0]
     let bestDist: number | null = null
 
     for (const vaga of vagasList) {
-      let vagaLocations = extractVagaLocations(vaga)
+      const normTitulo = normalizeString(vaga.titulo || '')
+      let coords: Coordinates | null = null
 
-      // Fallback: se a vaga não tiver localizacoes no criterios_qualificacao, inferir pelo título (Leste -> Sapopemba, Cursino -> Cursino)
-      if (vagaLocations.length === 0) {
-        const normTitulo = normalizeString(vaga.titulo || '')
-        if (normTitulo.includes('cursino')) {
-          vagaLocations = ['Av. do Cursino, 5797, São Paulo - SP']
-        } else if (normTitulo.includes('leste') || normTitulo.includes('sapopemba')) {
-          vagaLocations = ['Rua Leandro de Sevilha, 95, São Paulo - SP']
-        }
+      if (normTitulo.includes('cursino')) {
+        coords = REFERENCE_LOCATIONS.cursino.approxCoords
+      } else if (normTitulo.includes('leste') || normTitulo.includes('sapopemba')) {
+        coords = REFERENCE_LOCATIONS.sapopemba.approxCoords
       }
 
-      // Se ainda assim não houver localizações, tenta obter coordenadas diretamente por palavras-chave do título/descrição
-      if (vagaLocations.length === 0) {
-        const directCoords =
-          getReferenceCoordsForText(vaga.titulo || '') ||
-          getReferenceCoordsForText(vaga.descricao || '')
-        if (directCoords) {
-          const dist = calculateHaversineDistance(candidateCoords, directCoords)
-          if (bestDist === null || dist < bestDist) {
-            bestDist = dist
-            bestVaga = vaga
-          }
-        }
-        continue
-      }
-
-      for (const locStr of vagaLocations) {
-        let coords = locationCoordsCache.get(locStr)
-        if (!coords) {
-          coords = await geocodeAddress(locStr, googleApiKey)
-          // Se a geocodificação da string falhar (ex: endereço mal formatado ou erro na API),
-          // NÃO descartar a vaga: usar as coordenadas de referência baseadas em palavras-chave no endereço ou título/descrição da vaga
-          if (!coords) {
-            const fallbackRef =
-              getReferenceCoordsForText(locStr) ||
-              getReferenceCoordsForText(vaga.titulo || '') ||
-              getReferenceCoordsForText(vaga.descricao || '')
-            if (fallbackRef) {
-              console.warn(
-                `[identify-vaga] Geocodificação falhou para localização "${locStr}". Usando coordenadas de referência de fallback.`,
-              )
-              coords = fallbackRef
+      if (!coords) {
+        let vagaLocations = extractVagaLocations(vaga)
+        for (const locStr of vagaLocations) {
+          coords = locationCoordsCache.get(locStr) || getReferenceCoordsForText(locStr)
+          if (coords) break
+          if (googleApiKey) {
+            coords = await geocodeAddress(locStr, googleApiKey)
+            if (coords) {
+              locationCoordsCache.set(locStr, coords)
+              break
             }
           }
-
-          if (coords) {
-            locationCoordsCache.set(locStr, coords)
-          }
         }
+      }
 
-        if (coords) {
-          const dist = calculateHaversineDistance(candidateCoords, coords)
-          if (bestDist === null || dist < bestDist) {
-            bestDist = dist
-            bestVaga = vaga
-          }
+      if (!coords) {
+        coords =
+          getReferenceCoordsForText(vaga.titulo || '') ||
+          getReferenceCoordsForText(vaga.descricao || '')
+      }
+
+      if (coords) {
+        const dist = calculateHaversineDistance(candidateCoords, coords)
+        if (bestDist === null || dist < bestDist) {
+          bestDist = dist
+          bestVaga = vaga
         }
       }
     }
