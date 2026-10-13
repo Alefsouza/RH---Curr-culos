@@ -7,6 +7,7 @@ import { findExistingCandidate } from '../_shared/candidates.ts'
 import { performGoogleVisionPdfOcr } from '../_shared/ocr.ts'
 import { resolveCandidateAge } from '../_shared/validation.ts'
 import { extractCep, isTruncatedOrIncompleteAddress } from '../_shared/proximity.ts'
+import { mergeExtractedCnh } from '../_shared/cnh.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -151,9 +152,10 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const extractionPrompt = `Extraia os seguintes dados do currículo: nome, email, telefones celulares, experiencia profissional, skills, formacao academica, endereço completo com logradouro, número, bairro, cidade, UF e CEP se existirem, idade, data de nascimento, objetivo / cargo pretendido.
+    const extractionPrompt = `Extraia os seguintes dados do currículo: nome, email, telefones celulares, cnh (ex: Categoria D, AB, CNH D), cnh_categoria (ex: D, E, AB, AD, AE, B, A), experiencia profissional, skills, formacao academica (incluindo cursos e credenciais como MOPP, Transporte Coletivo), endereço completo com logradouro, número, bairro, cidade, UF e CEP se existirem, idade, data de nascimento, objetivo / cargo pretendido.
 Extraia APENAS números de telefone celular brasileiros (DDD + 9 dígitos, começando com 9). Ignore telefones fixos. Formato: 11999999999.
 No campo "endereco", traga o endereço mais completo possível (ex: "R. Timóteo, 88 - Jardim Paraguaçu, São Paulo - SP, 03938-050"). NUNCA trunque para apenas "Jardim - SP" ou apenas o bairro.
+Preste extrema atenção na CNH / Habilitação e categoria (ex: "Habilitação: Categoria D", "CNH D", "Cat. D").
 Se algum dado não for encontrado, retorne null ou um array vazio.
 Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
 {
@@ -164,6 +166,8 @@ Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
   "cep": "string ou null",
   "idade": "number ou null",
   "data_nascimento": "string ou null",
+  "cnh": "string ou null",
+  "cnh_categoria": "string ou null",
   "objetivo": "string ou null",
   "experiencia_profissional": ["string"],
   "skills": ["string"],
@@ -193,6 +197,9 @@ ${pdfText.substring(0, 15000)}
         if (calculatedAge !== null) {
           extractedData.idade = calculatedAge
         }
+
+        // Pós-processamento determinístico de CNH / Habilitação com fallback Regex
+        extractedData = mergeExtractedCnh(extractedData, [pdfText])
 
         if (!extractedData.cep && pdfText) {
           const foundCep = extractCep(pdfText)

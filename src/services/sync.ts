@@ -17,6 +17,17 @@ export async function triggerOutlookSync() {
   return data
 }
 
+export async function triggerCandidateReanalysis(candidateId: string, forceReextract = true) {
+  const { data, error } = await supabase.functions.invoke('sync-outlook-cvs', {
+    body: {
+      reanalyzeCandidateId: candidateId,
+      force_reextract: forceReextract,
+    },
+  })
+  if (error) throw error
+  return data
+}
+
 export async function triggerLeonardoReanalysis() {
   const { data, error } = await supabase.functions.invoke('reanalisar-candidato', {
     body: {

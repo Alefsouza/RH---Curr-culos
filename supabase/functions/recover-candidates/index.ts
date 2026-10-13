@@ -9,6 +9,7 @@ import {
   sanitizeAndValidateEmail,
 } from '../_shared/validation.ts'
 import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
+import { mergeExtractedCnh } from '../_shared/cnh.ts'
 
 interface ExtractedCandidateData {
   nome: string | null
@@ -18,6 +19,8 @@ interface ExtractedCandidateData {
   endereco?: string | null
   idade?: number | string | null
   data_nascimento?: string | null
+  cnh?: string | null
+  cnh_categoria?: string | null
   objetivo?: string | null
   resumo_cv?: string | null
   experiencia_profissional?: string[] | string
@@ -241,17 +244,20 @@ Deno.serve(async (req: Request) => {
 - endereco: Cidade, estado ou endereço completo, ou null se não identificado
 - idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
 - data_nascimento: Data de nascimento informada (ex: "16/01/1993" ou "1993-01-16"), ou null se não constar
+- cnh: Informação sobre CNH / Carteira de Habilitação identificada (ex: "Categoria D", "CNH D", "Categoria AB", "Categoria E"), ou null se não informada
+- cnh_categoria: Categoria exata da CNH (ex: "D", "E", "AB", "AD", "AE", "B", "A"), ou null se não informada
 - objetivo: Cargo pretendido, objetivo profissional ou área de interesse informada no currículo (ex: "Cobrador de Ônibus", "Motorista", "Auxiliar Administrativo"), ou null se não identificado
 - resumo_cv: Resumo das qualificações e perfil profissional, ou null se não identificado
 - experiencia_profissional: Lista de experiências anteriores, ou []
 - skills: Lista de habilidades e competências, ou []
-- formacao_academica: Lista de cursos, escolaridade, certificações e credenciais (ex: "Credencial de Transporte Coletivo", "Curso de Transporte Coletivo de Passageiros"), ou []
+- formacao_academica: Lista de cursos, escolaridade, certificações e credenciais (ex: "Credencial de Transporte Coletivo", "Curso de Transporte Coletivo de Passageiros", "Curso MOPP"), ou []
 
 IMPORTANTE:
 1. NUNCA invente dados fictícios.
 2. NUNCA use a string "string ou null" ou "string". Use null real.
-3. Capture a idade ou data de nascimento se constar no documento.
-4. Capture o "objetivo" com prioridade para facilitar o matching de vagas.
+3. Capture a CNH e sua categoria com máxima atenção (padrões como "Habilitação: Categoria D", "CNH: D", "Cat. D").
+4. Capture a idade ou data de nascimento se constar no documento.
+5. Capture o "objetivo" com prioridade para facilitar o matching de vagas.
 
 Formato JSON estrito esperado:
 {
@@ -262,6 +268,8 @@ Formato JSON estrito esperado:
   "endereco": null,
   "idade": null,
   "data_nascimento": null,
+  "cnh": null,
+  "cnh_categoria": null,
   "objetivo": null,
   "resumo_cv": null,
   "experiencia_profissional": [],
@@ -277,7 +285,10 @@ Formato JSON estrito esperado:
         },
       ]
 
-      const parsedJson: ExtractedCandidateData = await callOpenAIWithRetry(messages)
+      let parsedJson: ExtractedCandidateData = await callOpenAIWithRetry(messages)
+
+      // Pós-processamento determinístico de CNH / Habilitação com fallback Regex
+      parsedJson = mergeExtractedCnh(parsedJson, [basicText])
 
       const rawTextToMatch = [
         parsedJson.objetivo ? `Objetivo / Cargo Pretendido: ${parsedJson.objetivo}` : '',

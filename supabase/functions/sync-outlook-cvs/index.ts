@@ -14,6 +14,7 @@ import { extractCep, isTruncatedOrIncompleteAddress } from '../_shared/proximity
 import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
 import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
 import { performGoogleVisionPdfOcr } from '../_shared/ocr.ts'
+import { mergeExtractedCnh } from '../_shared/cnh.ts'
 
 interface ExtractedCandidateData {
   nome: string | null
@@ -85,11 +86,13 @@ Extraia com cuidado preservando a grafia correta com acentos em português:
 - cep: Código de Endereçamento Postal brasileiro (ex: "03938-050"), ou null se não constar
 - idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
 - data_nascimento: Data de nascimento informada em qualquer formato (ex: "16/01/1993", "16-01-1993", "16.01.1993", "1993-01-16", "nascido em 16 de janeiro de 1993"), ou null se não constar
+- cnh: Informação sobre CNH / Carteira de Habilitação identificada (ex: "Categoria D", "CNH D", "Categoria AB", "Categoria E", "Possui CNH D"), ou null se não informada
+- cnh_categoria: Categoria exata da CNH (ex: "D", "E", "AB", "AD", "AE", "B", "A"), ou null se não informada
 - objetivo: Cargo pretendido, objetivo profissional ou área de interesse informada no currículo (ex: "Cobrador de Ônibus", "Motorista", "Auxiliar Administrativo"), ou null se não identificado
 - resumo_cv: Resumo das qualificações e perfil profissional, ou null se não identificado
 - experiencia_profissional: Lista de experiências anteriores com cargos e empresas, ou [] se não houver
 - skills: Lista de habilidades técnicas e competências, ou [] se não houver
-- formacao_academica: Lista de cursos, escolaridade, certificações e credenciais (ex: "Credencial de Transporte Coletivo", "Curso de Transporte Coletivo de Passageiros"), ou [] se não houver
+- formacao_academica: Lista de cursos, escolaridade, certificações e credenciais (ex: "Credencial de Transporte Coletivo", "Curso de Transporte Coletivo de Passageiros", "Curso MOPP"), ou [] se não houver
 
 IMPORTANTE:
 1. NUNCA invente dados ou placeholders como "Candidato Desconhecido", "João da Silva", "11999999999", "exemplo@email.com". Se não constar, use null ou [].
@@ -108,6 +111,8 @@ Formato JSON estrito esperado:
   "cep": null,
   "idade": null,
   "data_nascimento": null,
+  "cnh": null,
+  "cnh_categoria": null,
   "objetivo": null,
   "resumo_cv": null,
   "experiencia_profissional": [],
@@ -223,9 +228,13 @@ Formato JSON estrito esperado:
     }
   }
 
+  // Pós-processamento determinístico de CNH / Habilitação com fallback Regex
+  parsedJson = mergeExtractedCnh(parsedJson, [extractedRawText])
+
   const rawTextToMatch = [
     parsedJson.objetivo ? `Objetivo / Cargo Pretendido: ${parsedJson.objetivo}` : '',
     parsedJson.resumo_cv || '',
+    parsedJson.cnh ? `CNH / Habilitação: ${parsedJson.cnh}` : '',
     Array.isArray(parsedJson.experiencia_profissional)
       ? parsedJson.experiencia_profissional.join('\n')
       : parsedJson.experiencia_profissional || '',
@@ -982,6 +991,43 @@ Deno.serve(async (req: Request) => {
       body = await req.json()
     } catch {
       body = {}
+    }
+
+    if (body?.reanalyzeCandidateId) {
+      const targetCandidateId = String(body.reanalyzeCandidateId)
+      console.log(`[sync-outlook-cvs] Ação especial: reanalisar candidato ${targetCandidateId}...`)
+      try {
+        const reanRes = await fetch(`${supabaseUrl}/functions/v1/reanalisar-candidato`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${supabaseKey}`,
+          },
+          body: JSON.stringify({
+            candidate_id: targetCandidateId,
+            force_reextract: true,
+          }),
+        })
+        const reanText = await reanRes.text()
+        let reanJson: any
+        try {
+          reanJson = JSON.parse(reanText)
+        } catch {
+          reanJson = { raw: reanText }
+        }
+        return new Response(
+          JSON.stringify({ candidateResult: reanJson, ok: reanRes.ok, status: reanRes.status }),
+          {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          },
+        )
+      } catch (callErr: any) {
+        return new Response(JSON.stringify({ error: callErr.message, stack: callErr.stack }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
     }
 
     if (body?.reanalyzeLeonardo) {

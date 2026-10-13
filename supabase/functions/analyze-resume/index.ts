@@ -14,6 +14,7 @@ import { extractCep, isTruncatedOrIncompleteAddress } from '../_shared/proximity
 import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
 import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
 import { performGoogleVisionPdfOcr } from '../_shared/ocr.ts'
+import { mergeExtractedCnh } from '../_shared/cnh.ts'
 
 // Extrai e limpa nome a partir do nome do arquivo (ex: "curriculo_joao_silva.pdf" -> "Joao Silva")
 function extractNameFromFileName(filePath: string): string | null {
@@ -230,6 +231,8 @@ Deno.serve(async (req: Request) => {
       cep: null,
       idade: null,
       data_nascimento: null,
+      cnh: null,
+      cnh_categoria: null,
       objetivo: null,
       experiencia_profissional: [],
       skills: [],
@@ -246,17 +249,20 @@ Deno.serve(async (req: Request) => {
 - cep: Código de Endereçamento Postal brasileiro (ex: "03938-050"), ou null se não constar
 - idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
 - data_nascimento: Data de nascimento informada em qualquer formato (ex: "16/01/1993", "16-01-1993", "16.01.1993", "1993-01-16", "nascido em 16 de janeiro de 1993"), ou null se não constar
+- cnh: Informação sobre CNH / Carteira de Habilitação identificada (ex: "Categoria D", "CNH D", "Categoria AB", "Categoria E", "Possui CNH D"), ou null se não informada
+- cnh_categoria: Categoria exata da CNH (ex: "D", "E", "AB", "AD", "AE", "B", "A"), ou null se não informada
 - objetivo: Cargo pretendido, objetivo profissional ou área de interesse expressamente informada no currículo (ex: "Cobrador de Ônibus", "Motorista", "Auxiliar Administrativo", "Mecânico"), ou null se não identificado
 - experiencia_profissional: Lista de experiências anteriores com cargos e empresas, ou []
 - skills: Lista de habilidades técnicas e competências, ou []
-- formacao_academica: Lista de cursos, formações, escolaridade, certificações e credenciais (ex: "Credencial de Transporte Coletivo", "Curso de Transporte Coletivo de Passageiros"), ou []
+- formacao_academica: Lista de cursos, formações, escolaridade, certificações e credenciais (ex: "Credencial de Transporte Coletivo", "Curso de Transporte Coletivo de Passageiros", "Curso MOPP"), ou []
 
 IMPORTANTE:
 1. NUNCA invente dados fictícios nem use "Candidato Desconhecido", "João da Silva", emails de exemplo ou telefones falsos.
 2. O nome do candidato frequentemente aparece no início do texto (cabeçalho). Se encontrar um nome como "VALDINÉIA DOMINGUES", extraia com precisão.
-3. Capture a idade ou data de nascimento com rigor se presente no documento.
-4. Capture o "objetivo" ou cargo pretendido com máxima atenção, pois ele é fundamental para associar a vaga correta.
-5. NUNCA retorne a string literal "string ou null" ou "string". Use null real quando não constar.
+3. Capture a CNH e sua categoria com máxima atenção (padrões como "Habilitação: Categoria D", "CNH: D", "Cat. D", "Categoria D ou E", etc.).
+4. Capture a idade ou data de nascimento com rigor se presente no documento.
+5. Capture o "objetivo" ou cargo pretendido com máxima atenção, pois ele é fundamental para associar a vaga correta.
+6. NUNCA retorne a string literal "string ou null" ou "string". Use null real quando não constar.
 
 Formato JSON estrito esperado:
 {
@@ -268,6 +274,8 @@ Formato JSON estrito esperado:
   "cep": null,
   "idade": null,
   "data_nascimento": null,
+  "cnh": null,
+  "cnh_categoria": null,
   "objetivo": null,
   "experiencia_profissional": [],
   "skills": [],
@@ -334,6 +342,8 @@ ${extractedText.substring(0, 20000)}`
 - cep: Código de Endereçamento Postal brasileiro (ex: "03938-050"), ou null se não constar
 - idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
 - data_nascimento: Data de nascimento informada (ex: "16/01/1993" ou "1993-01-16"), ou null se não constar
+- cnh: Informação sobre CNH / Carteira de Habilitação identificada (ex: "Categoria D", "CNH D", "Categoria AB", "Categoria E"), ou null se não informada
+- cnh_categoria: Categoria exata da CNH (ex: "D", "E", "AB", "AD", "AE", "B", "A"), ou null se não informada
 - objetivo: Cargo pretendido, objetivo profissional ou área informada no currículo, ou null se não identificado
 - experiencia_profissional: Lista de experiências anteriores com cargos e empresas, ou []
 - skills: Lista de habilidades técnicas e competências, ou []
@@ -450,6 +460,8 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
   "cep": "CEP brasileiro formatado 00000-000 ou null",
   "idade": "Número inteiro da idade ou null",
   "data_nascimento": "Data de nascimento informada ou null",
+  "cnh": "Informação sobre CNH/Habilitação (ex: Categoria D) ou null",
+  "cnh_categoria": "Categoria da CNH (ex: D, E, AB, AD, AE) ou null",
   "objetivo": "Cargo pretendido, objetivo profissional ou área de interesse informada no currículo ou null",
   "experiencia_profissional": ["experiências anteriores com cargo e empresa"],
   "skills": ["habilidades e competências identificadas"],
@@ -657,6 +669,9 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
     if (resolvedAge !== null) {
       extractedData.idade = resolvedAge
     }
+
+    // Pós-processamento determinístico de CNH / Habilitação com fallback Regex
+    extractedData = mergeExtractedCnh(extractedData, [extractedText])
 
     // Deduplicação e Identificação de vaga
     const { data: publicUrlData } = supabase.storage.from('curriculos').getPublicUrl(filePath)

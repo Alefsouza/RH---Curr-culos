@@ -13,6 +13,7 @@ import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
 import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
 import { performGoogleVisionPdfOcrDetailed } from '../_shared/ocr.ts'
 import { extractCep, isTruncatedOrIncompleteAddress } from '../_shared/proximity.ts'
+import { mergeExtractedCnh } from '../_shared/cnh.ts'
 
 // Reanálise de candidato com regras de fallback por experiência e salvaguarda
 // Deploy e execução da correção do falso motorista (Henrique Amâncio)
@@ -185,11 +186,13 @@ Deno.serve(async (req: Request) => {
 - cep: Código de Endereçamento Postal (ex: "03938-050"), ou null se não constar no documento
 - idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
 - data_nascimento: Data de nascimento informada em qualquer formato (ex: "16/01/1993", "16-01-1993", "16.01.1993", "1993-01-16", "nascido em 16 de janeiro de 1993"), ou null se não constar
+- cnh: Informação sobre CNH / Carteira de Habilitação identificada (ex: "Categoria D", "CNH D", "Categoria AB", "Categoria E", "Possui CNH D"), ou null se não informada
+- cnh_categoria: Categoria exata da CNH (ex: "D", "E", "AB", "AD", "AE", "B", "A"), ou null se não informada
 - objetivo: Cargo pretendido, objetivo profissional ou área informada no currículo (ex: "Cobrador de Ônibus", "Motorista", "Auxiliar Administrativo"), ou null se não identificado
 - resumo_cv: Resumo das qualificações, ou null
 - experiencia_profissional: Lista de experiências anteriores, ou []
 - skills: Lista de habilidades técnicas e competências, ou []
-- formacao_academica: Lista de cursos, escolaridade, certificações e credenciais (ex: "Credencial de Transporte Coletivo", "Curso de Transporte Coletivo de Passageiros"), ou []
+- formacao_academica: Lista de cursos, escolaridade, certificações e credenciais (ex: "Credencial de Transporte Coletivo", "Curso de Transporte Coletivo de Passageiros", "Curso MOPP"), ou []
 
 Texto do currículo:
 ${extractedText.substring(0, 18000)}`
@@ -288,6 +291,8 @@ ${extractedText.substring(0, 18000)}`
 - cep: CEP brasileiro completo (ex: "03938-050"), ou null se não constar
 - idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
 - data_nascimento: Data de nascimento informada (ex: "16/01/1993" ou "1993-01-16"), ou null se não constar
+- cnh: Informação sobre CNH / Habilitação (ex: "Categoria D", "CNH D", "Categoria AB"), ou null se não informada
+- cnh_categoria: Categoria exata da CNH (ex: "D", "E", "AB", "AD", "AE"), ou null se não informada
 - objetivo: Cargo pretendido, objetivo profissional ou área informada no currículo, ou null se não identificado
 - resumo_cv: Resumo das qualificações, ou null
 - experiencia_profissional: Lista de experiências anteriores, ou []
@@ -451,6 +456,8 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
   "cep": "CEP formatado 00000-000 ou null",
   "idade": "Número inteiro da idade ou null",
   "data_nascimento": "Data de nascimento informada ou null",
+  "cnh": "Informação sobre CNH/Habilitação (ex: Categoria D) ou null",
+  "cnh_categoria": "Categoria da CNH (ex: D, E, AB, AD, AE) ou null",
   "objetivo": "Cargo pretendido, objetivo profissional ou área de interesse informada no currículo ou null",
   "resumo_cv": "Resumo profissional ou qualificações ou null",
   "experiencia_profissional": ["experiências anteriores com cargo e empresa"],
@@ -676,6 +683,12 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
               if (finalResolvedAge !== null) {
                 currentDadosExtraidos.idade = finalResolvedAge
               }
+
+              // Pós-processamento determinístico de CNH / Habilitação com fallback Regex
+              currentDadosExtraidos = mergeExtractedCnh(currentDadosExtraidos, [
+                extractedText,
+                typeof ocrText !== 'undefined' ? ocrText : null,
+              ])
               candidateUpdate.dados_extraidos = currentDadosExtraidos
 
               if (Object.keys(candidateUpdate).length > 0) {

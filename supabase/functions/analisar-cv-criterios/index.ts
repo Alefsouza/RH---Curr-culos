@@ -678,10 +678,15 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
       criteriosLower.includes('categoria d ou e') ||
       criteriosLower.includes('cnh d ou e') ||
       criteriosLower.includes('categoria d/e') ||
-      criteriosLower.includes('d ou e')
+      criteriosLower.includes('d ou e') ||
+      criteriosLower.includes('cnh d/e') ||
+      criteriosLower.includes('categoria d')
 
     // Verificar se o candidato possui CNH D ou E
     const candidatoSkills = Array.isArray(cvData.skills) ? cvData.skills.join(' ') : ''
+    const candidatoExp = Array.isArray(cvData.experiencia_profissional)
+      ? cvData.experiencia_profissional.join(' ')
+      : cvData.experiencia_profissional || ''
     const candidatoCnhStr = (
       (cvData.cnh || '') +
       ' ' +
@@ -693,31 +698,41 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
       ' ' +
       candidatoSkills +
       ' ' +
+      candidatoExp +
+      ' ' +
       (cvData.resumo_cv || '')
     ).toLowerCase()
 
     const hasCandidateCnhD =
-      /\b(cnh|categoria|cat|habilitacao)\s*(categoria\s*)?([a-c]*d[a-e]*)\b/.test(
+      /\b(cnh|categoria|cat|habilitacao)\s*[:\-–—]?\s*(categoria\s*)?([a-c]*d[a-e]*)\b/.test(
         candidatoCnhStr,
       ) ||
       /\bcnh\s*d\b/.test(candidatoCnhStr) ||
       /\bcategoria\s*d\b/.test(candidatoCnhStr) ||
-      /\bcat\s*d\b/.test(candidatoCnhStr) ||
+      /\bcat\.?\s*d\b/.test(candidatoCnhStr) ||
       candidatoCnhStr.includes('categoria d') ||
-      candidatoCnhStr.includes('cnh d')
+      candidatoCnhStr.includes('cnh d') ||
+      String(cvData.cnh_categoria || '')
+        .toUpperCase()
+        .includes('D')
 
     const hasCandidateCnhE =
-      /\b(cnh|categoria|cat|habilitacao)\s*(categoria\s*)?([a-d]*e)\b/.test(candidatoCnhStr) ||
+      /\b(cnh|categoria|cat|habilitacao)\s*[:\-–—]?\s*(categoria\s*)?([a-d]*e)\b/.test(
+        candidatoCnhStr,
+      ) ||
       /\bcnh\s*e\b/.test(candidatoCnhStr) ||
       /\bcategoria\s*e\b/.test(candidatoCnhStr) ||
-      /\bcat\s*e\b/.test(candidatoCnhStr) ||
+      /\bcat\.?\s*e\b/.test(candidatoCnhStr) ||
       candidatoCnhStr.includes('categoria e') ||
-      candidatoCnhStr.includes('cnh e')
+      candidatoCnhStr.includes('cnh e') ||
+      String(cvData.cnh_categoria || '')
+        .toUpperCase()
+        .includes('E')
 
     const candidatoAtendeCnhDouE = hasCandidateCnhD || hasCandidateCnhE
 
     if (vagaPermiteCnhDouE && candidatoAtendeCnhDouE) {
-      // 1. Limpar unmatched_criteria se a IA erroneamente reprovou CNH exigindo somente E
+      // 1. Limpar unmatched_criteria se a IA erroneamente reprovou CNH (ex: dizendo que não foi informada ou exigindo somente E)
       if (Array.isArray(resultJson.detalhes?.unmatched_criteria)) {
         resultJson.detalhes.unmatched_criteria = resultJson.detalhes.unmatched_criteria.filter(
           (item: any) => {
@@ -733,7 +748,12 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
                 motL.includes('requer categoria e') ||
                 motL.includes('apenas categoria d') ||
                 motL.includes('exigida e') ||
-                motL.includes('categoria e'))
+                motL.includes('categoria e') ||
+                motL.includes('não informad') ||
+                motL.includes('nao informad') ||
+                motL.includes('não consta') ||
+                motL.includes('nao consta') ||
+                motL.includes('ausente'))
             return !isCnhError
           },
         )
@@ -774,13 +794,26 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
         // Se o motivo ficou truncado ou sem sentido, reformular com clareza
         if (!qualificadoPorLocalizacao) {
           motivoFinal = `Reprovado por localização: Distância calculada de ${menorDistanciaKm.toFixed(2)} km ultrapassa o limite aceitável de ${raioKm} km da garagem. O candidato atende aos demais critérios técnicos (possui CNH Categoria ${hasCandidateCnhD ? 'D' : 'E'} e experiência).`
-        } else if (motivoFinal.length < 10) {
+        } else if (motivoFinal.length < 10 && statusFinal === 'qualificado') {
           motivoFinal =
             'Candidato atende aos critérios da vaga, incluindo Categoria da CNH (D ou E).'
         }
       }
 
-      // Se o candidato havia sido reprovado UNICAMENTE por causa da CNH fictícia "deve ser E" e a localização está ok:
+      // Se o candidato estava com motivo citando "CNH não informada" ou ausência de CNH, limpar do motivo:
+      if (
+        motivoFinal.toLowerCase().includes('cnh: não informada') ||
+        motivoFinal.toLowerCase().includes('cnh não informada') ||
+        motivoFinal.toLowerCase().includes('cnh: nao informada')
+      ) {
+        motivoFinal = motivoFinal
+          .replace(/CNH:\s*n[ãa]o informada[,.]?/gi, '')
+          .replace(/e\s*CNH:\s*n[ãa]o informada/gi, '')
+          .replace(/por não possuir CNH informada/gi, '')
+          .trim()
+      }
+
+      // Se o candidato havia sido reprovado UNICAMENTE por causa de CNH e a localização está ok:
       if (statusFinal === 'nao_qualificado' && qualificadoPorLocalizacao) {
         const remainingUnmatched = Array.isArray(resultJson.detalhes?.unmatched_criteria)
           ? resultJson.detalhes.unmatched_criteria
@@ -791,6 +824,10 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
           if (resultJson.detalhes) {
             resultJson.detalhes.score = Math.max(resultJson.detalhes.score || 0, 85)
           }
+        } else {
+          // Se ainda tem reprovação legítima (ex: idade fora da faixa), reformula o motivo sem a CNH
+          const remainingDescs = remainingUnmatched.map((u: any) => u.motivo || u.nome).join('; ')
+          motivoFinal = `Não atende aos critérios eliminatórios da vaga: ${remainingDescs}. (Critério de CNH Categoria ${hasCandidateCnhD ? 'D' : 'E'} atendido).`
         }
       }
 
