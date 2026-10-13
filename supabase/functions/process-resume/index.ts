@@ -290,11 +290,11 @@ ${extractedText.substring(0, 18000)}`
 
     let ocrCapturedText: string | null = null
 
-    // 3.1 OCR via Google Cloud Vision como principal recurso quando falta cabeçalho
+    // 3.1 OCR via Google Cloud Vision como principal recurso quando falta cabeçalho (especialmente o nome)
     if (isHeaderIncomplete && !isDocx && fileBytes.length > 0) {
       try {
         console.log(
-          `[process-resume] Cabeçalho incompleto ou ausente. Executando Google Vision OCR para ${filePath}...`,
+          `[process-resume] Cabeçalho incompleto ou ausente (nome=${cleanName || 'null'}). Executando Google Vision OCR para ${filePath}...`,
         )
         const ocrText = await performGoogleVisionPdfOcr(fileBytes)
         ocrCapturedText = ocrText
@@ -357,6 +357,43 @@ ${combinedText.substring(0, 25000)}`
         }
       } catch (ocrErr: any) {
         console.warn(`[process-resume] Falha no fluxo de OCR Google Vision:`, ocrErr?.message)
+      }
+    }
+
+    // Salvaguarda: se o nome ainda estiver ausente/nulo em PDF, garantir tentativa de OCR com prompt focado no cabeçalho
+    if (!cleanName && !isDocx && fileBytes.length > 0) {
+      try {
+        let ocrText = ocrCapturedText
+        if (!ocrText) {
+          console.log(
+            `[process-resume] Nome continua nulo. Executando OCR Google Vision dedicado para capturar cabeçalho...`,
+          )
+          ocrText = await performGoogleVisionPdfOcr(fileBytes)
+          ocrCapturedText = ocrText
+        }
+        if (ocrText && ocrText.trim().length > 20) {
+          const headerPrompt = `Identifique com precisão o NOME COMPLETO REAL da pessoa física deste currículo a partir do texto lido via OCR (Google Vision). O nome costuma ser o título principal no cabeçalho/topo da página ou antes dos contatos.
+Retorne um JSON: {"nome": "Nome Completo" ou null, "email": "email" ou null, "telefone": "telefone" ou null, "cnh": "cnh" ou null, "idade": número ou null}
+
+Texto OCR:
+${ocrText.substring(0, 15000)}`
+          const headerExtracted = await callOpenAIWithRetry(headerPrompt)
+          if (headerExtracted?.nome) {
+            cleanName = sanitizeAndValidateName(headerExtracted.nome) || cleanName
+            if (cleanName) {
+              extractedData.nome = cleanName
+            }
+          }
+          if (headerExtracted?.email && !extractedData?.email)
+            extractedData.email = headerExtracted.email
+          if (headerExtracted?.telefone && !extractedData?.telefone)
+            extractedData.telefone = headerExtracted.telefone
+          if (headerExtracted?.cnh && !extractedData?.cnh) extractedData.cnh = headerExtracted.cnh
+          if (headerExtracted?.idade && !extractedData?.idade)
+            extractedData.idade = headerExtracted.idade
+        }
+      } catch (dedErr: any) {
+        console.warn(`[process-resume] Falha no OCR focado em cabeçalho:`, dedErr?.message)
       }
     }
 

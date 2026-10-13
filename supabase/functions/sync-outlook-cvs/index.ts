@@ -682,32 +682,63 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
         if (resolvedAge !== null) {
           extractedData.idade = resolvedAge
         }
-        // MUDANÇA 2: Validações rigorosas de nome e email
-        const cleanCandidateName = sanitizeAndValidateName(extractedData.nome)
-        const cleanCandidateEmail = sanitizeAndValidateEmail(extractedData.email)
+        // Se o nome vier vazio/null, rodar OCR automaticamente antes de salvar com o fallback genérico
+        let cleanCandidateName = sanitizeAndValidateName(extractedData.nome)
+        if (!cleanCandidateName && ext !== 'docx' && fileBytes.length > 0) {
+          try {
+            console.log(
+              `Outlook Sync: Nome ausente ou vazio no currículo ${fileName}. Executando OCR Google Vision focado em cabeçalho...`,
+            )
+            const ocrText = await performGoogleVisionPdfOcr(fileBytes)
+            if (ocrText && ocrText.trim().length > 20) {
+              const headerPrompt = `Identifique exclusivamente o NOME COMPLETO REAL da pessoa física deste currículo a partir do texto lido via OCR (Google Vision). O nome costuma ser o título principal no topo/cabeçalho da página.
+Retorne um JSON estrito: {"nome": "Nome Completo" ou null, "email": "email" ou null, "telefone": "telefone" ou null, "cnh": "cnh" ou null, "idade": número ou null}
 
-        // Se o nome for nulo ou inválido, NÃO inserir candidato com nome inventado
-        if (!cleanCandidateName) {
-          console.log(
-            `Outlook Sync: Nome inválido ou ausente no currículo ${fileName}. Candidato ignorado para evitar placeholders.`,
-          )
-          cvsSkippedNoMatch++
-          const invalidPayload = {
-            ...importBase,
-            status: 'nome_invalido',
-            erro_detalhes: 'Nome não identificado com segurança no documento.',
-            anexo_filename: fileName,
-            processado_em: new Date().toISOString(),
+Texto OCR:
+${ocrText.substring(0, 15000)}`
+              const headerExtracted = await callOpenAIWithRetry([
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: headerPrompt },
+              ])
+              if (headerExtracted?.nome) {
+                const validatedName = sanitizeAndValidateName(headerExtracted.nome)
+                if (validatedName) {
+                  cleanCandidateName = validatedName
+                  extractedData.nome = validatedName
+                }
+              }
+              if (headerExtracted?.email && !extractedData?.email)
+                extractedData.email = headerExtracted.email
+              if (headerExtracted?.telefone && !extractedData?.telefone)
+                extractedData.telefone = headerExtracted.telefone
+              if (headerExtracted?.cnh && !extractedData?.cnh)
+                extractedData.cnh = headerExtracted.cnh
+              if (headerExtracted?.idade && !extractedData?.idade)
+                extractedData.idade = headerExtracted.idade
+            }
+          } catch (ocrNameErr: any) {
+            console.warn(
+              `Outlook Sync: Erro no OCR focado em nome para ${fileName}:`,
+              ocrNameErr?.message,
+            )
           }
-          if (existing?.id) {
-            await supabase.from('email_importacoes').update(invalidPayload).eq('id', existing.id)
-          } else {
-            await supabase.from('email_importacoes').insert(invalidPayload)
-          }
-          continue
         }
 
-        const finalNome = cleanCandidateName
+        const cleanCandidateEmail = sanitizeAndValidateEmail(extractedData.email)
+
+        // Se mesmo após o OCR o nome não aparecer, usar fallback: prefixo de email ou "Candidato"
+        let finalNome = cleanCandidateName
+        if (!finalNome && cleanCandidateEmail) {
+          const prefix = cleanCandidateEmail.split('@')[0]
+          const formattedPrefix = prefix
+            .replace(/[._-]/g, ' ')
+            .replace(/\b\w/g, (l: string) => l.toUpperCase())
+          finalNome = sanitizeAndValidateName(formattedPrefix)
+        }
+        if (!finalNome) {
+          finalNome = 'Candidato'
+        }
+
         const finalEmail = cleanCandidateEmail
 
         // Normalização e validação de telefone
@@ -1030,6 +1061,39 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    if (body?.reextractCandidatesIds && Array.isArray(body.reextractCandidatesIds)) {
+      const ids: string[] = body.reextractCandidatesIds
+      console.log(`[sync-outlook-cvs] Ação especial: reanalisar lote de candidatos:`, ids)
+      const results: Record<string, any> = {}
+      for (const cid of ids) {
+        try {
+          const rRes = await fetch(`${supabaseUrl}/functions/v1/reanalisar-candidato`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${supabaseKey}`,
+            },
+            body: JSON.stringify({
+              candidate_id: cid,
+              force_reextract: true,
+            }),
+          })
+          const rText = await rRes.text()
+          try {
+            results[cid] = JSON.parse(rText)
+          } catch {
+            results[cid] = { raw: rText }
+          }
+        } catch (cErr: any) {
+          results[cid] = { error: cErr.message }
+        }
+      }
+      return new Response(JSON.stringify({ results, ok: true }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     if (body?.reanalyzeLeonardo) {
       console.log('[sync-outlook-cvs] Ação especial: reanalisar Leonardo Augusto Damasceno...')
       const reanRes = await fetch(`${supabaseUrl}/functions/v1/reanalisar-candidato`, {
@@ -1127,6 +1191,38 @@ Deno.serve(async (req: Request) => {
       .single()
 
     const syncRunId = syncRun?.id || null
+
+    // Salvaguarda operacional: reextração sob demanda garantida
+    if (body?.triggerOcrFix) {
+      const candidatesToFix = [
+        '0f7fbd80-8e2d-4653-b780-ed990801809a',
+        '5e7608ad-27a7-40f2-9e6c-ca6017d4cb13',
+      ]
+      console.log('[sync-outlook-cvs] Executando correção OCR sob demanda para:', candidatesToFix)
+      const fixResults: any[] = []
+      for (const cid of candidatesToFix) {
+        try {
+          const rRes = await fetch(`${supabaseUrl}/functions/v1/reanalisar-candidato`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${supabaseKey}`,
+            },
+            body: JSON.stringify({
+              candidate_id: cid,
+              force_reextract: true,
+            }),
+          })
+          const rText = await rRes.text()
+          fixResults.push({ id: cid, status: rRes.status, body: rText })
+        } catch (e: any) {
+          fixResults.push({ id: cid, error: e.message })
+        }
+      }
+      return new Response(JSON.stringify({ ok: true, fixResults }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
 
     const syncResult = await performSync(supabase, syncRunId, userId)
 

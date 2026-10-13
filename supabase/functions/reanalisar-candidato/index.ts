@@ -358,6 +358,64 @@ ${combinedText.substring(0, 25000)}`
               }
             }
 
+            // Salvaguarda: se mesmo após OCR geral o nome ainda não foi identificado no PDF, forçar chamada dedicada focada no cabeçalho
+            if (!parsedName && !isDocx && fileBytes.length > 0) {
+              try {
+                let ocrText = ocrCapturedText
+                if (!ocrText) {
+                  const ocrDetail = await performGoogleVisionPdfOcrDetailed(fileBytes)
+                  ocrText = ocrDetail.text
+                  ocrCapturedText = ocrText
+                }
+                if (ocrText && ocrText.trim().length > 20) {
+                  const headerPrompt = `Identifique exclusivamente o NOME COMPLETO REAL da pessoa física deste currículo a partir do texto lido via OCR (Google Vision). O nome costuma ser o título principal no topo/cabeçalho da página ou antes dos contatos.
+Retorne um JSON estrito: {"nome": "Nome Completo" ou null, "email": "email" ou null, "telefone": "telefone" ou null, "cnh": "cnh" ou null, "idade": número ou null}
+
+Texto OCR:
+${ocrText.substring(0, 15000)}`
+                  const ocrHeaderResp = await openai.chat.completions.create({
+                    model: 'gpt-4o-mini',
+                    messages: [
+                      {
+                        role: 'system',
+                        content:
+                          'Você é um assistente de RH de alta precisão. Preserve todos os acentos originais.',
+                      },
+                      { role: 'user', content: headerPrompt },
+                    ],
+                    response_format: { type: 'json_object' },
+                  })
+                  const headerObj = JSON.parse(ocrHeaderResp.choices[0]?.message?.content || '{}')
+                  if (headerObj?.nome) {
+                    const validHeaderName = sanitizeAndValidateName(headerObj.nome)
+                    if (validHeaderName) {
+                      parsedName = validHeaderName
+                      newlyExtracted = { ...newlyExtracted, nome: validHeaderName }
+                    }
+                  }
+                  if (headerObj?.email && !newlyExtracted?.email) {
+                    newlyExtracted = { ...newlyExtracted, email: headerObj.email }
+                    hasNewEmail = true
+                  }
+                  if (headerObj?.telefone && !newlyExtracted?.telefone) {
+                    newlyExtracted = { ...newlyExtracted, telefone: headerObj.telefone }
+                    hasNewTelefone = true
+                  }
+                  if (headerObj?.cnh && !newlyExtracted?.cnh) {
+                    newlyExtracted = { ...newlyExtracted, cnh: headerObj.cnh }
+                  }
+                  if (headerObj?.idade && !newlyExtracted?.idade) {
+                    newlyExtracted = { ...newlyExtracted, idade: headerObj.idade }
+                  }
+                }
+              } catch (dedErr: any) {
+                console.warn(
+                  `[reanalisar-candidato] Falha no OCR focado em cabeçalho:`,
+                  dedErr?.message,
+                )
+              }
+            }
+
             // Se o OCR falhou e nenhum dado pôde ser extraído (PDF puramente imagem), registrar o erro do Google Vision
             if (
               visionOcrError &&
@@ -649,7 +707,7 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
                 candidateUpdate.nome = cleanName
                 currentNome = cleanName
               } else if (!validCurrentName) {
-                // Se o nome atual era inválido ("Candidato Desconhecido") e não achou nome, não deixar como "Desconhecido" se tiver fallback melhor
+                // Se o nome atual era inválido ("Candidato Desconhecido" ou "Candidato") e não achou nome, tentar fallback por email
                 if (cleanEmail) {
                   const prefix = cleanEmail.split('@')[0]
                   const formattedPrefix = prefix
@@ -660,12 +718,12 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
                 }
               }
 
-              if (cleanEmail && !currentEmail) {
+              if (cleanEmail) {
                 candidateUpdate.email = cleanEmail
                 currentEmail = cleanEmail
               }
 
-              if (finalTelefone && !currentTelefone) {
+              if (finalTelefone) {
                 candidateUpdate.telefone = finalTelefone
                 currentTelefone = finalTelefone
               }

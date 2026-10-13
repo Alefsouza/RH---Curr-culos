@@ -319,13 +319,16 @@ ${extractedText.substring(0, 20000)}`
       !hasDataNascimento ||
       !hasSufficientText
 
+    let ocrCapturedText: string | null = null
+
     // 3.1 OCR via Google Cloud Vision como principal recurso quando falta cabeçalho
     if (isHeaderIncomplete && !isDocx && fileBytes.length > 0) {
       try {
         console.log(
-          `[analyze-resume] Cabeçalho incompleto ou ausente. Executando Google Vision OCR para ${filePath}...`,
+          `[analyze-resume] Cabeçalho incompleto ou ausente (nome=${cleanName || 'null'}). Executando Google Vision OCR para ${filePath}...`,
         )
         const ocrText = await performGoogleVisionPdfOcr(fileBytes)
+        ocrCapturedText = ocrText
         if (ocrText && ocrText.trim().length > 20) {
           console.log(
             `[analyze-resume] OCR obteve ${ocrText.length} caracteres. Concatenando com texto existente e reextraindo...`,
@@ -388,6 +391,43 @@ ${combinedText.substring(0, 25000)}`
         }
       } catch (ocrErr: any) {
         console.warn(`[analyze-resume] Falha no fluxo de OCR Google Vision:`, ocrErr?.message)
+      }
+    }
+
+    // Salvaguarda: se o nome ainda estiver ausente/nulo em PDF, garantir tentativa de OCR com prompt focado no cabeçalho
+    if (!cleanName && !isDocx && fileBytes.length > 0) {
+      try {
+        let ocrText = ocrCapturedText
+        if (!ocrText) {
+          console.log(
+            `[analyze-resume] Nome continua nulo. Executando OCR Google Vision dedicado para capturar cabeçalho...`,
+          )
+          ocrText = await performGoogleVisionPdfOcr(fileBytes)
+          ocrCapturedText = ocrText
+        }
+        if (ocrText && ocrText.trim().length > 20) {
+          const headerPrompt = `Identifique com precisão o NOME COMPLETO REAL da pessoa física deste currículo a partir do texto lido via OCR (Google Vision). O nome costuma ser o título principal no cabeçalho/topo da página ou antes dos contatos.
+Retorne um JSON: {"nome": "Nome Completo" ou null, "email": "email" ou null, "telefone": "telefone" ou null, "cnh": "cnh" ou null, "idade": número ou null}
+
+Texto OCR:
+${ocrText.substring(0, 15000)}`
+          const headerExtracted = await callOpenAIWithRetry(headerPrompt)
+          if (headerExtracted?.nome) {
+            cleanName = sanitizeAndValidateName(headerExtracted.nome) || cleanName
+            if (cleanName) {
+              extractedData.nome = cleanName
+            }
+          }
+          if (headerExtracted?.email && !extractedData?.email)
+            extractedData.email = headerExtracted.email
+          if (headerExtracted?.telefone && !extractedData?.telefone)
+            extractedData.telefone = headerExtracted.telefone
+          if (headerExtracted?.cnh && !extractedData?.cnh) extractedData.cnh = headerExtracted.cnh
+          if (headerExtracted?.idade && !extractedData?.idade)
+            extractedData.idade = headerExtracted.idade
+        }
+      } catch (dedErr: any) {
+        console.warn(`[analyze-resume] Falha no OCR focado em cabeçalho:`, dedErr?.message)
       }
     }
 

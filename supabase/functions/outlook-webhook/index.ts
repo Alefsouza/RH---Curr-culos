@@ -198,8 +198,48 @@ ${pdfText.substring(0, 15000)}
           extractedData.idade = calculatedAge
         }
 
+        // Se o nome vier vazio/null, rodar OCR automaticamente antes de salvar com fallback genérico
+        let ocrBufferText: string | null = null
+        const cleanWebhookName = sanitizeAndValidateName(extractedData.nome)
+        if (!cleanWebhookName && pdfBuffer.length > 0) {
+          try {
+            console.log(
+              '[outlook-webhook] Nome ausente ou vazio. Executando OCR Google Vision para identificar nome no cabeçalho...',
+            )
+            const ocrText = await performGoogleVisionPdfOcr(new Uint8Array(pdfBuffer))
+            ocrBufferText = ocrText
+            if (ocrText && ocrText.trim().length > 20) {
+              const headerPrompt = `Identifique com precisão o NOME COMPLETO REAL da pessoa física deste currículo a partir do texto lido via OCR (Google Vision). O nome costuma ser o título principal no topo da página.
+Retorne um JSON estrito: {"nome": "Nome Completo" ou null, "email": "email" ou null, "telefone": "telefone" ou null, "cnh": "cnh" ou null, "idade": número ou null}
+
+Texto OCR:
+${ocrText.substring(0, 15000)}`
+              const headerExtracted = await callOpenAIWithRetry(headerPrompt)
+              if (headerExtracted?.nome) {
+                const validatedOcrName = sanitizeAndValidateName(headerExtracted.nome)
+                if (validatedOcrName) {
+                  extractedData.nome = validatedOcrName
+                }
+              }
+              if (headerExtracted?.email && !extractedData?.email)
+                extractedData.email = headerExtracted.email
+              if (headerExtracted?.telefone && !extractedData?.telefone)
+                extractedData.telefone = headerExtracted.telefone
+              if (headerExtracted?.cnh && !extractedData?.cnh)
+                extractedData.cnh = headerExtracted.cnh
+              if (headerExtracted?.idade && !extractedData?.idade)
+                extractedData.idade = headerExtracted.idade
+            }
+          } catch (ocrNameErr: any) {
+            console.warn(
+              '[outlook-webhook] Falha no OCR para recuperação de nome:',
+              ocrNameErr?.message,
+            )
+          }
+        }
+
         // Pós-processamento determinístico de CNH / Habilitação com fallback Regex
-        extractedData = mergeExtractedCnh(extractedData, [pdfText])
+        extractedData = mergeExtractedCnh(extractedData, [pdfText, ocrBufferText])
 
         if (!extractedData.cep && pdfText) {
           const foundCep = extractCep(pdfText)
@@ -219,7 +259,8 @@ ${pdfText.substring(0, 15000)}
         if (
           (!extractedData.endereco ||
             isTruncatedOrIncompleteAddress(String(extractedData.endereco))) &&
-          pdfBuffer.length > 0
+          pdfBuffer.length > 0 &&
+          !ocrBufferText
         ) {
           try {
             console.log(
@@ -250,15 +291,20 @@ ${pdfText.substring(0, 15000)}
       )
     }
 
-    // Validação
-    if (!extractedData.nome) {
-      return new Response(
-        JSON.stringify({ error: 'Nome não encontrado no currículo (dado obrigatório).' }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
-      )
+    // Se mesmo após o OCR o nome não aparecer, usar fallback seguro antes de rejeitar ou usar "Candidato"
+    const validatedFinalName = sanitizeAndValidateName(extractedData.nome)
+    if (!validatedFinalName) {
+      if (extractedData.email) {
+        const emailPrefix = extractedData.email.split('@')[0]
+        const formattedPrefix = emailPrefix
+          .replace(/[._-]/g, ' ')
+          .replace(/\b\w/g, (l: string) => l.toUpperCase())
+        extractedData.nome = sanitizeAndValidateName(formattedPrefix) || 'Candidato'
+      } else {
+        extractedData.nome = 'Candidato'
+      }
+    } else {
+      extractedData.nome = validatedFinalName
     }
 
     if (extractedData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(extractedData.email)) {
