@@ -12,7 +12,7 @@ import {
 import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
 import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
 import { performGoogleVisionPdfOcrDetailed } from '../_shared/ocr.ts'
-import { extractCep, isTruncatedOrIncompleteAddress } from '../_shared/proximity.ts'
+import { extractCep } from '../_shared/proximity.ts'
 import { mergeExtractedCnh } from '../_shared/cnh.ts'
 
 // Reanálise de candidato com regras de fallback por experiência e salvaguarda
@@ -87,6 +87,7 @@ Deno.serve(async (req: Request) => {
     let currentNome = candidato.nome
     let currentEmail = candidato.email
     let currentTelefone = candidato.telefone
+    const validCurrentName = sanitizeAndValidateName(candidato.nome)
     let currentDadosExtraidos =
       typeof candidato.dados_extraidos === 'object' && candidato.dados_extraidos !== null
         ? { ...candidato.dados_extraidos }

@@ -64,8 +64,6 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-
-
     // Ação direta para invocar reanalisar-candidato para Robisom com force_reextract
     if (body.reanalyzeRobisom) {
       console.log('[batch-reanalyze-all] Executando reanálise forçada para Robisom...')
