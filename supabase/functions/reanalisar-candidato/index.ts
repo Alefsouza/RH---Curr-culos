@@ -17,6 +17,7 @@ import { mergeExtractedCnh } from '../_shared/cnh.ts'
 
 // Reanálise de candidato com regras de fallback por experiência e salvaguarda
 // Deploy e execução da correção do falso motorista (Henrique Amâncio)
+// Versão v0.0.648 - verificação ativa de boot
 // Extrai caminho relativo do storage a partir de URL pública ou storage path
 function extractStoragePathFromCurriculoUrl(urlOrPath: string): string | null {
   if (!urlOrPath) return null
@@ -970,6 +971,7 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
           .update({
             resultado: 'nao_qualificado',
             detalhes: analiseSemVagaPayload.detalhes,
+            criado_em: new Date().toISOString(),
           })
           .eq('id', existingNullAnalise.id)
           .select()
@@ -978,12 +980,11 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
       } else {
         const { data: insAnalise } = await supabase
           .from('analises')
-          .insert(analiseSemVagaPayload)
+          .insert({ ...analiseSemVagaPayload, criado_em: new Date().toISOString() })
           .select()
           .single()
         savedAnaliseData = insAnalise
       }
-
       return new Response(
         JSON.stringify({
           success: true,

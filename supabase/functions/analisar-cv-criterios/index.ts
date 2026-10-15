@@ -1073,7 +1073,11 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
     if (existing) {
       const { data, error: updateError } = await supabaseAdmin
         .from('analises')
-        .update({ resultado: statusFinal, detalhes: resultJson.detalhes || {} })
+        .update({
+          resultado: statusFinal,
+          detalhes: resultJson.detalhes || {},
+          criado_em: new Date().toISOString(),
+        })
         .eq('id', existing.id)
         .select()
         .single()
@@ -1088,6 +1092,7 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
           resultado: statusFinal,
           detalhes: resultJson.detalhes || {},
           user_id: effectiveUserId || candidato.user_id,
+          criado_em: new Date().toISOString(),
         })
         .select()
         .single()
