@@ -105,48 +105,15 @@ Deno.serve(async (req: Request) => {
         .eq('id', candidato.id)
     }
 
-    // 1. Verificar se o nome é inválido, se faltam telefone/endereço/objetivo ou se foi forçada a reextração completa
-    const validCurrentName = sanitizeAndValidateName(currentNome)
-    const validExtractedName = sanitizeAndValidateName(currentDadosExtraidos.nome)
-    const hasCurrentTelefone =
-      Boolean(currentTelefone) ||
-      Boolean(currentDadosExtraidos.telefone) ||
-      (Array.isArray(currentDadosExtraidos.telefones_celulares) &&
-        currentDadosExtraidos.telefones_celulares.length > 0)
-    const hasCurrentEndereco = Boolean(
-      currentDadosExtraidos.endereco &&
-      String(currentDadosExtraidos.endereco).trim().length > 0 &&
-      !isTruncatedOrIncompleteAddress(String(currentDadosExtraidos.endereco)),
-    )
-    const hasObjetivo =
-      typeof currentDadosExtraidos.objetivo === 'string' &&
-      currentDadosExtraidos.objetivo.trim().length > 0
-    const hasExperiencia =
-      Array.isArray(currentDadosExtraidos.experiencia_profissional) &&
-      currentDadosExtraidos.experiencia_profissional.length > 0
-    const hasFormacao =
-      Array.isArray(currentDadosExtraidos.formacao_academica) &&
-      currentDadosExtraidos.formacao_academica.length > 0
-    const hasSkills =
-      Array.isArray(currentDadosExtraidos.skills) && currentDadosExtraidos.skills.length > 0
+    // Só acionar reextração pesada de PDF (OCR/OpenAI Files) se force_reextract === true
+    // OU se dados_extraidos do candidato for nulo/vazio. A ausência de e-mail (email: null)
+    // NÃO deve disparar reextração quando os dados extraídos já existem.
+    const isDadosExtraidosEmpty =
+      !candidato.dados_extraidos ||
+      (typeof candidato.dados_extraidos === 'object' &&
+        Object.keys(candidato.dados_extraidos).length === 0)
 
-    // O corpo do currículo é considerado vazio quando todas as 4 chaves estão vazias/null:
-    // experiencia_profissional, formacao_academica, skills e objetivo.
-    // Se existir pelo menos um item em qualquer uma delas, isBodyEmpty será falso.
-    const isBodyEmpty = !hasExperiencia && !hasFormacao && !hasSkills && !hasObjetivo
-
-    const needsReExtraction =
-      force_reextract ||
-      !validCurrentName ||
-      !validExtractedName ||
-      !hasCurrentTelefone ||
-      !hasCurrentEndereco ||
-      !currentDadosExtraidos.skills ||
-      isBodyEmpty ||
-      (!hasObjetivo && !hasExperiencia) ||
-      (Array.isArray(currentDadosExtraidos.skills) &&
-        currentDadosExtraidos.skills.length === 0 &&
-        !currentEmail)
+    const needsReExtraction = Boolean(force_reextract || isDadosExtraidosEmpty)
 
     if (needsReExtraction && candidato.curriculo_url && openaiKey) {
       console.log(
@@ -958,6 +925,10 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
         .eq('id', candidato.id)
 
       // 2. Registra análise com resultado "nao_qualificado" e vaga_id null
+      const hasObjetivo =
+        typeof currentDadosExtraidos.objetivo === 'string' &&
+        currentDadosExtraidos.objetivo.trim().length > 0
+
       const motivoSemVaga =
         hasObjetivo && currentDadosExtraidos.objetivo
           ? `Não há vaga compatível para o cargo "${currentDadosExtraidos.objetivo}". ${justificativaIdentificacao}`

@@ -395,11 +395,50 @@ export async function bulkDeleteCandidates(ids: string[]) {
   if (error) throw error
 }
 
+function isFunctionsFetchOrTimeoutError(error: any): boolean {
+  if (!error) return false
+  const name = String(error.name || '')
+  const msg = String(error.message || '').toLowerCase()
+  return (
+    name === 'FunctionsFetchError' ||
+    name === 'FunctionsHttpError' ||
+    name === 'FunctionsRelayError' ||
+    msg.includes('failed to send a request') ||
+    msg.includes('networkerror') ||
+    msg.includes('fetch failed') ||
+    msg.includes('timeout') ||
+    msg.includes('abort')
+  )
+}
+
 export async function reanalyzeCandidateEdge(candidateId: string) {
-  const { data, error } = await supabase.functions.invoke('reanalisar-candidato', {
-    body: { candidate_id: candidateId },
-  })
-  if (error) throw error
+  const invoke = () =>
+    supabase.functions.invoke('reanalisar-candidato', {
+      body: { candidate_id: candidateId },
+    })
+
+  let { data, error } = await invoke()
+
+  // Se der FunctionsFetchError ou timeout, tenta um retry único automático
+  if (error && isFunctionsFetchOrTimeoutError(error)) {
+    console.warn(
+      `[reanalyzeCandidateEdge] Falha de comunicação/timeout ao reanalisar ${candidateId}. Tentando retry único...`,
+      error,
+    )
+    const retryRes = await invoke()
+    data = retryRes.data
+    error = retryRes.error
+  }
+
+  if (error) {
+    if (isFunctionsFetchOrTimeoutError(error)) {
+      throw new Error(
+        'Tempo limite esgotado ao reanalisar candidato. O servidor demorou mais que o esperado. Por favor, tente novamente.',
+      )
+    }
+    throw new Error(error.message || 'Erro ao processar reanálise do candidato.')
+  }
+
   if (data?.error) throw new Error(data.error)
   return data
 }

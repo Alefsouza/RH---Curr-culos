@@ -38,7 +38,6 @@ export async function triggerLeonardoReanalysis() {
   if (error) throw error
   return data
 }
-
 export async function triggerCobradoresProximidadeReanalysis() {
   const { data, error } = await supabase.functions.invoke('reanalisar-cobradores-proximidade', {
     body: {},
