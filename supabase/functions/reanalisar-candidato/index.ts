@@ -183,7 +183,7 @@ ${extractedText.substring(0, 18000)}`
             }
 
             // Tentativa 2: Google Vision OCR caso falte cabeçalho (nome, telefone, endereco ou email) OU corpo esteja vazio
-            let parsedName = sanitizeAndValidateName(newlyExtracted?.nome)
+            parsedName = sanitizeAndValidateName(newlyExtracted?.nome)
             let hasNewTelefone =
               Boolean(newlyExtracted?.telefone) ||
               (Array.isArray(newlyExtracted?.telefones_celulares) &&
