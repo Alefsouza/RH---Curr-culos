@@ -194,7 +194,7 @@ Deno.serve(async (req: Request) => {
 - cnh_categoria: Categoria exata da CNH (ex: "D", "E", "AB", "AD", "AE", "B", "A"), ou null se não informada
 - objetivo: Cargo pretendido, objetivo profissional ou área informada no currículo (ex: "Cobrador de Ônibus", "Motorista", "Auxiliar Administrativo"), ou null se não identificado
 - resumo_cv: Resumo das qualificações, ou null
-- experiencia_profissional: Lista de experiências anteriores, ou []
+- experiencia_profissional: Lista de experiências profissionais com cargo, empresa, período/datas (início e término, ex: "02/2023 – atual", "01/2020 – 12/2022") e se o vínculo é atual/ativo, ou []
 - skills: Lista de habilidades técnicas e competências, ou []
 - formacao_academica: Lista de cursos, escolaridade, certificações e credenciais (ex: "Credencial de Transporte Coletivo", "Curso de Transporte Coletivo de Passageiros", "Curso MOPP"), ou []
 
@@ -304,7 +304,7 @@ ${extractedText.substring(0, 18000)}`
 - cnh_categoria: Categoria exata da CNH (ex: "D", "E", "AB", "AD", "AE"), ou null se não informada
 - objetivo: Cargo pretendido, objetivo profissional ou área informada no currículo, ou null se não identificado
 - resumo_cv: Resumo das qualificações, ou null
-- experiencia_profissional: Lista de experiências anteriores, ou []
+- experiencia_profissional: Lista de experiências profissionais com cargo, empresa, período/datas (início e término, ex: "02/2023 – atual", "01/2020 – 12/2022") e se o vínculo é atual/ativo, ou []
 - skills: Lista de habilidades técnicas e competências, ou []
 - formacao_academica: Lista de cursos e escolaridade, ou []
 
@@ -526,7 +526,7 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
   "cnh_categoria": "Categoria da CNH (ex: D, E, AB, AD, AE) ou null",
   "objetivo": "Cargo pretendido, objetivo profissional ou área de interesse informada no currículo ou null",
   "resumo_cv": "Resumo profissional ou qualificações ou null",
-  "experiencia_profissional": ["experiências anteriores com cargo e empresa"],
+  "experiencia_profissional": [{"cargo": "Motorista", "empresa": "Nome da Empresa", "periodo": "02/2023 - Atual", "atual": true}],
   "skills": ["habilidades e competências identificadas"],
   "formacao_academica": ["formações, cursos e escolaridade"]
 }`
@@ -1082,6 +1082,49 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
           status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         },
+      )
+    }
+
+    // =========================================================================
+    // SALVAGUARDA 1.7: SANITIZAÇÃO DE MOTIVO PARA EMPRESAS RESTRITAS (PASSADO vs ATUAL)
+    // O candidato só elimina se estiver ATUALMENTE ativo na empresa restrita.
+    // Experiência passada não elimina!
+    // =========================================================================
+    try {
+      const analiseObj = analyzeData?.data?.analise
+      if (analiseObj && analiseObj.detalhes) {
+        let motivoDetalhes = analiseObj.detalhes.motivo || ''
+        const motivoLow = motivoDetalhes.toLowerCase()
+
+        if (
+          motivoLow.includes('lista de restri') ||
+          motivoLow.includes('teve experiência em empresas') ||
+          motivoLow.includes('teve experiencia em empresas')
+        ) {
+          motivoDetalhes = motivoDetalhes
+            .replace(
+              /Reprovado por critério da vaga: candidato teve experiência em empresas que estão na lista de restrição\.?/gi,
+              '',
+            )
+            .replace(
+              /candidato teve experiência em empresas que estão na lista de restrição\.?/gi,
+              '',
+            )
+            .trim()
+
+          analiseObj.detalhes.motivo =
+            motivoDetalhes ||
+            'Candidato com experiência passada em empresa de ônibus (vínculo encerrado; não elimina).'
+          await supabase
+            .from('analises')
+            .update({ detalhes: analiseObj.detalhes })
+            .eq('id', analiseObj.id)
+        }
+      }
+    } catch (restErr: any) {
+      console.warn(
+        '[reanalisar-candidato] Erro ao sanitizar motivo de empresa restrita:',
+        restErr?.message,
       )
     }
 

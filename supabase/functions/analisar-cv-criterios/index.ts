@@ -21,7 +21,12 @@ import {
   KNOWN_CEP_COORDS,
   Coordinates,
 } from '../_shared/proximity.ts'
-import { checkBusOrTruckDriverExperience, isAppOrLightVehicleDriver } from '../_shared/motorista.ts'
+import {
+  checkBusOrTruckDriverExperience,
+  isAppOrLightVehicleDriver,
+  checkRestrictedCompanyStatus,
+  RESTRICTED_COMPANIES,
+} from '../_shared/motorista.ts'
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -378,7 +383,17 @@ DIRETRIZES CRÍTICAS PARA AVALIAÇÃO DE CRITÉRIOS:
    - As regras de flexibilização de escolaridade e credencial de transporte NÃO sobrepõem critérios explícitos da vaga (por exemplo: se a vaga exige CNH D/E para todos os candidatos, o candidato ainda precisa ter CNH D/E).
    - Critérios com alternativas "X ou Y" (como "Categoria D ou E") são atendidos por qualquer uma das alternativas (D ou E), NUNCA restrinja a uma única opção.
    - Não invente critérios eliminatórios que não constem na descrição ou critérios da vaga.
-7. REGRA DE CANDIDATO DIRECIONADO POR EXPERIÊNCIA / FALLBACK DE OBJETIVO:
+
+7. REGRA PERMANENTE DE EMPRESAS RESTRITAS / CONCORRENTES (EXPRESS, MOVEBUSS, MOBIBRASIL, TRANSUNIÃO, AMBIENTAL TRANSPORTE, VIAÇÃO CAMPO BELO, VIAÇÃO GRAJAÚ, VIP TRANSPORTE URBANOS, VIAÇÃO METRÓPOLE PAULISTA, PÊSSEGO, ALLIBUS TRANSPORTES, SANTA BRÍGIDA, VIAÇÃO GATUSA, GATO PRETO, KBPX, A2 TRANSPORTE):
+   - REGRA DO RH: O candidato SÓ É ELIMINADO se estiver trabalhando ATUALMENTE / ATIVO em alguma dessas empresas restritas.
+   - EXPERIÊNCIA PASSADA NESSAS EMPRESAS NÃO ELIMINA DE FORMA ALGUMA!
+   - INSTRUÇÃO OBRIGATÓRIA PARA CHECAR AS DATAS DA EXPERIÊNCIA:
+     * Vínculo ATUAL / ATIVO (ex: "02/2023 – atual", "mar/2026 - emprego atual", "atual", "atualmente", "até o momento", "até hoje", sem data de término): ELIMINA com resultado = "nao_qualificado" e motivo citando que o candidato está ATUALMENTE ATIVO na empresa restrita.
+     * Vínculo PASSADO com data de término (ex: "01/2020 – 12/2022", "15/07/24 a 11/09/26", "04/2023 - 04/2025", "20/05/2014 - 22/02/2024"): NÃO ELIMINA! Candidato com contrato já encerrado está PLENAMENTE APTO quanto a esse critério. NUNCA reprove nem coloque em 'unmatched_criteria' um candidato apenas por "ter experiência" ou "ter trabalhado" em empresa da lista!
+     * Caso o candidato tenha trabalhado nessas empresas no passado e hoje esteja desligado ou em outra empresa, esse critério de restrição é considerado TOTALMENTE ATENDIDO ✅ (coloque em 'matched_criteria').
+     * NUNCA escreva no motivo frases como "candidato teve experiência em empresas que estão na lista de restrição" para justificar reprovação. A reprovação só ocorre se for "atualmente ativo" / "vínculo em aberto".
+
+8. REGRA DE CANDIDATO DIRECIONADO POR EXPERIÊNCIA / FALLBACK DE OBJETIVO:
    - Quando o candidato tiver um objetivo específico que difere do título da vaga (ex: objetivo "Manutenção" avaliado para a vaga de "Abastecedor Leste"), considere prioritariamente a EXPERIÊNCIA PROFISSIONAL do candidato compatível com a vaga (ex: experiência como Frentista, Abastecimento, Posto Shell é altamente aderente para a vaga de Abastecedor).
    - NUNCA reprove o candidato apenas pelo campo "objetivo" ter uma palavra diferente do título da vaga, desde que o histórico profissional atenda ao perfil e às exigências da vaga.
 
@@ -842,6 +857,144 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
             .replace(/categoria da cnh e /gi, '')
             .replace(/de categoria da cnh/gi, '')
             .replace(/critérios de categoria da cnh/gi, 'critério')
+        }
+      }
+    }
+
+    // =========================================================================
+    // SALVAGUARDA DETERMINÍSTICA: EMPRESAS RESTRITAS (VÍNCULO ATUAL vs PASSADO)
+    // Regra do RH: O candidato só é ELIMINADO se estiver trabalhando ATUALMENTE em alguma
+    // das empresas restritas (Express, Movebuss, MobiBrasil, Transunião, Ambiental Transporte,
+    // Viação Campo Belo, Viação Grajaú, Vip transporte urbanos, Viação Metrópole Paulista,
+    // Pêssego, Allibus Transportes, Santa Brígida, Viação Gatusa, Gato Preto, KBPX, A2 Transporte).
+    // Experiência PASSADA NÃO elimina!
+    // =========================================================================
+    const restrictedCheck = checkRestrictedCompanyStatus(cvData)
+    const motivoLowerAll = (motivoFinal || '').toLowerCase()
+    const summaryLowerAll = (resultJson.detalhes?.summary || '').toLowerCase()
+
+    // 1. Caso o candidato NÃO esteja atualmente ativo na empresa restrita (teve apenas vínculo no passado)
+    if (!restrictedCheck.isCurrentlyEmployedInRestricted) {
+      // Remover menções indevidas em unmatched_criteria que afirmem restrição/concorrência de empresa
+      if (Array.isArray(resultJson.detalhes?.unmatched_criteria)) {
+        resultJson.detalhes.unmatched_criteria = resultJson.detalhes.unmatched_criteria.filter(
+          (item: any) => {
+            const n = (item?.nome || '').toLowerCase()
+            const m = (item?.motivo || '').toLowerCase()
+            const isEmpresaRestritaCrit =
+              ((n.includes('empresa') || n.includes('concorrente') || n.includes('restri')) &&
+                RESTRICTED_COMPANIES.some((rc) => n.includes(rc) || m.includes(rc))) ||
+              m.includes('lista de restri') ||
+              m.includes('teve experiência em empresas') ||
+              m.includes('teve experiencia em empresas')
+            return !isEmpresaRestritaCrit
+          },
+        )
+      }
+
+      // Adicionar em matched_criteria se tiver passado ou se a empresa foi mencionada
+      if (
+        restrictedCheck.hasPastExperienceInRestricted &&
+        Array.isArray(resultJson.detalhes?.matched_criteria)
+      ) {
+        const jaConstaRestrita = resultJson.detalhes.matched_criteria.some((item: any) => {
+          const n = (item?.nome || '').toLowerCase()
+          return n.includes('empresa') || n.includes('restri')
+        })
+        if (!jaConstaRestrita) {
+          resultJson.detalhes.matched_criteria.push({
+            nome: 'Empresas Restritas (Vínculo Atual vs Passado)',
+            evidencia: `Candidato não possui vínculo atual em empresas restritas. Experiência passada em ${restrictedCheck.restrictedCompanyName || 'empresa do setor'} (${restrictedCheck.currentPeriodDescription || 'encerrada'}) não é eliminatória.`,
+          })
+        }
+      }
+
+      // Limpar motivo caso a IA tenha falado que foi reprovado por ter experiência passada em empresas restritas
+      const hasFalseRestrictedReprovacao =
+        motivoLowerAll.includes('lista de restri') ||
+        motivoLowerAll.includes('teve experiência em empresas que estão na lista') ||
+        motivoLowerAll.includes('teve experiencia em empresas que estao na lista') ||
+        motivoLowerAll.includes('empresa que está na lista de conc') ||
+        motivoLowerAll.includes('empresa que esta na lista de conc') ||
+        (motivoLowerAll.includes('concorrente') && !restrictedCheck.isCurrentlyEmployedInRestricted)
+
+      if (hasFalseRestrictedReprovacao) {
+        // Limpar menções errôneas do motivo
+        motivoFinal = motivoFinal
+          .replace(
+            /Reprovado por critério da vaga: candidato teve experiência em empresas que estão na lista de restrição\.?/gi,
+            '',
+          )
+          .replace(
+            /candidato teve experiência em empresas que estão na lista de restrição\.?/gi,
+            '',
+          )
+          .replace(
+            /Candidato não pode ser qualificado devido à atividade em uma empresa que está na lista de concorrentes da vaga[^.]*\.?/gi,
+            '',
+          )
+          .replace(
+            /candidato foi reprovado devido a estar ativo em uma empresa concorrente[^.]*\.?/gi,
+            '',
+          )
+          .replace(
+            /Candidato está ativo em uma empresa que compromete sua elegibilidade para a vaga\.?/gi,
+            '',
+          )
+          .replace(/por estar ativo em empresa da lista de restrição e /gi, 'por ')
+          .replace(/por estar ativo em empresa da lista de restrição/gi, '')
+          .replace(/e por estar ativo em empresa da lista de restrição/gi, '')
+          .trim()
+
+        if (resultJson.detalhes?.summary) {
+          resultJson.detalhes.summary = resultJson.detalhes.summary
+            .replace(
+              /candidato teve experiência em empresas que estão na lista de restrição/gi,
+              'experiência passada em empresa de ônibus (vínculo encerrado)',
+            )
+            .replace(/mas está ativo em uma empresa concorrente[^.]*\.?/gi, '')
+            .replace(/mas trabalha atualmente em uma empresa concorrente[^.]*\.?/gi, '')
+        }
+
+        // Se o motivo ficou vazio ou se o candidato havia sido reprovado exclusivamente por isso
+        const remainingUnmatched = Array.isArray(resultJson.detalhes?.unmatched_criteria)
+          ? resultJson.detalhes.unmatched_criteria
+          : []
+
+        if (
+          statusFinal === 'nao_qualificado' &&
+          remainingUnmatched.length === 0 &&
+          qualificadoPorLocalizacao
+        ) {
+          statusFinal = 'qualificado'
+          motivoFinal = `Qualificado: Candidato atende a todos os critérios da vaga. Experiência passada em empresas de transporte coletivo (${restrictedCheck.restrictedCompanyName || 'setor'}) não elimina o candidato (regra de empresas restritas aplica-se exclusivamente a vínculos atuais).`
+          if (resultJson.detalhes) {
+            resultJson.detalhes.score = Math.max(resultJson.detalhes.score || 0, 85)
+          }
+        } else if (remainingUnmatched.length > 0) {
+          const descRestantes = remainingUnmatched.map((u: any) => u.motivo || u.nome).join('; ')
+          motivoFinal =
+            motivoFinal ||
+            `Não atende aos critérios: ${descRestantes}. (Critério de empresas restritas atendido: sem vínculo atual).`
+        }
+      }
+    } else {
+      // 2. O candidato está COMPROVADAMENTE ATUALMENTE EMPREGADO em empresa restrita!
+      statusFinal = 'nao_qualificado'
+      motivoFinal = `Reprovado por vínculo atual em empresa restrita: candidato está atualmente ativo/empregado na empresa ${restrictedCheck.restrictedCompanyName} (${restrictedCheck.currentPeriodDescription}), que consta na lista de empresas restritas da vaga.`
+      if (resultJson.detalhes) {
+        resultJson.detalhes.score = Math.min(resultJson.detalhes.score || 60, 50)
+        if (!Array.isArray(resultJson.detalhes.unmatched_criteria)) {
+          resultJson.detalhes.unmatched_criteria = []
+        }
+        const alreadyHas = resultJson.detalhes.unmatched_criteria.some((u: any) =>
+          (u.nome || '').toLowerCase().includes('restri'),
+        )
+        if (!alreadyHas) {
+          resultJson.detalhes.unmatched_criteria.push({
+            nome: 'Empresas Restritas (Vínculo Atual)',
+            motivo: `Candidato está trabalhando atualmente na empresa ${restrictedCheck.restrictedCompanyName} (${restrictedCheck.currentPeriodDescription}), violando o critério eliminatório de não estar ativo em empresas restritas.`,
+          })
         }
       }
     }

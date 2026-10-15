@@ -252,7 +252,7 @@ Deno.serve(async (req: Request) => {
 - cnh: Informação sobre CNH / Carteira de Habilitação identificada (ex: "Categoria D", "CNH D", "Categoria AB", "Categoria E", "Possui CNH D"), ou null se não informada
 - cnh_categoria: Categoria exata da CNH (ex: "D", "E", "AB", "AD", "AE", "B", "A"), ou null se não informada
 - objetivo: Cargo pretendido, objetivo profissional ou área de interesse expressamente informada no currículo (ex: "Cobrador de Ônibus", "Motorista", "Auxiliar Administrativo", "Mecânico"), ou null se não identificado
-- experiencia_profissional: Lista de experiências anteriores com cargos e empresas, ou []
+- experiencia_profissional: Lista de experiências profissionais com cargo, empresa, período/datas (início e término, ex: "02/2023 – atual", "01/2020 – 12/2022") e se o vínculo é atual/ativo, ou []
 - skills: Lista de habilidades técnicas e competências, ou []
 - formacao_academica: Lista de cursos, formações, escolaridade, certificações e credenciais (ex: "Credencial de Transporte Coletivo", "Curso de Transporte Coletivo de Passageiros", "Curso MOPP"), ou []
 
@@ -503,7 +503,7 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
   "cnh": "Informação sobre CNH/Habilitação (ex: Categoria D) ou null",
   "cnh_categoria": "Categoria da CNH (ex: D, E, AB, AD, AE) ou null",
   "objetivo": "Cargo pretendido, objetivo profissional ou área de interesse informada no currículo ou null",
-  "experiencia_profissional": ["experiências anteriores com cargo e empresa"],
+  "experiencia_profissional": [{"cargo": "Motorista", "empresa": "Nome da Empresa", "periodo": "02/2023 - Atual", "atual": true}],
   "skills": ["habilidades e competências identificadas"],
   "formacao_academica": ["formações, cursos e escolaridade"]
 }`

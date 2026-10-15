@@ -169,7 +169,7 @@ Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
   "cnh": "string ou null",
   "cnh_categoria": "string ou null",
   "objetivo": "string ou null",
-  "experiencia_profissional": ["string"],
+  "experiencia_profissional": [{"cargo": "Motorista", "empresa": "Nome da Empresa", "periodo": "02/2023 - Atual", "atual": true}],
   "skills": ["string"],
   "formacao_academica": ["string"]
 }

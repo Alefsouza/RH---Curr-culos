@@ -193,3 +193,155 @@ export function checkBusOrTruckDriverExperience(cvData: any): DriverExperienceCh
 
   return result
 }
+
+/**
+ * Lista oficial de empresas restritas / concorrentes definidas pelo RH da Via Sudeste:
+ * Express, Movebuss, MobiBrasil, Transunião, Ambiental Transporte, Viação Campo Belo,
+ * Viação Grajaú, Vip transporte urbanos, Viação Metrópole Paulista, Pêssego,
+ * Allibus Transportes, Santa Brígida, Viação Gatusa, Gato Preto, KBPX e A2 Transporte.
+ *
+ * REGRA DO RH:
+ * O candidato só é ELIMINADO se estiver trabalhando ATUALMENTE em alguma dessas empresas.
+ * Experiência PASSADA nessas empresas NÃO elimina.
+ */
+export const RESTRICTED_COMPANIES = [
+  'express',
+  'movebuss',
+  'move buss',
+  'mobibrasil',
+  'mobi brasil',
+  'transuniao',
+  'transuniao transportes',
+  'ambiental transporte',
+  'ambiental transportes',
+  'viacao campo belo',
+  'campo belo',
+  'viacao grajau',
+  'grajau',
+  'vip transporte urbanos',
+  'vip transportes urbanos',
+  'vip transporte',
+  'vip transportes',
+  'viacao metropole paulista',
+  'metropole paulista',
+  'metropole',
+  'pessego',
+  'pessego transportes',
+  'allibus transportes',
+  'allibus',
+  'santa brigida',
+  'viacao santa brigida',
+  'viacao gatusa',
+  'gatusa',
+  'gato preto',
+  'viacao gato preto',
+  'kbpx',
+  'a2 transporte',
+  'a2 transportes',
+]
+
+export interface RestrictedCompanyCheck {
+  isCurrentlyEmployedInRestricted: boolean
+  hasPastExperienceInRestricted: boolean
+  restrictedCompanyName: string | null
+  currentPeriodDescription: string | null
+  evidenceText: string | null
+}
+
+/**
+ * Avalia se o candidato está ATUALMENTE empregado em empresa restrita vs experiência passada.
+ */
+export function checkRestrictedCompanyStatus(cvData: any): RestrictedCompanyCheck {
+  const result: RestrictedCompanyCheck = {
+    isCurrentlyEmployedInRestricted: false,
+    hasPastExperienceInRestricted: false,
+    restrictedCompanyName: null,
+    currentPeriodDescription: null,
+    evidenceText: null,
+  }
+
+  if (!cvData) return result
+
+  let rawExperiences: any[] = []
+  if (Array.isArray(cvData.experiencia_profissional)) {
+    rawExperiences = cvData.experiencia_profissional
+  } else if (Array.isArray(cvData.experiencias)) {
+    rawExperiences = cvData.experiencias
+  } else if (Array.isArray(cvData.historico_profissional)) {
+    rawExperiences = cvData.historico_profissional
+  } else if (typeof cvData.experiencia_profissional === 'string') {
+    rawExperiences = [cvData.experiencia_profissional]
+  }
+
+  for (const exp of rawExperiences) {
+    let empresa = ''
+    let cargo = ''
+    let periodo = ''
+    let isAtualExplicit = false
+    let fullText = ''
+
+    if (typeof exp === 'string') {
+      fullText = exp
+      empresa = exp
+      periodo = exp
+    } else if (typeof exp === 'object' && exp !== null) {
+      empresa = exp.empresa || exp.company || ''
+      cargo = exp.cargo || exp.funcao || exp.titulo || exp.role || ''
+      periodo = exp.periodo || exp.datas || exp.dates || exp.tempo || ''
+      isAtualExplicit = Boolean(exp.atual || exp.is_current || exp.ativo)
+      fullText = `${cargo} ${empresa} ${periodo} ${exp.descricao || ''}`
+    }
+
+    const normEmpresa = normalizeText(empresa)
+    const normFull = normalizeText(fullText)
+
+    // Verifica se coincide com alguma empresa restrita
+    const matchedRestricted = RESTRICTED_COMPANIES.find((rc) => {
+      return normEmpresa.includes(rc) || normFull.includes(rc)
+    })
+
+    if (!matchedRestricted) continue
+
+    // Detectar se o vínculo é ATUAL ou PASSADO
+    const normPeriodo = normalizeText(periodo)
+    const textToCheck = `${normPeriodo} ${normFull}`
+
+    // Padrões que indicam vínculo ATUAL / ATIVO
+    const isAtualRegex =
+      /\b(atual|atualmente|presente|present|o momento|ate o momento|ate hoje|trabalhando atualmente|emprego atual|ativo)\b/i
+    const isExplicitCurrent = isAtualExplicit || isAtualRegex.test(textToCheck)
+
+    // Padrões com datas que indicam término explícito no passado:
+    // Ex: "02/2023 - 04/2025", "15/07/24 a 11/09/26", "2014 - 2024", "mai/2021 a abr/2023", "01/2020 a 12/2022"
+    // Padrão: data inicio [separador a/ate/-] data fim (onde a data fim NÃO é atual)
+    const hasPastDateRangeRegex =
+      /(?:\d{2}[\/\.]\d{2}[\/\.]\d{2,4}|\d{2}[\/\.]\d{4}|\d{4})\s*(?:[aáà\-]|\s+ate\s+|\s+a\s+)\s*(?:\d{2}[\/\.]\d{2}[\/\.]\d{2,4}|\d{2}[\/\.]\d{4}|\d{4})/i
+    const hasExplicitEndDate = hasPastDateRangeRegex.test(periodo)
+
+    if (isExplicitCurrent && !hasExplicitEndDate) {
+      result.isCurrentlyEmployedInRestricted = true
+      result.restrictedCompanyName = empresa || matchedRestricted
+      result.currentPeriodDescription = periodo || 'Emprego atual / Ativo'
+      result.evidenceText = `Trabalhando atualmente na empresa restrita ${empresa || matchedRestricted} (${periodo || 'ativo/atual'}).`
+      // Se já achou atual, não precisa sobrescrever com passado
+      break
+    } else if (hasExplicitEndDate || normPeriodo.length > 0) {
+      // Tem término no passado!
+      result.hasPastExperienceInRestricted = true
+      if (!result.restrictedCompanyName) {
+        result.restrictedCompanyName = empresa || matchedRestricted
+        result.currentPeriodDescription = periodo
+        result.evidenceText = `Experiência passada na empresa ${empresa || matchedRestricted} (${periodo}) — vínculo encerrado, não elimina.`
+      }
+    } else {
+      // Sem datas explícitas nem indicação de atual, mas tem a empresa
+      result.hasPastExperienceInRestricted = true
+      if (!result.restrictedCompanyName) {
+        result.restrictedCompanyName = empresa || matchedRestricted
+        result.currentPeriodDescription = periodo || 'Período não especificado'
+      }
+    }
+  }
+
+  return result
+}

@@ -90,7 +90,7 @@ Extraia com cuidado preservando a grafia correta com acentos em português:
 - cnh_categoria: Categoria exata da CNH (ex: "D", "E", "AB", "AD", "AE", "B", "A"), ou null se não informada
 - objetivo: Cargo pretendido, objetivo profissional ou área de interesse informada no currículo (ex: "Cobrador de Ônibus", "Motorista", "Auxiliar Administrativo"), ou null se não identificado
 - resumo_cv: Resumo das qualificações e perfil profissional, ou null se não identificado
-- experiencia_profissional: Lista de experiências anteriores com cargos e empresas, ou [] se não houver
+- experiencia_profissional: Lista de experiências profissionais com cargo, empresa, período/datas (início e término, ex: "02/2023 – atual", "01/2020 – 12/2022") e se o vínculo é atual/ativo, ou [] se não houver
 - skills: Lista de habilidades técnicas e competências, ou [] se não houver
 - formacao_academica: Lista de cursos, escolaridade, certificações e credenciais (ex: "Credencial de Transporte Coletivo", "Curso de Transporte Coletivo de Passageiros", "Curso MOPP"), ou [] se não houver
 
