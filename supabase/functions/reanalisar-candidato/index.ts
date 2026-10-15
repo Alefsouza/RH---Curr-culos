@@ -171,6 +171,10 @@ Deno.serve(async (req: Request) => {
             const openai = new OpenAI({ apiKey: openaiKey })
 
             let newlyExtracted: any = null
+            let parsedName: string | null = sanitizeAndValidateName(candidato.nome)
+            if (parsedName && parsedName.toLowerCase() === 'candidato') {
+              parsedName = null
+            }
 
             // Tentativa 1: Via texto bruto extraído
             if (extractedText && extractedText.trim().length >= 30) {
@@ -228,6 +232,7 @@ ${extractedText.substring(0, 18000)}`
 
             const isHeaderMissing =
               !parsedName ||
+              parsedName.toLowerCase() === 'candidato' ||
               !hasNewTelefone ||
               !hasNewEndereco ||
               !hasNewEmail ||
@@ -257,6 +262,10 @@ ${extractedText.substring(0, 18000)}`
 
             let visionOcrError: any = null
             let ocrCapturedText: string | null = null
+
+            console.log(
+              `[reanalisar-candidato] DEBUG OCR: parsedName='${parsedName}', isHeaderMissing=${isHeaderMissing}, shouldTriggerOcr=${shouldTriggerOcr}, isDocx=${isDocx}, bytes=${fileBytes.length}`,
+            )
 
             if (shouldTriggerOcr && !isDocx && fileBytes.length > 0) {
               try {
