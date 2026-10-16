@@ -80,8 +80,8 @@ async function extractCandidateData(
 Extraia com cuidado preservando a grafia correta com acentos em português:
 - nome: Nome completo REAL extraído do currículo, ou null se não identificado
 - email: Endereço de e-mail REAL válido, ou null se não identificado
-- telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11987654321"]) ou [] se nenhum
-- telefone: Telefone celular principal ou null se não identificado
+- telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11987654321"]) ou [] se nenhum. ATENÇÃO: capture celulares mesmo com o 9º dígito separado por espaço ou traço (ex: "(11) 9 5386-9329", "11 9 5386-9329"), normalizando SEMPRE para 11 dígitos com o 9 inicial (ex: "11953869329"), NUNCA descartando o 9 isolado.
+- telefone: Telefone celular principal normalizado com DDD (11 dígitos, ex: "11953869329") ou null se não identificado
 - endereco: Endereço COMPLETO com logradouro, número, complemento, bairro, cidade, UF e CEP se existirem no documento (ex: "R. Timóteo, 88 - Jardim Paraguaçu, São Paulo - SP, 03938-050"). NUNCA trunque para apenas "Jardim - SP" ou apenas o bairro se houver rua, número, cidade ou CEP no currículo.
 - cep: Código de Endereçamento Postal brasileiro (ex: "03938-050"), ou null se não constar
 - idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
@@ -1026,7 +1026,8 @@ Deno.serve(async (req: Request) => {
 
     if (body?.reanalyzeCandidateId) {
       const targetCandidateId = String(body.reanalyzeCandidateId)
-      console.log(`[sync-outlook-cvs] Ação especial: reanalisar candidato ${targetCandidateId}...`)
+      const forceReextract = body.force_reextract !== undefined ? Boolean(body.force_reextract) : true
+      console.log(`[sync-outlook-cvs] Ação especial: reanalisar candidato ${targetCandidateId} (force_reextract: ${forceReextract})...`)
       try {
         const reanRes = await fetch(`${supabaseUrl}/functions/v1/reanalisar-candidato`, {
           method: 'POST',
@@ -1036,7 +1037,7 @@ Deno.serve(async (req: Request) => {
           },
           body: JSON.stringify({
             candidate_id: targetCandidateId,
-            force_reextract: true,
+            force_reextract: forceReextract,
           }),
         })
         const reanText = await reanRes.text()
@@ -1055,6 +1056,41 @@ Deno.serve(async (req: Request) => {
         )
       } catch (callErr: any) {
         return new Response(JSON.stringify({ error: callErr.message, stack: callErr.stack }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+    }
+
+    if (body?.callTargetFunction && typeof body?.callTargetFunction === 'string') {
+      const targetFuncName = body.callTargetFunction
+      const targetBody = body.callTargetBody || {}
+      console.log(`[sync-outlook-cvs] Ação especial: proxy para ${targetFuncName}...`)
+      try {
+        const callRes = await fetch(`${supabaseUrl}/functions/v1/${targetFuncName}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${supabaseKey}`,
+          },
+          body: JSON.stringify(targetBody),
+        })
+        const textRes = await callRes.text()
+        let jsonRes: any
+        try {
+          jsonRes = JSON.parse(textRes)
+        } catch {
+          jsonRes = { raw: textRes }
+        }
+        return new Response(
+          JSON.stringify({ result: jsonRes, ok: callRes.ok, status: callRes.status }),
+          {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          },
+        )
+      } catch (proxyErr: any) {
+        return new Response(JSON.stringify({ error: proxyErr.message, stack: proxyErr.stack }), {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })

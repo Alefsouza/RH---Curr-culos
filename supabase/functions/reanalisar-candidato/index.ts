@@ -153,8 +153,8 @@ Deno.serve(async (req: Request) => {
               const promptText = `Extraia com máxima atenção todos os dados cadastrais e profissionais do currículo:
 - nome: Nome completo REAL do candidato em destaque no cabeçalho ou topo (ex: "VALDINÉIA DOMINGUES", "Valdinéia Domingues"). Preserve todos os acentos e retorne null apenas se não houver nome de pessoa física.
 - email: E-mail REAL do candidato (ex: "valdineiadomingues82@gmail.com"), ou null se não identificado
-- telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11974697877"]) ou [] se nenhum
-- telefone: Telefone principal ou null
+- telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11974697877"]) ou [] se nenhum. ATENÇÃO: capture celulares mesmo com o 9º dígito separado por espaço ou traço (ex: "(11) 9 5386-9329", "11 9 5386-9329"), normalizando SEMPRE para 11 dígitos com o 9 inicial (ex: "11953869329"), NUNCA descartando o 9 isolado.
+- telefone: Telefone celular principal normalizado com DDD (11 dígitos, ex: "11953869329") ou null
 - endereco: Endereço completo COMPLETO com logradouro, número, complemento, bairro, cidade, UF e CEP se existirem no documento (ex: "R. Timóteo, 88 - Jardim Paraguaçu, São Paulo - SP, 03938-050"). NUNCA trunque para apenas "Jardim - SP" ou apenas o bairro se houver rua, número, cidade ou CEP no currículo.
 - cep: Código de Endereçamento Postal (ex: "03938-050"), ou null se não constar no documento
 - idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
@@ -263,8 +263,8 @@ ${extractedText.substring(0, 18000)}`
 
                   const ocrPromptText = `Extraia com máxima atenção todos os dados cadastrais (especialmente cabeçalho/contatos, nome em imagem de topo, Canva ou layout estilizado) e profissionais do currículo com OCR:
     - nome: Nome completo REAL da pessoa física em destaque no cabeçalho, topo ou faixa colorida superior (ex: "JOÃO BATISTA DA SILVA", "VALDINÉIA DOMINGUES"). Em currículos do Canva ou editores gráficos, o nome frequentemente aparece nas primeiras linhas do OCR como título principal. Preserve todos os acentos e retorne null apenas se absolutamente não houver nome de pessoa física. NUNCA retorne "Candidato" ou nome genérico.- email: E-mail REAL do candidato (ex: "exemplo@gmail.com"), ou null se não identificado
-- telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11974697877", "11988887777"]) ou [] se nenhum
-- telefone: Telefone principal ou null
+- telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11974697877", "11988887777"]) ou [] se nenhum. ATENÇÃO: capture celulares mesmo com o 9º dígito separado por espaço ou traço (ex: "(11) 9 5386-9329"), normalizando SEMPRE para 11 dígitos com o 9 inicial (ex: "11953869329"), NUNCA descartando o 9 isolado.
+- telefone: Telefone celular principal normalizado com DDD (11 dígitos, ex: "11953869329") ou null
 - endereco: Endereço completo COMPLETO com logradouro, número, complemento, bairro, cidade, UF e CEP se existirem no documento (ex: "R. Timóteo, 88 - Jardim Paraguaçu, São Paulo - SP, 03938-050"). NUNCA trunque para apenas "Jardim - SP" ou apenas o bairro se houver rua, número, cidade ou CEP no currículo.
 - cep: CEP brasileiro completo (ex: "03938-050"), ou null se não constar
 - idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
@@ -485,8 +485,8 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
 {
   "nome": "Nome completo REAL do candidato presente no cabeçalho/documento ou null",
   "email": "Endereço de e-mail real do candidato ou null",
-  "telefones_celulares": ["telefones celulares reais encontrados com DDD"],
-  "telefone": "Telefone celular principal com DDD ou null",
+  "telefones_celulares": ["telefones celulares reais com DDD (11 dígitos, ex: 11953869329, nunca descartar 9 isolado)"],
+  "telefone": "Telefone celular principal com DDD (11 dígitos, ex: 11953869329) ou null",
   "endereco": "Endereço COMPLETO com rua, número, bairro, cidade, UF e CEP (ex: R. Timóteo, 88 - Jardim Paraguaçu, São Paulo - SP, 03938-050) ou null",
   "cep": "CEP formatado 00000-000 ou null",
   "idade": "Número inteiro da idade ou null",
@@ -1072,7 +1072,11 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
         if (
           motivoLow.includes('lista de restri') ||
           motivoLow.includes('teve experiência em empresas') ||
-          motivoLow.includes('teve experiencia em empresas')
+          motivoLow.includes('teve experiencia em empresas') ||
+          motivoLow.includes('mobibrasil') ||
+          motivoLow.includes('movebuss') ||
+          motivoLow.includes('express') ||
+          motivoLow.includes('transunião')
         ) {
           motivoDetalhes = motivoDetalhes
             .replace(
@@ -1083,6 +1087,10 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
               /candidato teve experiência em empresas que estão na lista de restrição\.?/gi,
               '',
             )
+            .replace(/e por possuir vínculo atual com a empresa [^,.]*[,.]?/gi, '')
+            .replace(/por possuir vínculo atual com a empresa [^,.]*[,.]?/gi, '')
+            .replace(/vínculo atual com a empresa [^,.]*[,.]?/gi, '')
+            .replace(/vínculo atual com [^,.]*[,.]?/gi, '')
             .trim()
 
           analiseObj.detalhes.motivo =

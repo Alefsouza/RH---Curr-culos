@@ -387,11 +387,13 @@ DIRETRIZES CRÍTICAS PARA AVALIAÇÃO DE CRITÉRIOS:
 7. REGRA PERMANENTE DE EMPRESAS RESTRITAS / CONCORRENTES (EXPRESS, MOVEBUSS, MOBIBRASIL, TRANSUNIÃO, AMBIENTAL TRANSPORTE, VIAÇÃO CAMPO BELO, VIAÇÃO GRAJAÚ, VIP TRANSPORTE URBANOS, VIAÇÃO METRÓPOLE PAULISTA, PÊSSEGO, ALLIBUS TRANSPORTES, SANTA BRÍGIDA, VIAÇÃO GATUSA, GATO PRETO, KBPX, A2 TRANSPORTE):
    - REGRA DO RH: O candidato SÓ É ELIMINADO se estiver trabalhando ATUALMENTE / ATIVO em alguma dessas empresas restritas.
    - EXPERIÊNCIA PASSADA NESSAS EMPRESAS NÃO ELIMINA DE FORMA ALGUMA!
+   - REGRA MANDATÓRIA DE DATAS: compare a data de término da experiência com a data atual (hoje). Término já passado (ex.: "15/07/24 á 11/09/26" quando hoje é depois de 11/09/2026) = experiência ENCERRADA, NÃO vínculo atual — NUNCA reprove por isso!
+   - Só elimine por empresa restrita se: o texto traz "atual", "presente", "até o momento" sem data de término, ou a data de término for FUTURA em relação a hoje.
    - INSTRUÇÃO OBRIGATÓRIA PARA CHECAR AS DATAS DA EXPERIÊNCIA:
-     * Vínculo ATUAL / ATIVO (ex: "02/2023 – atual", "mar/2026 - emprego atual", "atual", "atualmente", "até o momento", "até hoje", sem data de término): ELIMINA com resultado = "nao_qualificado" e motivo citando que o candidato está ATUALMENTE ATIVO na empresa restrita.
-     * Vínculo PASSADO com data de término (ex: "01/2020 – 12/2022", "15/07/24 a 11/09/26", "04/2023 - 04/2025", "20/05/2014 - 22/02/2024"): NÃO ELIMINA! Candidato com contrato já encerrado está PLENAMENTE APTO quanto a esse critério. NUNCA reprove nem coloque em 'unmatched_criteria' um candidato apenas por "ter experiência" ou "ter trabalhado" em empresa da lista!
+     * Vínculo ATUAL / ATIVO (ex: "02/2023 – atual", "mar/2026 - emprego atual", "atual", "atualmente", "até o momento", "até hoje", sem data de término ou com término no futuro): ELIMINA com resultado = "nao_qualificado" e motivo citando que o candidato está ATUALMENTE ATIVO na empresa restrita.
+     * Vínculo PASSADO com data de término anterior a hoje (ex: "01/2020 – 12/2022", "15/07/24 á 11/09/26", "15/07/24 a 11/09/26", "04/2023 - 04/2025", "20/05/2014 - 22/02/2024"): NÃO ELIMINA! Candidato com contrato já encerrado está PLENAMENTE APTO quanto a esse critério. NUNCA reprove nem coloque em 'unmatched_criteria' um candidato apenas por "ter experiência" ou "ter trabalhado" em empresa da lista!
      * Caso o candidato tenha trabalhado nessas empresas no passado e hoje esteja desligado ou em outra empresa, esse critério de restrição é considerado TOTALMENTE ATENDIDO ✅ (coloque em 'matched_criteria').
-     * NUNCA escreva no motivo frases como "candidato teve experiência em empresas que estão na lista de restrição" para justificar reprovação. A reprovação só ocorre se for "atualmente ativo" / "vínculo em aberto".
+     * NUNCA escreva no motivo frases como "candidato teve experiência em empresas que estão na lista de restrição" ou "possui vínculo atual com a empresa MobiBrasil" se o período já encerrou. A reprovação só ocorre se for "atualmente ativo" / "vínculo em aberto".
 
 8. REGRA DE CANDIDATO DIRECIONADO POR EXPERIÊNCIA / FALLBACK DE OBJETIVO:
    - Quando o candidato tiver um objetivo específico que difere do título da vaga (ex: objetivo "Manutenção" avaliado para a vaga de "Abastecedor Leste"), considere prioritariamente a EXPERIÊNCIA PROFISSIONAL do candidato compatível com a vaga (ex: experiência como Frentista, Abastecimento, Posto Shell é altamente aderente para a vaga de Abastecedor).
@@ -916,7 +918,12 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
         motivoLowerAll.includes('teve experiencia em empresas que estao na lista') ||
         motivoLowerAll.includes('empresa que está na lista de conc') ||
         motivoLowerAll.includes('empresa que esta na lista de conc') ||
-        (motivoLowerAll.includes('concorrente') && !restrictedCheck.isCurrentlyEmployedInRestricted)
+        (motivoLowerAll.includes('concorrente') && !restrictedCheck.isCurrentlyEmployedInRestricted) ||
+        (motivoLowerAll.includes('mobibrasil') && !restrictedCheck.isCurrentlyEmployedInRestricted) ||
+        (motivoLowerAll.includes('mobi brasil') && !restrictedCheck.isCurrentlyEmployedInRestricted) ||
+        (motivoLowerAll.includes('express') && !restrictedCheck.isCurrentlyEmployedInRestricted) ||
+        (motivoLowerAll.includes('movebuss') && !restrictedCheck.isCurrentlyEmployedInRestricted) ||
+        (motivoLowerAll.includes('transunião') && !restrictedCheck.isCurrentlyEmployedInRestricted)
 
       if (hasFalseRestrictedReprovacao) {
         // Limpar menções errôneas do motivo
@@ -944,6 +951,10 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
           .replace(/por estar ativo em empresa da lista de restrição e /gi, 'por ')
           .replace(/por estar ativo em empresa da lista de restrição/gi, '')
           .replace(/e por estar ativo em empresa da lista de restrição/gi, '')
+          .replace(/e por possuir vínculo atual com a empresa [^,.]*[,.]?/gi, '')
+          .replace(/por possuir vínculo atual com a empresa [^,.]*[,.]?/gi, '')
+          .replace(/vínculo atual com a empresa [^,.]*[,.]?/gi, '')
+          .replace(/vínculo atual com [^,.]*[,.]?/gi, '')
           .trim()
 
         if (resultJson.detalhes?.summary) {

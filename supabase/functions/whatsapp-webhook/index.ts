@@ -3,7 +3,16 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 
 export const normalizePhone = (phone: string | null | undefined): string | null => {
   if (!phone) return null
-  let digits = phone.replace(/\D/g, '')
+  const raw = String(phone).trim()
+  if (!raw) return null
+
+  const isolatedNineMatch = raw.match(/(?:(?:\+?55\s*)?(?:\(?([1-9]{2})\)?\s*))?9\s*(\d{4})[\s.-]?(\d{4})/)
+  if (isolatedNineMatch) {
+    const ddd = isolatedNineMatch[1] || '11'
+    return `${ddd}9${isolatedNineMatch[2]}${isolatedNineMatch[3]}`
+  }
+
+  let digits = raw.replace(/\D/g, '')
   if (digits.startsWith('55') && digits.length > 11) {
     digits = digits.substring(2)
   }

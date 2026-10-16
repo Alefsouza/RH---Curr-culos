@@ -41,6 +41,35 @@ Deno.serve(async (req: Request) => {
       return isUnanalyzed || isGenericName
     })
 
+    // Ação direta para invocar reanalisar-candidato para Cícero Crisostomo dos Santos
+    if (body.reanalyzeCicero) {
+      console.log('[batch-reanalyze-all] Executando reanálise para Cícero Crisostomo dos Santos...')
+      const ciceroRes = await fetch(`${supabaseUrl}/functions/v1/reanalisar-candidato`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({
+          candidate_id: '0eb00581-a1db-4172-b761-a409dd02761e',
+          force_reextract: false,
+        }),
+      })
+      const ciceroText = await ciceroRes.text()
+      let ciceroJson: any
+      try {
+        ciceroJson = JSON.parse(ciceroText)
+      } catch {
+        ciceroJson = { raw: ciceroText }
+      }
+      return new Response(
+        JSON.stringify({ ciceroJson, ok: ciceroRes.ok, status: ciceroRes.status }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
+    }
+
     // Ação direta para invocar reanalisar-candidato para Leonardo Augusto Damasceno
     if (body.reanalyzeLeonardo) {
       console.log('[batch-reanalyze-all] Executando reanálise para Leonardo Augusto Damasceno...')

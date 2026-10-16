@@ -17,7 +17,16 @@ export function cn(...inputs: ClassValue[]) {
  */
 export function normalizePhoneNumber(phone: string | null | undefined): string {
   if (!phone) return ''
-  let cleaned = phone.replace(/\D/g, '')
+  const raw = String(phone).trim()
+  if (!raw) return ''
+
+  const isolatedNineMatch = raw.match(/(?:(?:\+?55\s*)?(?:\(?([1-9]{2})\)?\s*))?9\s*(\d{4})[\s.-]?(\d{4})/)
+  if (isolatedNineMatch) {
+    const ddd = isolatedNineMatch[1] || '11'
+    return `${ddd}9${isolatedNineMatch[2]}${isolatedNineMatch[3]}`
+  }
+
+  let cleaned = raw.replace(/\D/g, '')
   if (cleaned.startsWith('55') && cleaned.length > 11) {
     cleaned = cleaned.substring(2)
   }

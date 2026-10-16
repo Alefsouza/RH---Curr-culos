@@ -215,7 +215,7 @@ Deno.serve(async (req: Request) => {
       const extractionPrompt = `Extraia com máxima atenção e precisão os seguintes dados do currículo:
 - nome: Nome completo REAL do candidato em destaque no cabeçalho ou topo (ex: "VALDINÉIA DOMINGUES", "Valdinéia Domingues"). Preserve rigorosamente todos os acentos e grafia em português brasileiro (á, é, í, ó, ú, ã, õ, ç, etc.). Retorne null apenas se for impossível identificar o nome de uma pessoa física.
 - email: Endereço de e-mail REAL (ex: "valdineiadomingues82@gmail.com"), ou null se não identificado
-- telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11974697877"]) ou [] se nenhum
+- telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11974697877"]) ou [] se nenhum. ATENÇÃO: capture celulares mesmo com o 9º dígito separado por espaço ou traço (ex: "(11) 9 5386-9329", "11 9 5386-9329"), normalizando SEMPRE para 11 dígitos com o 9 inicial (ex: "11953869329"), NUNCA descartando o 9 isolado.
 - endereco: Endereço COMPLETO com logradouro, número, complemento, bairro, cidade, UF e CEP se existirem no documento (ex: "R. Timóteo, 88 - Jardim Paraguaçu, São Paulo - SP, 03938-050"). NUNCA trunque para apenas "Jardim - SP" ou apenas o bairro se houver rua, número, cidade ou CEP no currículo.
 - cep: CEP brasileiro formatado (ex: "03938-050"), ou null se não constar
 - idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
@@ -307,7 +307,7 @@ ${extractedText.substring(0, 18000)}`
           const reextractionPrompt = `Analise o texto completo do currículo (incluindo leitura de OCR de cabeçalho) e extraia com máxima precisão:
 - nome: Nome completo REAL do candidato em destaque no cabeçalho ou topo (ex: "JOÃO BATISTA DA SILVA", "VALDINÉIA DOMINGUES"). Preserve rigorosamente todos os acentos (á, é, í, ó, ú, ã, õ, ç, etc.). Retorne null apenas se for impossível identificar um nome de pessoa física.
 - email: Endereço de e-mail REAL válido (ex: "exemplo@gmail.com"), ou null se não identificado
-- telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11974697877", "11988887777"]) ou [] se nenhum
+- telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11974697877", "11988887777"]) ou [] se nenhum. ATENÇÃO: capture celulares mesmo com o 9º dígito separado por espaço ou traço (ex: "(11) 9 5386-9329"), normalizando SEMPRE para 11 dígitos com o 9 inicial (ex: "11953869329"), NUNCA descartando o 9 isolado.
 - endereco: Endereço COMPLETO com logradouro, número, complemento, bairro, cidade, UF e CEP se existirem no documento (ex: "R. Timóteo, 88 - Jardim Paraguaçu, São Paulo - SP, 03938-050"). NUNCA trunque para apenas o bairro ou "Jardim - SP" se houver rua, número, cidade ou CEP.
 - cep: CEP brasileiro formatado (ex: "03938-050"), ou null se não constar
 - idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
@@ -460,8 +460,8 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
 {
   "nome": "Nome completo REAL do candidato em destaque no cabeçalho ou null",
   "email": "Endereço de e-mail real do candidato ou null",
-  "telefones_celulares": ["telefones celulares reais encontrados com DDD"],
-  "telefone": "Telefone principal com DDD ou null",
+  "telefones_celulares": ["telefones celulares reais com DDD (11 dígitos, ex: 11953869329, nunca descartar 9 isolado)"],
+  "telefone": "Telefone principal com DDD (11 dígitos, ex: 11953869329) ou null",
   "endereco": "Endereço COMPLETO com rua, número, bairro, cidade, UF e CEP (ex: R. Timóteo, 88 - Jardim Paraguaçu, São Paulo - SP, 03938-050) ou null",
   "cep": "CEP formatado 00000-000 ou null",
   "idade": "Número inteiro da idade ou null",

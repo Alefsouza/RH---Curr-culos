@@ -239,8 +239,8 @@ Deno.serve(async (req: Request) => {
       const promptText = `Analise o currículo (arquivo: ${filePath}) e extraia todos os dados estruturados:
 - nome: Nome completo REAL extraído do currículo, ou null se não identificado
 - email: Endereço de e-mail REAL válido, ou null se não identificado
-- telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11987654321"]) ou [] se nenhum
-- telefone: Telefone celular principal ou null
+- telefones_celulares: Lista de telefones celulares brasileiros REAIS com DDD (ex: ["11987654321"]) ou [] se nenhum. ATENÇÃO: capture celulares mesmo com o 9º dígito separado por espaço ou traço (ex: "(11) 9 5386-9329", "11 9 5386-9329"), normalizando SEMPRE para 11 dígitos com o 9 inicial (ex: "11953869329"), NUNCA descartando o 9 isolado.
+- telefone: Telefone celular principal normalizado com DDD (11 dígitos, ex: "11953869329") ou null
 - endereco: Cidade, estado ou endereço completo, ou null se não identificado
 - idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
 - data_nascimento: Data de nascimento informada (ex: "16/01/1993" ou "1993-01-16"), ou null se não constar
