@@ -117,12 +117,44 @@ Deno.serve(async (req: Request) => {
       let selectedButtonId = null
       let incomingText = null
       let isIncomingMessage = false
-      let remoteJid =
-        event?.message?.sender_pn ||
+      let isOutgoingMessage = false
+
+      // Detectar se a mensagem foi enviada pela própria conta conectada (fromMe / owner)
+      const fromMe =
+        event?.message?.fromMe === true ||
+        event?.data?.key?.fromMe === true ||
+        event?.data?.fromMe === true ||
+        event?.fromMe === true ||
+        event?.data?.message?.fromMe === true
+
+      // Para mensagens enviadas pelo RH (fromMe), o destinatário é o telefone do chat!
+      // Para mensagens recebidas de candidatos, o remetente é o remoteJid / sender_pn.
+      let chatPhone =
+        event?.chat?.phone ||
+        event?.chat?.wa_chatid ||
+        event?.data?.chat?.phone ||
+        event?.message?.chat_phone ||
+        event?.message?.remoteJid ||
         event?.data?.key?.remoteJid ||
-        event?.sender ||
-        event?.data?.sender ||
         ''
+      if (typeof chatPhone === 'string' && chatPhone.includes('@')) {
+        chatPhone = chatPhone.split('@')[0]
+      }
+
+      let remoteJid = ''
+      if (fromMe) {
+        isOutgoingMessage = true
+        // O destinatário do chat é o telefone do candidato
+        remoteJid = chatPhone || event?.data?.key?.remoteJid || ''
+      } else {
+        remoteJid =
+          event?.message?.sender_pn ||
+          event?.data?.key?.remoteJid ||
+          event?.sender ||
+          event?.data?.sender ||
+          chatPhone ||
+          ''
+      }
       if (typeof remoteJid === 'string' && remoteJid.includes('@')) {
         remoteJid = remoteJid.split('@')[0]
       }
@@ -208,10 +240,19 @@ Deno.serve(async (req: Request) => {
         } else if (uazapiMsg.text) {
           incomingText = uazapiMsg.text
           isIncomingMessage = true
+        } else if (uazapiMsg.content) {
+          incomingText = uazapiMsg.content
+          isIncomingMessage = true
         }
       }
 
-      if (isIncomingMessage && remoteJid) {
+      // Se for mensagem enviada pela conta conectada (fromMe), processa como enviada
+      if (fromMe && isIncomingMessage) {
+        isIncomingMessage = false
+        isOutgoingMessage = true
+      }
+
+      if ((isIncomingMessage || isOutgoingMessage) && remoteJid) {
         const phoneMatch = remoteJid.match(/\d+/)
         if (phoneMatch) {
           let phoneNum = phoneMatch[0]
@@ -376,16 +417,21 @@ Deno.serve(async (req: Request) => {
             continue
           }
 
+          // Definir direção e status corretos (enviada vs recebida)
+          const msgDirecao = isOutgoingMessage ? 'enviada' : 'recebida'
+          const msgStatus = isOutgoingMessage ? 'enviada' : 'recebida'
+
           // Sempre salvar na tabela principal para aparecer no painel (mesmo sem candidato)
           const { error: msgErr } = await supabase.from('mensagens_whatsapp').insert({
             candidato_id: candId || null,
             numero_whatsapp: phoneNum,
             user_id: finalUserId,
-            status: 'recebida',
-            direcao: 'recebida',
+            status: msgStatus,
+            direcao: msgDirecao,
             conteudo: incomingText || selectedButtonId || '',
             uazapi_message_id: messageId,
             tipo: selectedButtonId ? 'botao' : 'texto',
+            enviado_em: isOutgoingMessage ? new Date().toISOString() : null,
           })
 
           if (msgErr && msgErr.code === '23505') {
@@ -400,7 +446,7 @@ Deno.serve(async (req: Request) => {
             const { error: convErr } = await supabase.from('conversas_whatsapp').insert({
               candidato_id: candId,
               texto: incomingText || selectedButtonId || '',
-              direcao: 'recebida',
+              direcao: msgDirecao,
               uazapi_message_id: messageId,
             })
             if (convErr && convErr.code !== '23505') {
@@ -408,7 +454,7 @@ Deno.serve(async (req: Request) => {
             }
           }
 
-          if (candId && respostaClassificada) {
+          if (isIncomingMessage && candId && respostaClassificada) {
             await supabase.from('respostas_whatsapp').insert({
               candidato_id: candId,
               resposta: respostaClassificada,
@@ -416,7 +462,7 @@ Deno.serve(async (req: Request) => {
             })
           }
 
-          if (candId && candInfo) {
+          if (isIncomingMessage && candId && candInfo) {
             const updatePayload: any = {}
             if (respostaClassificada) {
               updatePayload.ultima_resposta_whatsapp =

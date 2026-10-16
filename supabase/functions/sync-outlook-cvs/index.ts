@@ -1232,6 +1232,451 @@ Deno.serve(async (req: Request) => {
     const syncRunId = syncRun?.id || null
 
     // Salvaguarda operacional: reextração sob demanda garantida
+    if (body?.reprocessAllPending) {
+      console.log('[sync-outlook-cvs] Reprocessando lote em massa com timeout guard...')
+      const maxBatch = Number(body.batchLimit) || 50
+      const { data: targetRows, error: fetchErr } = await supabase
+        .from('email_importacoes')
+        .select('*')
+        .eq('erro_detalhes', 'extractedText is not defined')
+        .is('candidato_id', null)
+        .order('recebido_em', { ascending: false })
+        .limit(maxBatch)
+
+      if (fetchErr || !targetRows) {
+        throw new Error(`Falha ao buscar email_importacoes: ${fetchErr?.message}`)
+      }
+
+      body.reprocessEmailImportIds = targetRows.map((r: any) => r.id)
+    }
+
+    if (body?.reprocessEmailImportIds && Array.isArray(body.reprocessEmailImportIds)) {
+      const importIds: string[] = body.reprocessEmailImportIds
+      console.log(
+        `[sync-outlook-cvs] Reprocessando lote específico de ${importIds.length} email_importacoes...`,
+      )
+
+      const startTimeReprocess = Date.now()
+      const MAX_REPROCESS_TIME_MS = 110 * 1000 // 110 segundos de limite seguro
+
+      const { data: targetRows, error: fetchErr } = await supabase
+        .from('email_importacoes')
+        .select('*')
+        .in('id', importIds)
+
+      if (fetchErr || !targetRows) {
+        throw new Error(`Falha ao buscar email_importacoes: ${fetchErr?.message}`)
+      }
+
+      const reprocessResults: any[] = []
+      const clientId = Deno.env.get('MS_CLIENT_ID')
+      const clientSecret = Deno.env.get('MS_CLIENT_SECRET')
+      const tenantId = Deno.env.get('MS_TENANT_ID')
+      const mailboxEmail = Deno.env.get('MAILBOX_EMAIL') || 'rh@viasudeste.com'
+      const openaiKey = Deno.env.get('OPENAI_KEY') || Deno.env.get('OPENIA_KEY')
+
+      if (!clientId || !clientSecret || !tenantId || !openaiKey) {
+        throw new Error('Credenciais MS ou OpenAI ausentes para reprocessamento.')
+      }
+
+      const openai = new OpenAI({ apiKey: openaiKey })
+
+      // Obter token MS Graph
+      const tokenRes = await fetch(
+        `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: clientId,
+            client_secret: clientSecret,
+            grant_type: 'client_credentials',
+            scope: 'https://graph.microsoft.com/.default',
+          }),
+        },
+      )
+      if (!tokenRes.ok) {
+        throw new Error(`Falha ao obter token MS Graph: ${tokenRes.status}`)
+      }
+      const tokenJson = await tokenRes.json()
+      const accessToken = tokenJson.access_token
+      const graphHeaders = {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      }
+
+      for (const row of targetRows) {
+        if (Date.now() - startTimeReprocess > MAX_REPROCESS_TIME_MS) {
+          console.warn(
+            '[reprocess] Limite de tempo da Edge Function atingido. Finalizando lote com sucesso parcial.',
+          )
+          break
+        }
+
+        const rowId = row.id
+        const msgId = row.outlook_message_id
+        if (!msgId) {
+          reprocessResults.push({ id: rowId, success: false, error: 'Sem outlook_message_id' })
+          continue
+        }
+
+        try {
+          console.log(`[reprocess] Processando row ${rowId} (msg: ${msgId})...`)
+          let msgRes = await fetch(
+            `https://graph.microsoft.com/v1.0/users/${mailboxEmail}/messages/${msgId}?$expand=attachments`,
+            { headers: graphHeaders },
+          )
+
+          if (!msgRes.ok) {
+            reprocessResults.push({
+              id: rowId,
+              success: false,
+              error: `Graph erro ${msgRes.status}`,
+            })
+            continue
+          }
+
+          const msgDetail = await msgRes.json()
+          let attachments = msgDetail.attachments || []
+
+          if (attachments.length === 0) {
+            try {
+              const attRes = await fetch(
+                `https://graph.microsoft.com/v1.0/users/${mailboxEmail}/messages/${msgId}/attachments`,
+                { headers: graphHeaders },
+              )
+              if (attRes.ok) {
+                const attData = await attRes.json()
+                attachments = attData.value || []
+              }
+            } catch (e: any) {
+              console.warn(`Erro attachments row ${rowId}:`, e?.message)
+            }
+          }
+
+          let selectedAtt = attachments.find((a: any) =>
+            (a.name || '').toLowerCase().endsWith('.pdf'),
+          )
+          if (!selectedAtt) {
+            selectedAtt = attachments.find((a: any) =>
+              (a.name || '').toLowerCase().endsWith('.docx'),
+            )
+          }
+
+          if (!selectedAtt) {
+            await supabase
+              .from('email_importacoes')
+              .update({
+                status: 'sem_anexo_valido',
+                erro_detalhes: 'Nenhum anexo PDF ou DOCX encontrado.',
+                processado_em: new Date().toISOString(),
+              })
+              .eq('id', rowId)
+            reprocessResults.push({ id: rowId, success: false, error: 'Sem anexo PDF/DOCX' })
+            continue
+          }
+
+          let fileBytes: Uint8Array | null = null
+          const fileName = selectedAtt.name || 'curriculo.pdf'
+          const ext = fileName.toLowerCase().split('.').pop() || 'pdf'
+
+          if (selectedAtt.contentBytes) {
+            const binaryString = atob(selectedAtt.contentBytes)
+            fileBytes = new Uint8Array(binaryString.length)
+            for (let i = 0; i < binaryString.length; i++) {
+              fileBytes[i] = binaryString.charCodeAt(i)
+            }
+          } else if (selectedAtt.id) {
+            const attRawRes = await fetch(
+              `https://graph.microsoft.com/v1.0/users/${mailboxEmail}/messages/${msgId}/attachments/${selectedAtt.id}/$value`,
+              { headers: { Authorization: `Bearer ${accessToken}` } },
+            )
+            if (attRawRes.ok) {
+              const buf = await attRawRes.arrayBuffer()
+              fileBytes = new Uint8Array(buf)
+            }
+          }
+
+          if (!fileBytes || fileBytes.length === 0) {
+            throw new Error('Bytes do anexo indisponíveis')
+          }
+
+          const extractionResult = await extractCandidateData(openai, fileBytes, fileName)
+          if (!extractionResult) {
+            await supabase
+              .from('email_importacoes')
+              .update({
+                status: 'texto_insuficiente',
+                erro_detalhes: 'Arquivo sem texto legível (< 50 caracteres).',
+                anexo_filename: fileName,
+                processado_em: new Date().toISOString(),
+              })
+              .eq('id', rowId)
+            reprocessResults.push({ id: rowId, success: false, error: 'Texto insuficiente' })
+            continue
+          }
+
+          const { extractedData, rawText } = extractionResult
+
+          if (!extractedData.data_nascimento && rawText) {
+            const birthDateRegex =
+              /(?:nasc(?:ido|imento|ida)?(?:\s+em)?[:\s]+)?\b([0-3]?\d[\/\-\.][0-1]?\d[\/\-\.](?:19|20)\d{2})\b/i
+            const matchDate = rawText.match(birthDateRegex)
+            if (matchDate && matchDate[1]) extractedData.data_nascimento = matchDate[1]
+          }
+
+          if (!extractedData.cep && rawText) {
+            const detectedCep = extractCep(rawText)
+            if (detectedCep) extractedData.cep = detectedCep
+          }
+          if (
+            extractedData.cep &&
+            extractedData.endereco &&
+            typeof extractedData.endereco === 'string'
+          ) {
+            if (!extractedData.endereco.includes(extractedData.cep)) {
+              extractedData.endereco = `${extractedData.endereco}, ${extractedData.cep}`
+            }
+          }
+
+          const resolvedAge = resolveCandidateAge(
+            extractedData.idade,
+            extractedData.data_nascimento,
+          )
+          if (resolvedAge !== null) extractedData.idade = resolvedAge
+
+          let cleanCandidateName = sanitizeAndValidateName(extractedData.nome)
+          if (!cleanCandidateName && ext !== 'docx' && fileBytes.length > 0) {
+            try {
+              const ocrText = await performGoogleVisionPdfOcr(fileBytes)
+              if (ocrText && ocrText.trim().length > 20) {
+                const headerPrompt = `Identifique exclusivamente o NOME COMPLETO REAL da pessoa física deste currículo a partir do texto OCR. Retorne JSON: {"nome": "Nome" ou null, "email": "email" ou null, "telefone": "telefone" ou null, "cnh": "cnh" ou null, "idade": número ou null}\n\n${ocrText.substring(0, 15000)}`
+                const headerExtracted = await callOpenAIWithRetry([
+                  { role: 'system', content: 'Extraia em JSON estrito.' },
+                  { role: 'user', content: headerPrompt },
+                ])
+                if (headerExtracted?.nome) {
+                  const val = sanitizeAndValidateName(headerExtracted.nome)
+                  if (val) {
+                    cleanCandidateName = val
+                    extractedData.nome = val
+                  }
+                }
+                if (headerExtracted?.email && !extractedData?.email)
+                  extractedData.email = headerExtracted.email
+                if (headerExtracted?.telefone && !extractedData?.telefone)
+                  extractedData.telefone = headerExtracted.telefone
+                if (headerExtracted?.cnh && !extractedData?.cnh)
+                  extractedData.cnh = headerExtracted.cnh
+                if (headerExtracted?.idade && !extractedData?.idade)
+                  extractedData.idade = headerExtracted.idade
+              }
+            } catch (e: any) {
+              console.warn(`OCR cabeçalho erro row ${rowId}:`, e?.message)
+            }
+          }
+
+          const cleanCandidateEmail = sanitizeAndValidateEmail(extractedData.email)
+          let finalNome = cleanCandidateName
+          if (!finalNome && cleanCandidateEmail) {
+            const prefix = cleanCandidateEmail
+              .split('@')[0]
+              .replace(/[._-]/g, ' ')
+              .replace(/\b\w/g, (l: string) => l.toUpperCase())
+            finalNome = sanitizeAndValidateName(prefix)
+          }
+          if (!finalNome) finalNome = 'Candidato'
+          const finalEmail = cleanCandidateEmail
+
+          let telefonesArr: string[] = []
+          if (Array.isArray(extractedData.telefones_celulares)) {
+            telefonesArr = extractedData.telefones_celulares
+          } else if (extractedData.telefone) {
+            telefonesArr = [extractedData.telefone]
+          }
+
+          const rawTelefone = telefonesArr.length > 0 ? telefonesArr.join(',') : null
+          let normalizedTelefone: string | null = null
+          if (rawTelefone) {
+            const parts = rawTelefone
+              .split(',')
+              .map((t: string) => t.trim())
+              .filter(Boolean)
+            const validParts = parts
+              .map((t: string) => {
+                const n = normalizePhone(t)
+                return n && isValidBrazilianPhone(n) ? n : null
+              })
+              .filter((n): n is string => Boolean(n))
+            const uniqueParts = Array.from(new Set(validParts))
+            normalizedTelefone = uniqueParts.length > 0 ? uniqueParts.join(',') : null
+          }
+
+          const existingCandidate = await findExistingCandidate(supabase, {
+            userId: userId,
+            nome: finalNome,
+            email: finalEmail,
+            telefones: normalizedTelefone ? normalizedTelefone.split(',') : telefonesArr,
+          })
+
+          let candidatoId: string | null = null
+          if (existingCandidate) {
+            candidatoId = existingCandidate.id
+            await supabase
+              .from('candidatos')
+              .update({
+                nome: finalNome || existingCandidate.nome,
+                email: finalEmail || existingCandidate.email,
+                telefone: normalizedTelefone || existingCandidate.telefone,
+                dados_extraidos: extractedData,
+              })
+              .eq('id', candidatoId)
+          } else {
+            const { data: newCand, error: candError } = await supabase
+              .from('candidatos')
+              .insert({
+                nome: finalNome,
+                email: finalEmail,
+                telefone: normalizedTelefone,
+                dados_extraidos: extractedData,
+                fonte: 'outlook_import',
+                user_id: userId,
+              })
+              .select('id')
+              .single()
+
+            if (candError || !newCand) {
+              throw new Error(`Falha ao inserir candidato: ${candError?.message}`)
+            }
+            candidatoId = newCand.id
+          }
+
+          const now = new Date()
+          const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_')
+          const storagePath = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${candidatoId}/${sanitizedFileName}`
+          const contentType =
+            ext === 'docx'
+              ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+              : 'application/pdf'
+
+          await supabase.storage
+            .from('curriculos')
+            .upload(storagePath, fileBytes, { contentType, upsert: true })
+          const {
+            data: { publicUrl },
+          } = supabase.storage.from('curriculos').getPublicUrl(storagePath)
+          await supabase
+            .from('candidatos')
+            .update({ curriculo_url: publicUrl })
+            .eq('id', candidatoId)
+
+          let { data: etapa } = await supabase
+            .from('etapas')
+            .select('id')
+            .eq('user_id', userId)
+            .ilike('nome', 'Triagem')
+            .maybeSingle()
+          if (!etapa) {
+            const { data: fb } = await supabase
+              .from('etapas')
+              .select('id')
+              .eq('user_id', userId)
+              .order('ordem', { ascending: true })
+              .limit(1)
+              .maybeSingle()
+            etapa = fb
+          }
+          if (etapa) {
+            await supabase.from('candidatos').update({ etapa_id: etapa.id }).eq('id', candidatoId)
+            const { data: rel } = await supabase
+              .from('candidato_etapa')
+              .select('id')
+              .eq('candidato_id', candidatoId)
+              .eq('etapa_id', etapa.id)
+              .maybeSingle()
+            if (!rel) {
+              await supabase
+                .from('candidato_etapa')
+                .insert({ candidato_id: candidatoId, etapa_id: etapa.id, usuario_id: userId })
+            }
+          }
+
+          let vagaId: string | null = null
+          try {
+            const idRes = await supabase.functions.invoke('identify-vaga-from-cv', {
+              body: {
+                candidato_id: candidatoId,
+                user_id: userId,
+                texto_cv: rawText,
+                dados_extraidos: extractedData,
+              },
+            })
+            vagaId = idRes.data?.vaga_id || null
+          } catch (e: any) {
+            console.warn(`Identify vaga row ${rowId}:`, e?.message)
+          }
+
+          let finalStatus = 'sucesso'
+          if (vagaId) {
+            await supabase.from('candidatos').update({ vaga_id: vagaId }).eq('id', candidatoId)
+            try {
+              const critRes = await supabase.functions.invoke('analisar-cv-criterios', {
+                body: { cv_id: candidatoId, vaga_id: vagaId, user_id: userId },
+              })
+              if (critRes.data?.data?.analise?.resultado !== 'qualificado') {
+                await supabase.from('candidatos').update({ etapa_id: null }).eq('id', candidatoId)
+                finalStatus = 'nao_qualificado'
+              }
+            } catch (e: any) {
+              console.warn(`Critérios row ${rowId}:`, e?.message)
+            }
+          } else {
+            await supabase
+              .from('candidatos')
+              .update({ vaga_id: null, etapa_id: null })
+              .eq('id', candidatoId)
+            finalStatus = 'sem_vaga_compativel'
+          }
+
+          await supabase
+            .from('email_importacoes')
+            .update({
+              status: finalStatus,
+              erro_detalhes: null,
+              candidato_id: candidatoId,
+              vaga_id_identificada: vagaId || null,
+              anexo_filename: fileName,
+              anexo_storage_path: storagePath,
+              processado_em: new Date().toISOString(),
+            })
+            .eq('id', rowId)
+
+          reprocessResults.push({
+            id: rowId,
+            candidatoId,
+            nome: finalNome,
+            status: finalStatus,
+            success: true,
+          })
+        } catch (procErr: any) {
+          console.error(`Erro ao reprocessar row ${rowId}:`, procErr)
+          await supabase
+            .from('email_importacoes')
+            .update({
+              status: 'erro',
+              erro_detalhes: procErr.message,
+              processado_em: new Date().toISOString(),
+            })
+            .eq('id', rowId)
+          reprocessResults.push({ id: rowId, success: false, error: procErr.message })
+        }
+      }
+
+      return new Response(JSON.stringify({ ok: true, reprocessResults }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     if (body?.triggerOcrFix) {
       const candidatesToFix = [
         '0f7fbd80-8e2d-4653-b780-ed990801809a',
