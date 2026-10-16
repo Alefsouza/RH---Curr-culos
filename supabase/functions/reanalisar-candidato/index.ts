@@ -1186,6 +1186,57 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
       await supabase.from('candidatos').update({ vaga_id: identifiedVagaId }).eq('id', candidato.id)
     }
 
+    // =========================================================================
+    // SALVAGUARDA 3: REATIVAÇÃO AUTOMÁTICA NO KANBAN QUANDO QUALIFICADO
+    // Se o resultado atualizado for 'qualificado' e o candidato estiver inativo
+    // com motivo_inativo = 'Não Qualificado', reativá-lo:
+    // ativo_kanban = true, motivo_inativo = null, mantendo a etapa (Triagem).
+    // Motivos manuais ('Retirado Kanban', 'Duplicado...') são preservados.
+    // =========================================================================
+    try {
+      const finalResultado =
+        analyzeData?.data?.analise?.resultado || analyzeData?.analise?.resultado
+
+      if (finalResultado === 'qualificado') {
+        const { data: candStatus } = await supabase
+          .from('candidatos')
+          .select('ativo_kanban, motivo_inativo, etapa_id')
+          .eq('id', candidato.id)
+          .maybeSingle()
+
+        if (
+          candStatus &&
+          candStatus.ativo_kanban === false &&
+          typeof candStatus.motivo_inativo === 'string' &&
+          candStatus.motivo_inativo.toLowerCase().includes('não qualificado')
+        ) {
+          const upd: Record<string, any> = {
+            ativo_kanban: true,
+            motivo_inativo: null,
+          }
+          if (!candStatus.etapa_id) {
+            const { data: etapaTriagem } = await supabase
+              .from('etapas')
+              .select('id')
+              .ilike('nome', 'Triagem')
+              .maybeSingle()
+            if (etapaTriagem?.id) {
+              upd.etapa_id = etapaTriagem.id
+            }
+          }
+          await supabase.from('candidatos').update(upd).eq('id', candidato.id)
+          console.log(
+            `[reanalisar-candidato] Candidato ${candidato.id} reativado automaticamente no Kanban após reanálise qualificada.`,
+          )
+        }
+      }
+    } catch (reactivateErr: any) {
+      console.warn(
+        '[reanalisar-candidato] Aviso ao verificar reativação de candidato:',
+        reactivateErr?.message,
+      )
+    }
+
     return new Response(
       JSON.stringify({
         success: true,

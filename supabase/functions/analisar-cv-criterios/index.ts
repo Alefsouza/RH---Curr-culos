@@ -1126,6 +1126,14 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
     }
 
     if (statusFinal === 'qualificado') {
+      // Reativação automática no Kanban se estiver inativo por 'Não Qualificado'
+      // Regra permanente: 'Não qualificado' fica fora do Kanban, mas reanálise qualificada religa automaticamente.
+      // Motivos manuais ('Retirado Kanban', 'Duplicado...') não são reativados automaticamente.
+      const isAutoInativo =
+        candidato.ativo_kanban === false &&
+        typeof candidato.motivo_inativo === 'string' &&
+        candidato.motivo_inativo.toLowerCase().includes('não qualificado')
+
       let isEtapaInicial = false
       let hasNoEtapa = !candidato.etapa_id
 
@@ -1144,6 +1152,12 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
         }
       }
 
+      const updateCandidatePayload: Record<string, any> = {}
+      if (isAutoInativo) {
+        updateCandidatePayload.ativo_kanban = true
+        updateCandidatePayload.motivo_inativo = null
+      }
+
       if (hasNoEtapa || isEtapaInicial) {
         const { data: etapaTriagem } = await supabaseAdmin
           .from('etapas')
@@ -1152,10 +1166,7 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
           .maybeSingle()
 
         if (etapaTriagem) {
-          await supabaseAdmin
-            .from('candidatos')
-            .update({ etapa_id: etapaTriagem.id })
-            .eq('id', cv_id)
+          updateCandidatePayload.etapa_id = etapaTriagem.id
 
           const { data: relExists } = await supabaseAdmin
             .from('candidato_etapa')
@@ -1172,6 +1183,10 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
             })
           }
         }
+      }
+
+      if (Object.keys(updateCandidatePayload).length > 0) {
+        await supabaseAdmin.from('candidatos').update(updateCandidatePayload).eq('id', cv_id)
       }
     }
 
