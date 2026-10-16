@@ -27,6 +27,7 @@ import {
   ShieldAlert,
   PlusCircle,
   StickyNote,
+  Archive,
 } from 'lucide-react'
 import {
   Dialog,
@@ -42,6 +43,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { cn, safeText, resolveCandidateAge } from '@/lib/utils'
+import { CandidateDeleteDialog } from '@/components/candidates/CandidateDeleteDialog'
+import { archiveCandidate, unarchiveCandidate } from '@/services/candidates'
 
 export default function CandidateDetails() {
   const { id } = useParams()
@@ -525,6 +528,27 @@ export default function CandidateDetails() {
             className="min-w-[44px]"
           >
             <RefreshCw className={cn('w-4 h-4 mr-2', reanalyzing && 'animate-spin')} /> Reanalisar
+          </Button>
+          <Button
+            variant="outline"
+            onClick={async () => {
+              try {
+                if (candidate.motivo_inativo === 'Arquivado') {
+                  await unarchiveCandidate(candidate.id)
+                  toast.success('Candidato desarquivado com sucesso')
+                } else {
+                  await archiveCandidate(candidate.id)
+                  toast.success('Candidato arquivado com sucesso (histórico preservado)')
+                }
+                fetchCandidateData()
+              } catch (err: any) {
+                toast.error(err.message || 'Erro ao arquivar')
+              }
+            }}
+            className="min-w-[44px]"
+          >
+            <Archive className="w-4 h-4 mr-2" />
+            {candidate.motivo_inativo === 'Arquivado' ? 'Desarquivar' : 'Arquivar'}
           </Button>
           <Button variant="outline" onClick={() => setEditOpen(true)} className="min-w-[44px]">
             <Edit className="w-4 h-4 mr-2" /> Editar
@@ -1140,34 +1164,25 @@ export default function CandidateDetails() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Modal */}
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-destructive flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5" /> Confirmação de Exclusão
-            </DialogTitle>
-            <DialogDescription className="pt-2 text-slate-600">
-              Tem certeza que deseja excluir o candidato{' '}
-              <strong className="text-slate-800">{candidate?.nome}</strong> permanentemente?
-              <br />
-              <br />
-              Esta ação <span className="font-semibold text-red-600">
-                não pode ser desfeita
-              </span> e
-              removerá todo o histórico, análises e currículo associado da base de dados.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="mt-4 gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setDeleteOpen(false)} className="min-h-[44px]">
-              Manter Candidato
-            </Button>
-            <Button variant="destructive" onClick={handleDelete} className="min-h-[44px]">
-              Sim, Excluir Definitivamente
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Delete Modal protegido com contagem e digitação do nome */}
+      <CandidateDeleteDialog
+        isOpen={deleteOpen}
+        candidateId={candidate?.id || null}
+        candidateName={candidate?.nome}
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={handleDelete}
+        onArchive={async () => {
+          if (!candidate?.id) return
+          try {
+            await archiveCandidate(candidate.id)
+            toast.success('Candidato arquivado com sucesso!')
+            setDeleteOpen(false)
+            fetchCandidateData()
+          } catch (err: any) {
+            toast.error(err.message || 'Erro ao arquivar')
+          }
+        }}
+      />
 
       {/* Delete Observation Modal */}
       <Dialog

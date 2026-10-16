@@ -1,15 +1,17 @@
 import { Button } from '@/components/ui/button'
-import { Wand2, Trash2, X, Loader2 } from 'lucide-react'
+import { Wand2, Trash2, X, Loader2, Archive } from 'lucide-react'
 
 export function BulkActionBar({
   count,
   onReanalyze,
+  onArchive,
   onDelete,
   onClear,
   isReanalyzing,
 }: {
   count: number
   onReanalyze: () => void
+  onArchive?: () => void
   onDelete: () => void
   onClear: () => void
   isReanalyzing?: boolean
@@ -36,6 +38,17 @@ export function BulkActionBar({
           )}
           Reanalisar com IA
         </Button>
+        {onArchive && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onArchive}
+            className="text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 rounded-full h-8 gap-1.5"
+          >
+            <Archive className="h-3.5 w-3.5" />
+            Arquivar
+          </Button>
+        )}
         <Button
           size="sm"
           variant="ghost"

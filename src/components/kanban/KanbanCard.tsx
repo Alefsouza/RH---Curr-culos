@@ -12,12 +12,21 @@ import {
   XCircle,
   Users,
   MapPin,
+  Archive,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
-import { removeFromKanban } from '@/services/kanban'
+import { removeFromKanban, archiveCandidate } from '@/services/kanban'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
+import { CandidateDeleteDialog } from '@/components/candidates/CandidateDeleteDialog'
+import { deleteCandidate } from '@/services/candidates'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -63,6 +72,7 @@ export function KanbanCard({
 }: KanbanCardProps) {
   const { toast } = useToast()
   const [showRemoveDialog, setShowRemoveDialog] = React.useState(false)
+  const [showDeleteDialog, setShowDeleteDialog] = React.useState(false)
   const [isRemoving, setIsRemoving] = React.useState(false)
 
   const handleDragStart = (e: React.DragEvent) => {
@@ -99,6 +109,47 @@ export function KanbanCard({
       })
     } finally {
       setIsRemoving(false)
+    }
+  }
+
+  const handleArchiveCandidate = async () => {
+    try {
+      await archiveCandidate(candidate.id)
+      toast({
+        title: 'Candidato arquivado',
+        description:
+          'O candidato foi arquivado e removido do Kanban. Todo o histórico foi preservado.',
+      })
+      window.dispatchEvent(
+        new CustomEvent('kanban:delete-candidate', { detail: { candidateId: candidate.id } }),
+      )
+      setShowDeleteDialog(false)
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao arquivar candidato',
+        description: err?.message || 'Tente novamente.',
+      })
+    }
+  }
+
+  const handleConfirmHardDelete = async () => {
+    try {
+      await deleteCandidate(candidate.id)
+      toast({
+        title: 'Candidato excluído definitivamente',
+        description: 'O cadastro e histórico foram completamente removidos.',
+      })
+      window.dispatchEvent(
+        new CustomEvent('kanban:delete-candidate', { detail: { candidateId: candidate.id } }),
+      )
+      setShowDeleteDialog(false)
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao excluir candidato',
+        description: err?.message || 'Tente novamente.',
+      })
     }
   }
 
@@ -151,15 +202,51 @@ export function KanbanCard({
       </div>
 
       <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-        <Button
-          variant="ghost"
-          size="icon"
-          title="Retirar do Kanban"
-          className="h-6 w-6 text-slate-400 hover:text-red-600 hover:bg-red-50"
-          onClick={handleOpenRemoveDialog}
-        >
-          <Trash2 size={14} />
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              title="Opções de remoção / exclusão"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+              }}
+              className="h-6 w-6 text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+            >
+              <Trash2 size={14} />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation()
+                handleOpenRemoveDialog(e)
+              }}
+              className="cursor-pointer"
+            >
+              Retirar do Kanban
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation()
+                handleArchiveCandidate()
+              }}
+              className="cursor-pointer text-amber-700 focus:text-amber-700"
+            >
+              <Archive className="mr-2 h-3.5 w-3.5" /> Arquivar (soft delete)
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowDeleteDialog(true)
+              }}
+              className="cursor-pointer text-red-600 focus:text-red-600 font-medium"
+            >
+              <Trash2 className="mr-2 h-3.5 w-3.5" /> Excluir Definitivamente...
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       <CardContent className="p-4 pl-8 space-y-3">
         <div className="pr-4">
@@ -260,6 +347,15 @@ export function KanbanCard({
           </div>
         </div>
       </CardContent>
+
+      <CandidateDeleteDialog
+        isOpen={showDeleteDialog}
+        candidateId={candidate.id}
+        candidateName={candidate.name}
+        onClose={() => setShowDeleteDialog(false)}
+        onConfirm={handleConfirmHardDelete}
+        onArchive={handleArchiveCandidate}
+      />
 
       <AlertDialog open={showRemoveDialog} onOpenChange={setShowRemoveDialog}>
         <AlertDialogContent onClick={(e) => e.stopPropagation()}>

@@ -15,6 +15,8 @@ export type CandidateItem = {
   etapa_cor: string
   status_analise: string
   duplicado_de: string | null
+  ativo_kanban?: boolean | null
+  motivo_inativo?: string | null
 }
 
 export interface GetCandidatesListParams {
@@ -43,6 +45,8 @@ type CandidatesListItem = {
   duplicado_de: string | null
   vaga_id: string | null
   etapa_id: string | null
+  ativo_kanban?: boolean | null
+  motivo_inativo?: string | null
   vagas: { titulo: string } | { titulo: string }[] | null
   etapas: { nome: string; cor: string | null } | { nome: string; cor: string | null }[] | null
   analises:
@@ -62,7 +66,10 @@ export function resolveCandidateStatus(
     | null
     | undefined,
   vagaId: string | null | undefined,
+  motivoInativo?: string | null,
 ): string {
+  if (motivoInativo === 'Arquivado') return 'arquivado'
+
   if (!analises || analises.length === 0) return 'pendente'
 
   const sortedAnalises = [...analises].sort(
@@ -114,6 +121,8 @@ export async function getCandidatesList(
       duplicado_de,
       vaga_id,
       etapa_id,
+      ativo_kanban,
+      motivo_inativo,
       vagas (titulo),
       etapas (nome, cor),
       analises (id, vaga_id, resultado, criado_em, detalhes)
@@ -130,6 +139,8 @@ export async function getCandidatesList(
 
   if (statusFilter === 'sem_etapa') {
     query = query.is('etapa_id', null)
+  } else if (statusFilter === 'arquivado') {
+    query = query.eq('motivo_inativo', 'Arquivado')
   }
 
   if (startDate) {
@@ -147,14 +158,14 @@ export async function getCandidatesList(
   const ascending = dateSortOrder === 'asc'
   query = query.order('criado_em', { ascending })
 
-  if (isStatusFilterActive && statusFilter !== 'sem_etapa') {
+  if (isStatusFilterActive && statusFilter !== 'sem_etapa' && statusFilter !== 'arquivado') {
     // Quando filtrando por status_analise (qualificado / nao_qualificado / revisar),
     // buscamos os registros correspondentes aos filtros anteriores e paginamos após resolver a análise mais recente
     const { data, error } = await query
     if (error) throw error
 
     const mapped = ((data || []) as unknown as CandidatesListItem[]).map((c) => {
-      const resolvedStatus = resolveCandidateStatus(c.analises, c.vaga_id)
+      const resolvedStatus = resolveCandidateStatus(c.analises, c.vaga_id, c.motivo_inativo)
 
       return {
         id: c.id,
@@ -179,6 +190,8 @@ export async function getCandidatesList(
           : 'bg-slate-200',
         status_analise: resolvedStatus,
         duplicado_de: c.duplicado_de,
+        ativo_kanban: c.ativo_kanban,
+        motivo_inativo: c.motivo_inativo,
       }
     })
 
@@ -204,7 +217,7 @@ export async function getCandidatesList(
   if (error) throw error
 
   const mappedData: CandidateItem[] = ((data || []) as unknown as CandidatesListItem[]).map((c) => {
-    const resolvedStatus = resolveCandidateStatus(c.analises, c.vaga_id)
+    const resolvedStatus = resolveCandidateStatus(c.analises, c.vaga_id, c.motivo_inativo)
 
     return {
       id: c.id,
@@ -225,6 +238,8 @@ export async function getCandidatesList(
         : 'bg-slate-200',
       status_analise: resolvedStatus,
       duplicado_de: c.duplicado_de,
+      ativo_kanban: c.ativo_kanban,
+      motivo_inativo: c.motivo_inativo,
     }
   })
 
@@ -345,6 +360,100 @@ export async function updateAnaliseStatus(
   }
 }
 
+export interface CandidateDeletionImpact {
+  candidatoNome: string
+  mensagensWhatsapp: number
+  respostasWhatsapp: number
+  conversasWhatsapp: number
+  observacoes: number
+  historicoEtapas: number
+  analises: number
+  vagaNome?: string | null
+  etapaNome?: string | null
+}
+
+export async function getCandidateDeletionImpact(
+  candidateId: string,
+): Promise<CandidateDeletionImpact> {
+  const [candRes, msgRes, respRes, convRes, obsRes, etapaHistRes, analisesRes] = await Promise.all([
+    supabase
+      .from('candidatos')
+      .select('nome, vagas(titulo), etapas(nome)')
+      .eq('id', candidateId)
+      .maybeSingle(),
+    supabase
+      .from('mensagens_whatsapp')
+      .select('*', { count: 'exact', head: true })
+      .eq('candidato_id', candidateId),
+    supabase
+      .from('respostas_whatsapp')
+      .select('*', { count: 'exact', head: true })
+      .eq('candidato_id', candidateId),
+    supabase
+      .from('conversas_whatsapp')
+      .select('*', { count: 'exact', head: true })
+      .eq('candidato_id', candidateId),
+    supabase
+      .from('candidato_observacoes')
+      .select('*', { count: 'exact', head: true })
+      .eq('candidato_id', candidateId),
+    supabase
+      .from('candidato_etapa')
+      .select('*', { count: 'exact', head: true })
+      .eq('candidato_id', candidateId),
+    supabase
+      .from('analises')
+      .select('*', { count: 'exact', head: true })
+      .eq('candidato_id', candidateId),
+  ])
+
+  const candData: any = candRes.data
+  const vagaNome = candData?.vagas
+    ? Array.isArray(candData.vagas)
+      ? candData.vagas[0]?.titulo
+      : candData.vagas?.titulo
+    : null
+  const etapaNome = candData?.etapas
+    ? Array.isArray(candData.etapas)
+      ? candData.etapas[0]?.nome
+      : candData.etapas?.nome
+    : null
+
+  return {
+    candidatoNome: candData?.nome || 'Candidato',
+    mensagensWhatsapp: msgRes.count || 0,
+    respostasWhatsapp: respRes.count || 0,
+    conversasWhatsapp: convRes.count || 0,
+    observacoes: obsRes.count || 0,
+    historicoEtapas: etapaHistRes.count || 0,
+    analises: analisesRes.count || 0,
+    vagaNome,
+    etapaNome,
+  }
+}
+
+export async function archiveCandidate(candidateId: string) {
+  const { error } = await supabase
+    .from('candidatos')
+    .update({
+      ativo_kanban: false,
+      motivo_inativo: 'Arquivado',
+    })
+    .eq('id', candidateId)
+  if (error) throw error
+}
+
+export async function unarchiveCandidate(candidateId: string) {
+  const { error } = await supabase
+    .from('candidatos')
+    .update({
+      ativo_kanban: true,
+      motivo_inativo: null,
+    })
+    .eq('id', candidateId)
+  if (error) throw error
+}
+
 export async function deleteCandidate(id: string) {
   const { error } = await supabase.from('candidatos').delete().eq('id', id)
   if (error) throw error
@@ -388,6 +497,17 @@ export async function reanalyzeCandidate(cv_id: string, vaga_id: string, user_id
   }
   if (data?.error) throw new Error(data.error)
   return data
+}
+
+export async function bulkArchiveCandidates(ids: string[]) {
+  const { error } = await supabase
+    .from('candidatos')
+    .update({
+      ativo_kanban: false,
+      motivo_inativo: 'Arquivado',
+    })
+    .in('id', ids)
+  if (error) throw error
 }
 
 export async function bulkDeleteCandidates(ids: string[]) {

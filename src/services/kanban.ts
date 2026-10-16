@@ -107,6 +107,17 @@ export async function updateCandidateStage(candidateId: string, stageId: string)
   }
 }
 
+export async function archiveCandidate(candidateId: string) {
+  const { error } = await supabase
+    .from('candidatos')
+    .update({
+      ativo_kanban: false,
+      motivo_inativo: 'Arquivado',
+    })
+    .eq('id', candidateId)
+  if (error) throw error
+}
+
 export async function removeFromKanban(candidateId: string, vagaId?: string | null) {
   // 1. Marcar no candidato como inativo no Kanban
   const { error: candError } = await supabase

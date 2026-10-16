@@ -3,6 +3,9 @@ import { supabase } from '@/lib/supabase/client'
 import {
   getCandidatesList,
   deleteCandidate,
+  archiveCandidate,
+  unarchiveCandidate,
+  bulkArchiveCandidates,
   updateCandidate,
   updateAnaliseStatus,
   bulkDeleteCandidates,
@@ -252,11 +255,47 @@ export default function CandidatesPage() {
     if (!deleteId) return
     try {
       await deleteCandidate(deleteId)
+      window.dispatchEvent(
+        new CustomEvent('kanban:delete-candidate', { detail: { candidateId: deleteId } }),
+      )
       toast({ title: 'Candidato excluído com sucesso' })
       setDeleteId(null)
       loadData()
     } catch (err: any) {
       toast({ variant: 'destructive', title: 'Erro ao excluir', description: err.message })
+    }
+  }
+
+  const handleArchiveCandidate = async (candidateId: string) => {
+    try {
+      const cand = candidates.find((c) => c.id === candidateId)
+      const isArchived =
+        cand?.motivo_inativo === 'Arquivado' || cand?.status_analise === 'arquivado'
+
+      if (isArchived) {
+        await unarchiveCandidate(candidateId)
+        toast({
+          title: 'Candidato desarquivado',
+          description: 'O candidato voltou a ficar ativo.',
+        })
+      } else {
+        await archiveCandidate(candidateId)
+        window.dispatchEvent(
+          new CustomEvent('kanban:delete-candidate', { detail: { candidateId } }),
+        )
+        toast({
+          title: 'Candidato arquivado',
+          description: 'O candidato foi removido do Kanban e seu histórico foi preservado.',
+        })
+      }
+      setDeleteId(null)
+      loadData()
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao arquivar/desarquivar',
+        description: err.message,
+      })
     }
   }
 
@@ -276,7 +315,7 @@ export default function CandidatesPage() {
     try {
       await bulkDeleteCandidates(Array.from(selectedIds))
       toast({
-        title: 'Candidatos excluídos com sucesso',
+        title: 'Candidatos excluídos definitivamente',
         description: `${selectedIds.size} registro(s) removido(s).`,
       })
       setSelectedIds(new Set())
@@ -284,6 +323,21 @@ export default function CandidatesPage() {
       loadData()
     } catch (err: any) {
       toast({ variant: 'destructive', title: 'Erro ao excluir', description: err.message })
+    }
+  }
+
+  const handleBulkArchive = async () => {
+    try {
+      await bulkArchiveCandidates(Array.from(selectedIds))
+      toast({
+        title: 'Candidatos arquivados',
+        description: `${selectedIds.size} candidato(s) arquivado(s) com sucesso. Histórico preservado.`,
+      })
+      setSelectedIds(new Set())
+      setShowBulkDelete(false)
+      loadData()
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Erro ao arquivar', description: err.message })
     }
   }
 
@@ -460,6 +514,7 @@ export default function CandidatesPage() {
                 <SelectItem value="qualificado">Qualificados</SelectItem>
                 <SelectItem value="nao_qualificado">Não Qualificados</SelectItem>
                 <SelectItem value="retirado_kanban">Retirados do Kanban</SelectItem>
+                <SelectItem value="arquivado">Arquivados</SelectItem>
                 <SelectItem value="revisar">Para Revisão</SelectItem>
                 <SelectItem value="sem_etapa">Sem Etapa</SelectItem>
               </SelectContent>
@@ -529,6 +584,7 @@ export default function CandidatesPage() {
           onPageSizeChange={handlePageSizeChange}
           onEdit={setEditData}
           onDelete={setDeleteId}
+          onArchive={handleArchiveCandidate}
           onToggleStatus={handleToggleStatus}
           onRefresh={loadData}
           onUpdateCandidateLocal={handleUpdateCandidateLocal}
@@ -548,8 +604,11 @@ export default function CandidatesPage() {
 
       <CandidateDeleteDialog
         isOpen={!!deleteId}
+        candidateId={deleteId}
+        candidateName={candidates.find((c) => c.id === deleteId)?.nome}
         onClose={() => setDeleteId(null)}
         onConfirm={handleDelete}
+        onArchive={deleteId ? () => handleArchiveCandidate(deleteId) : undefined}
       />
 
       <BulkDeleteDialog
@@ -557,11 +616,13 @@ export default function CandidatesPage() {
         count={selectedIds.size}
         onClose={() => setShowBulkDelete(false)}
         onConfirm={handleBulkDelete}
+        onArchive={handleBulkArchive}
       />
 
       <BulkActionBar
         count={selectedIds.size}
         onReanalyze={handleBulkReanalyze}
+        onArchive={handleBulkArchive}
         onDelete={() => setShowBulkDelete(true)}
         onClear={handleClearSelection}
         isReanalyzing={isReanalyzing}

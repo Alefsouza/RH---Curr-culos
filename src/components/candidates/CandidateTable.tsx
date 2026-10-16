@@ -28,6 +28,7 @@ import {
   ArrowDown,
   ChevronLeft,
   ChevronRight,
+  Archive,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
@@ -48,7 +49,23 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-function StatusBadge({ status }: { status: string | null }) {
+function StatusBadge({
+  status,
+  motivoInativo,
+}: {
+  status: string | null
+  motivoInativo?: string | null
+}) {
+  if (motivoInativo === 'Arquivado' || status === 'arquivado') {
+    return (
+      <Badge
+        variant="secondary"
+        className="bg-slate-200 text-slate-800 border-slate-300 font-medium whitespace-nowrap"
+      >
+        Arquivado
+      </Badge>
+    )
+  }
   if (status === 'retirado_kanban') {
     return (
       <Badge
@@ -96,6 +113,7 @@ export function CandidateTable({
   onPageSizeChange,
   onEdit,
   onDelete,
+  onArchive,
   onToggleStatus,
   onRefresh,
   onUpdateCandidateLocal,
@@ -114,6 +132,7 @@ export function CandidateTable({
   onPageSizeChange?: (size: number) => void
   onEdit: (c: any) => void
   onDelete: (id: string) => void
+  onArchive?: (id: string) => void
   onToggleStatus: (id: string, status: string | null, vagaId: string | null) => void
   onRefresh?: () => void
   onUpdateCandidateLocal?: (candidateId: string, updates: Partial<any>) => void
@@ -328,6 +347,22 @@ export function CandidateTable({
           <DropdownMenuItem onClick={() => onEdit(candidate)} className="cursor-pointer">
             <Edit className="mr-2 h-4 w-4" /> Editar
           </DropdownMenuItem>
+          {onArchive && (
+            <DropdownMenuItem
+              onClick={() => onArchive(candidate.id)}
+              className="cursor-pointer text-amber-700 focus:text-amber-700"
+            >
+              {candidate.motivo_inativo === 'Arquivado' ? (
+                <>
+                  <Archive className="mr-2 h-4 w-4" /> Desarquivar
+                </>
+              ) : (
+                <>
+                  <Archive className="mr-2 h-4 w-4" /> Arquivar
+                </>
+              )}
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem
             onClick={() => onDelete(candidate.id)}
             className="cursor-pointer text-red-600 focus:text-red-600"
@@ -515,7 +550,7 @@ export function CandidateTable({
                       checked={c.status_analise === 'qualificado'}
                       onCheckedChange={() => onToggleStatus(c.id, c.status_analise, c.vaga_id)}
                     />
-                    <StatusBadge status={c.status_analise} />
+                    <StatusBadge status={c.status_analise} motivoInativo={c.motivo_inativo} />
                   </div>
                 </TableCell>
                 <TableCell className="text-sm text-slate-500">{formatDate(c.criado_em)}</TableCell>
@@ -668,7 +703,7 @@ export function CandidateTable({
                         checked={c.status_analise === 'qualificado'}
                         onCheckedChange={() => onToggleStatus(c.id, c.status_analise, c.vaga_id)}
                       />
-                      <StatusBadge status={c.status_analise} />
+                      <StatusBadge status={c.status_analise} motivoInativo={c.motivo_inativo} />
                     </div>
                   </div>
                 </div>
