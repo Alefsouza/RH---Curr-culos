@@ -1091,6 +1091,15 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
             .replace(/por possuir vínculo atual com a empresa [^,.]*[,.]?/gi, '')
             .replace(/vínculo atual com a empresa [^,.]*[,.]?/gi, '')
             .replace(/vínculo atual com [^,.]*[,.]?/gi, '')
+            .replace(/vinculo atual com a empresa [^,.]*[,.]?/gi, '')
+            .replace(/vinculo atual com [^,.]*[,.]?/gi, '')
+            .replace(/Candidato está atualmente empregado na [^,.]*[,.]?/gi, '')
+            .replace(/Candidato possui vínculo atual com a empresa [^,.]*[,.]?/gi, '')
+            .replace(/Candidato possui vinculo atual com a empresa [^,.]*[,.]?/gi, '')
+            .replace(/empresa da lista restrita[.,]?/gi, '')
+            .replace(/que está na lista de empresas restritas[.,]?/gi, '')
+            .replace(/que esta na lista de empresas restritas[.,]?/gi, '')
+            .replace(/Não atende aos critérios eliminatórios da vaga:\s*\.?\s*/gi, '')
             .trim()
 
           analiseObj.detalhes.motivo =

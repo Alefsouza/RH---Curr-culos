@@ -262,7 +262,12 @@ export function parseDateString(dateStr: string): Date | null {
     const day = parseInt(dmyMatch[1], 10)
     const month = parseInt(dmyMatch[2], 10) - 1
     let year = parseInt(dmyMatch[3], 10)
-    if (year < 100) year += 2000
+    if (year < 100) {
+      // Regra de segurança para anos de dois dígitos no CV:
+      // Se year > 50, é 1900+ (ex: 98 -> 1998).
+      // Se year <= 50, é 2000+ (ex: 24 -> 2024, 26 -> 2026).
+      year += 2000
+    }
     const d = new Date(year, month, day, 23, 59, 59)
     if (!isNaN(d.getTime())) return d
   }
@@ -272,7 +277,9 @@ export function parseDateString(dateStr: string): Date | null {
   if (myMatch) {
     const month = parseInt(myMatch[1], 10) - 1
     let year = parseInt(myMatch[2], 10)
-    if (year < 100) year += 2000
+    if (year < 100) {
+      year += 2000
+    }
     // Usa o último dia do mês para não reprovar precocemente durante o mês
     const lastDayOfMonth = new Date(year, month + 1, 0).getDate()
     const d = new Date(year, month, lastDayOfMonth, 23, 59, 59)
@@ -427,8 +434,10 @@ export function checkRestrictedCompanyStatus(
     // Só é vínculo ATUAL se:
     // 1) Tem data de término futura OU
     // 2) Traz termo explícito de atual/presente/ativo SEM data de término passada
+    // Se a data de término já passou (ou foi um término explícito no passado), NUNCA é vínculo atual!
     const isCurrentlyActive =
-      isFutureByDate || ((isAtualExplicit || isCurrentWord) && !isPastByDate)
+      !isPastByDate &&
+      (isFutureByDate || ((isAtualExplicit || isCurrentWord) && !hasExplicitEndDate))
 
     if (isCurrentlyActive) {
       result.isCurrentlyEmployedInRestricted = true

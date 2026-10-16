@@ -918,9 +918,18 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
         motivoLowerAll.includes('teve experiencia em empresas que estao na lista') ||
         motivoLowerAll.includes('empresa que está na lista de conc') ||
         motivoLowerAll.includes('empresa que esta na lista de conc') ||
-        (motivoLowerAll.includes('concorrente') && !restrictedCheck.isCurrentlyEmployedInRestricted) ||
-        (motivoLowerAll.includes('mobibrasil') && !restrictedCheck.isCurrentlyEmployedInRestricted) ||
-        (motivoLowerAll.includes('mobi brasil') && !restrictedCheck.isCurrentlyEmployedInRestricted) ||
+        motivoLowerAll.includes('vínculo atual com a mobibrasil') ||
+        motivoLowerAll.includes('vinculo atual com a mobibrasil') ||
+        motivoLowerAll.includes('vínculo atual com a empresa mobibrasil') ||
+        motivoLowerAll.includes('vinculo atual com a empresa mobibrasil') ||
+        motivoLowerAll.includes('está atualmente empregado na mobibrasil') ||
+        motivoLowerAll.includes('esta atualmente empregado na mobibrasil') ||
+        (motivoLowerAll.includes('concorrente') &&
+          !restrictedCheck.isCurrentlyEmployedInRestricted) ||
+        (motivoLowerAll.includes('mobibrasil') &&
+          !restrictedCheck.isCurrentlyEmployedInRestricted) ||
+        (motivoLowerAll.includes('mobi brasil') &&
+          !restrictedCheck.isCurrentlyEmployedInRestricted) ||
         (motivoLowerAll.includes('express') && !restrictedCheck.isCurrentlyEmployedInRestricted) ||
         (motivoLowerAll.includes('movebuss') && !restrictedCheck.isCurrentlyEmployedInRestricted) ||
         (motivoLowerAll.includes('transunião') && !restrictedCheck.isCurrentlyEmployedInRestricted)
@@ -955,6 +964,15 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
           .replace(/por possuir vínculo atual com a empresa [^,.]*[,.]?/gi, '')
           .replace(/vínculo atual com a empresa [^,.]*[,.]?/gi, '')
           .replace(/vínculo atual com [^,.]*[,.]?/gi, '')
+          .replace(/vinculo atual com a empresa [^,.]*[,.]?/gi, '')
+          .replace(/vinculo atual com [^,.]*[,.]?/gi, '')
+          .replace(/Candidato está atualmente empregado na [^,.]*[,.]?/gi, '')
+          .replace(/Candidato possui vínculo atual com a empresa [^,.]*[,.]?/gi, '')
+          .replace(/Candidato possui vinculo atual com a empresa [^,.]*[,.]?/gi, '')
+          .replace(/empresa da lista restrita[.,]?/gi, '')
+          .replace(/que está na lista de empresas restritas[.,]?/gi, '')
+          .replace(/que esta na lista de empresas restritas[.,]?/gi, '')
+          .replace(/Não atende aos critérios eliminatórios da vaga:\s*\.?\s*/gi, '')
           .trim()
 
         if (resultJson.detalhes?.summary) {
@@ -972,13 +990,9 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
           ? resultJson.detalhes.unmatched_criteria
           : []
 
-        if (
-          statusFinal === 'nao_qualificado' &&
-          remainingUnmatched.length === 0 &&
-          qualificadoPorLocalizacao
-        ) {
+        if (remainingUnmatched.length === 0 && qualificadoPorLocalizacao) {
           statusFinal = 'qualificado'
-          motivoFinal = `Qualificado: Candidato atende a todos os critérios da vaga. Experiência passada em empresas de transporte coletivo (${restrictedCheck.restrictedCompanyName || 'setor'}) não elimina o candidato (regra de empresas restritas aplica-se exclusivamente a vínculos atuais).`
+          motivoFinal = `Qualificado: Candidato atende a todos os critérios da vaga. Experiência passada em empresas de transporte coletivo (${restrictedCheck.restrictedCompanyName || 'MobiBrasil Transporte'}) não elimina o candidato (regra de empresas restritas aplica-se exclusivamente a vínculos atuais).`
           if (resultJson.detalhes) {
             resultJson.detalhes.score = Math.max(resultJson.detalhes.score || 0, 85)
           }

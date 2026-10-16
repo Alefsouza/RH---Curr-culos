@@ -153,7 +153,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const extractionPrompt = `Extraia os seguintes dados do currículo: nome, email, telefones celulares, cnh (ex: Categoria D, AB, CNH D), cnh_categoria (ex: D, E, AB, AD, AE, B, A), experiencia profissional, skills, formacao academica (incluindo cursos e credenciais como MOPP, Transporte Coletivo), endereço completo com logradouro, número, bairro, cidade, UF e CEP se existirem, idade, data de nascimento, objetivo / cargo pretendido.
-Extraia APENAS números de telefone celular brasileiros (DDD + 9 dígitos, começando com 9). Ignore telefones fixos. Formato: 11999999999.
+Extraia APENAS números de telefone celular brasileiros (DDD + 9 dígitos, começando com 9). Ignore telefones fixos. ATENÇÃO: capture celulares mesmo com o 9º dígito separado por espaço ou traço (ex: "(11) 9 5386-9329"), normalizando SEMPRE para 11 dígitos com o 9 inicial (ex: "11953869329"), NUNCA descartando o 9 isolado.
 No campo "endereco", traga o endereço mais completo possível (ex: "R. Timóteo, 88 - Jardim Paraguaçu, São Paulo - SP, 03938-050"). NUNCA trunque para apenas "Jardim - SP" ou apenas o bairro.
 Preste extrema atenção na CNH / Habilitação e categoria (ex: "Habilitação: Categoria D", "CNH D", "Cat. D").
 Se algum dado não for encontrado, retorne null ou um array vazio.

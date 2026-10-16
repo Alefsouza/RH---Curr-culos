@@ -1026,8 +1026,11 @@ Deno.serve(async (req: Request) => {
 
     if (body?.reanalyzeCandidateId) {
       const targetCandidateId = String(body.reanalyzeCandidateId)
-      const forceReextract = body.force_reextract !== undefined ? Boolean(body.force_reextract) : true
-      console.log(`[sync-outlook-cvs] Ação especial: reanalisar candidato ${targetCandidateId} (force_reextract: ${forceReextract})...`)
+      const forceReextract =
+        body.force_reextract !== undefined ? Boolean(body.force_reextract) : true
+      console.log(
+        `[sync-outlook-cvs] Ação especial: reanalisar candidato ${targetCandidateId} (force_reextract: ${forceReextract})...`,
+      )
       try {
         const reanRes = await fetch(`${supabaseUrl}/functions/v1/reanalisar-candidato`, {
           method: 'POST',

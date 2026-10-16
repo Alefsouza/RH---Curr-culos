@@ -20,7 +20,9 @@ export function normalizePhoneNumber(phone: string | null | undefined): string {
   const raw = String(phone).trim()
   if (!raw) return ''
 
-  const isolatedNineMatch = raw.match(/(?:(?:\+?55\s*)?(?:\(?([1-9]{2})\)?\s*))?9\s*(\d{4})[\s.-]?(\d{4})/)
+  const isolatedNineMatch = raw.match(
+    /(?:(?:\+?55\s*)?(?:\(?([1-9]{2})\)?\s*))?9\s*(\d{4})[\s.-]?(\d{4})/,
+  )
   if (isolatedNineMatch) {
     const ddd = isolatedNineMatch[1] || '11'
     return `${ddd}9${isolatedNineMatch[2]}${isolatedNineMatch[3]}`
@@ -30,6 +32,15 @@ export function normalizePhoneNumber(phone: string | null | undefined): string {
   if (cleaned.startsWith('55') && cleaned.length > 11) {
     cleaned = cleaned.substring(2)
   }
+
+  if (cleaned.length === 10) {
+    const ddd = cleaned.substring(0, 2)
+    const rest = cleaned.substring(2)
+    if (raw.includes('9') && !rest.startsWith('9')) {
+      return `${ddd}9${rest}`
+    }
+  }
+
   return cleaned
 }
 
