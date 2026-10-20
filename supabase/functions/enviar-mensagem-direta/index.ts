@@ -2,6 +2,11 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import jwt from 'npm:jsonwebtoken'
 import { corsHeaders } from '../_shared/cors.ts'
+import {
+  extractUazapiErrorMessage,
+  formatUazapiErrorForDisplay,
+  checkNumbersOnWhatsApp,
+} from '../_shared/uazapi.ts'
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -126,11 +131,41 @@ Deno.serve(async (req: Request) => {
 
     const sendUrl = `${baseUrl}/send/text?instance=${instanceId}`
 
+    // 1. Pré-verificação de números na UazAPI
+    const verificationResults = await checkNumbersOnWhatsApp({
+      baseUrl,
+      instanceId,
+      token: uazapiToken,
+      numbers: validPhones,
+    })
+
+    // Se tiver candidato_id e todos os números forem inexistentes no WhatsApp, atualiza status do candidato
+    if (candidato_id) {
+      const allCheckedNotOnWpp =
+        validPhones.length > 0 &&
+        validPhones.every(
+          (p) => verificationResults[p] && verificationResults[p].isInWhatsapp === false,
+        )
+
+      if (allCheckedNotOnWpp) {
+        await supabase
+          .from('candidatos')
+          .update({ whatsapp_status: 'nao_registrado' })
+          .eq('id', candidato_id)
+      } else if (validPhones.some((p) => verificationResults[p]?.isInWhatsapp === true)) {
+        await supabase
+          .from('candidatos')
+          .update({ whatsapp_status: 'valido' })
+          .eq('id', candidato_id)
+      }
+    }
+
     const results: Array<{
       phone: string
       success: boolean
       messageId?: string | null
       error?: string
+      cleanError?: string
     }> = []
 
     for (const phone of validPhones) {
@@ -138,47 +173,55 @@ Deno.serve(async (req: Request) => {
       let sendSuccess = false
       let sendError: string | null = null
 
-      try {
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 30000)
-        const response = await fetch(sendUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Connection: 'keep-alive',
-            apikey: uazapiToken,
-            Authorization: `Bearer ${uazapiToken}`,
-            token: uazapiToken,
-          },
-          body: JSON.stringify({ number: phone, text: mensagem }),
-          signal: controller.signal,
-        })
-        clearTimeout(timeoutId)
+      const preCheck = verificationResults[phone]
+      if (preCheck && preCheck.isInWhatsapp === false) {
+        sendError = preCheck.error || `the number ${phone} is not on WhatsApp`
+      } else {
+        try {
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), 30000)
+          const response = await fetch(sendUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Connection: 'keep-alive',
+              apikey: uazapiToken,
+              Authorization: `Bearer ${uazapiToken}`,
+              token: uazapiToken,
+            },
+            body: JSON.stringify({ number: phone, text: mensagem }),
+            signal: controller.signal,
+          })
+          clearTimeout(timeoutId)
 
-        if (response.ok) {
-          const responseData = await response.json()
-          if (
-            !responseData.error &&
-            responseData.status !== 'error' &&
-            responseData.success !== false
-          ) {
-            sendSuccess = true
-            externalId =
-              responseData.messageId ||
-              responseData.id ||
-              responseData.data?.id ||
-              responseData.message?.messageId ||
-              null
+          if (response.ok) {
+            const responseData = await response.json()
+            if (
+              !responseData.error &&
+              responseData.status !== 'error' &&
+              responseData.success !== false
+            ) {
+              sendSuccess = true
+              externalId =
+                responseData.messageId ||
+                responseData.id ||
+                responseData.data?.id ||
+                responseData.message?.messageId ||
+                null
+            } else {
+              sendError = extractUazapiErrorMessage(responseData)
+            }
           } else {
-            sendError = JSON.stringify(responseData)
+            const textResp = await response.text()
+            sendError = extractUazapiErrorMessage(textResp)
           }
-        } else {
-          sendError = await response.text()
+        } catch (err: any) {
+          sendError = err.message
+          console.error(`Erro ao enviar via UAZAPI para ${phone}:`, err.message)
         }
-      } catch (err: any) {
-        sendError = err.message
-        console.error(`Erro ao enviar via UAZAPI para ${phone}:`, err.message)
       }
+
+      const displayError = sendError ? formatUazapiErrorForDisplay(sendError) : undefined
 
       const { data: insertData, error: insertError } = await supabase
         .from('mensagens_whatsapp')
@@ -193,6 +236,7 @@ Deno.serve(async (req: Request) => {
           uazapi_message_id: externalId,
           status: sendSuccess ? 'enviada' : 'falha',
           tipo: 'texto',
+          erro_detalhe: !sendSuccess ? sendError : null,
         })
         .select('id')
         .single()
@@ -206,18 +250,39 @@ Deno.serve(async (req: Request) => {
         success: sendSuccess,
         messageId: insertData?.id || externalId,
         error: sendError || (insertError ? insertError.message : undefined),
+        cleanError: displayError,
       })
     }
 
     const anySuccess = results.some((r) => r.success)
     const firstSuccessful = results.find((r) => r.success)
+    const allFailed = results.length > 0 && !anySuccess
 
-    if (!anySuccess) {
+    if (allFailed) {
+      // Buscar nome do candidato se houver
+      let candidateName = ''
+      if (candidato_id) {
+        const { data: cData } = await supabase
+          .from('candidatos')
+          .select('nome')
+          .eq('id', candidato_id)
+          .maybeSingle()
+        candidateName = cData?.nome || ''
+      }
+
+      const primeErrorMessage = results[0]?.cleanError || results[0]?.error || 'Erro desconhecido'
+      const bannerMsg = candidateName
+        ? `Todos os números de ${candidateName} falharam — confira o telefone do candidato.`
+        : 'Todos os números do candidato falharam — confira o telefone do destinatário.'
+
       return new Response(
         JSON.stringify({
           success: false,
-          message:
-            'Falha ao enviar mensagem via WhatsApp. Mensagem registrada com status de falha.',
+          all_failed: true,
+          candidate_name: candidateName,
+          message: bannerMsg,
+          motivo_real: primeErrorMessage,
+          detalhe: results.map((r) => `${r.phone}: ${r.cleanError || r.error}`).join(' | '),
           results,
         }),
         {

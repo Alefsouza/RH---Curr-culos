@@ -183,15 +183,28 @@ export function useKanban() {
             })
             .then(({ data, error }) => {
               if (error || data?.error) {
-                toast({
-                  variant: 'destructive',
-                  title: 'Erro no WhatsApp',
-                  description:
-                    data?.detalhe ||
-                    data?.error ||
-                    error?.message ||
-                    'Ocorreu um erro ao processar o envio de WhatsApp.',
-                })
+                if (data?.all_failed) {
+                  // Aviso explícito quando todos os números falham
+                  toast({
+                    variant: 'destructive',
+                    title: `⚠️ Todos os números de ${candidate?.name || 'candidato'} falharam`,
+                    description: `${data.motivo_real ? `Motivo: ${data.motivo_real}. ` : ''}Confira o telefone cadastrado do candidato.`,
+                    duration: 9000,
+                  })
+                } else {
+                  toast({
+                    variant: 'destructive',
+                    title: 'Erro no envio de WhatsApp',
+                    description:
+                      (data?.motivo_real ? `Motivo: ${data.motivo_real} — ` : '') +
+                      (data?.detalhe ||
+                        data?.message ||
+                        data?.error ||
+                        error?.message ||
+                        'Ocorreu um erro ao processar o envio.'),
+                    duration: 7000,
+                  })
+                }
               } else if (data?.warning) {
                 toast({
                   title: 'Aviso de envio',

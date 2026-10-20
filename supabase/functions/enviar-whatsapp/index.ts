@@ -2,6 +2,11 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import jwt from 'npm:jsonwebtoken'
 import { corsHeaders } from '../_shared/cors.ts'
+import {
+  extractUazapiErrorMessage,
+  formatUazapiErrorForDisplay,
+  checkNumbersOnWhatsApp,
+} from '../_shared/uazapi.ts'
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -216,12 +221,36 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    // 5. Função de envio via UAZAPI (sem pré-validação)
+    // 4.1 Pré-verificação de números na UAZAPI (se endpoint estiver disponível)
+    const verificationResults = await checkNumbersOnWhatsApp({
+      baseUrl,
+      instanceId,
+      token: uazapiToken,
+      numbers: validPhones,
+    })
+
+    // Se todos os números verificados não estiverem no WhatsApp, atualiza status do candidato
+    const allCheckedNotOnWpp =
+      validPhones.length > 0 &&
+      validPhones.every(
+        (p) => verificationResults[p] && verificationResults[p].isInWhatsapp === false,
+      )
+
+    if (allCheckedNotOnWpp) {
+      await supabase
+        .from('candidatos')
+        .update({ whatsapp_status: 'nao_registrado' })
+        .eq('id', candidato.id)
+    } else if (validPhones.some((p) => verificationResults[p]?.isInWhatsapp === true)) {
+      await supabase.from('candidatos').update({ whatsapp_status: 'valido' }).eq('id', candidato.id)
+    }
+
+    // 5. Função de envio via UAZAPI
     const sendWhatsAppWithRetry = async (
       phone: string,
       message: string,
-      retries = 3,
-      backoff = 2000,
+      retries = 2,
+      backoff = 1500,
     ): Promise<any> => {
       let numWpp = phone
       if (numWpp && !numWpp.startsWith('55')) {
@@ -300,23 +329,32 @@ Deno.serve(async (req: Request) => {
                 responseData.status === 'error' ||
                 responseData.success === false
               ) {
-                lastErrorDetails = JSON.stringify(responseData)
+                lastErrorDetails = extractUazapiErrorMessage(responseData)
                 continue
               }
               return { ...responseData, _usedPayloadType: attempt.type }
             }
 
             const text = await response.text()
-            lastErrorDetails = text
+            lastErrorDetails = extractUazapiErrorMessage(text)
             console.error(
               `[enviar-whatsapp] API Error ${response.status} on ${attempt.url}: ${text}`,
             )
+
+            // Se for erro definitivo de "not on WhatsApp" ou 400/404, não adianta tentar outro payload se for erro de número
+            if (
+              lastErrorDetails.toLowerCase().includes('not on whatsapp') ||
+              lastErrorDetails.toLowerCase().includes('invalid number')
+            ) {
+              break
+            }
 
             if (response.status === 405 || response.status === 404 || response.status === 400) {
               console.log(`[enviar-whatsapp] Fallback triggered due to status ${response.status}`)
               continue
             }
             if (response.status >= 500) {
+              // Se a UazAPI deu 500 com corpo explicativo (ex: "the number ... is not on WhatsApp"), já temos o motivo real
               break
             }
           } catch (err: any) {
@@ -335,19 +373,29 @@ Deno.serve(async (req: Request) => {
           }
         }
 
+        if (
+          lastErrorDetails.toLowerCase().includes('not on whatsapp') ||
+          lastErrorDetails.toLowerCase().includes('invalid number')
+        ) {
+          break
+        }
+
         if (retry < retries) {
           await new Promise((resolve) => setTimeout(resolve, backoff))
           backoff *= 2
         }
       }
 
-      throw new Error(
-        `Falha após tentativas. Último status: ${lastStatus}. Detalhes: ${lastErrorDetails}`,
-      )
+      const cleanReason = lastErrorDetails || `Erro de conexão (Status HTTP ${lastStatus})`
+      throw new Error(cleanReason)
     }
 
     // 6. Iterar sobre cada número e enviar individualmente
-    let allSuccess = true
+    const attemptResults: Array<{
+      phone: string
+      success: boolean
+      error?: string
+    }> = []
     const errors: string[] = []
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
 
@@ -413,22 +461,28 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      try {
-        responseData = await sendWhatsAppWithRetry(phone, mensagemTexto)
-        isSuccess =
-          responseData?.success === true || responseData?.status === 'success' || !!responseData
-        if (!isSuccess) {
-          errorMessage = 'A API retornou sucesso falso: ' + JSON.stringify(responseData)
-        } else {
-          externalId =
-            responseData?.messageId ||
-            responseData?.id ||
-            responseData?.data?.id ||
-            responseData?.message?.messageId ||
-            null
+      // Se a pré-verificação já indicou que o número não está no WhatsApp, podemos marcar direto ou tentar envio
+      const preCheck = verificationResults[phone]
+      if (preCheck && preCheck.isInWhatsapp === false) {
+        errorMessage = preCheck.error || `O número ${phone} não está registrado no WhatsApp`
+      } else {
+        try {
+          responseData = await sendWhatsAppWithRetry(phone, mensagemTexto)
+          isSuccess =
+            responseData?.success === true || responseData?.status === 'success' || !!responseData
+          if (!isSuccess) {
+            errorMessage = extractUazapiErrorMessage(responseData)
+          } else {
+            externalId =
+              responseData?.messageId ||
+              responseData?.id ||
+              responseData?.data?.id ||
+              responseData?.message?.messageId ||
+              null
+          }
+        } catch (error: any) {
+          errorMessage = extractUazapiErrorMessage(error.message)
         }
-      } catch (error: any) {
-        errorMessage = error.message
       }
 
       let finalStatus = 'falha'
@@ -444,9 +498,15 @@ Deno.serve(async (req: Request) => {
           finalStatus = 'enviada'
         }
       } else {
-        allSuccess = false
-        if (errorMessage) errors.push(`Falha no envio para ${phone}: ${errorMessage}`)
+        const displayErr = formatUazapiErrorForDisplay(errorMessage || 'Falha no envio')
+        errors.push(`${phone}: ${displayErr}`)
       }
+
+      attemptResults.push({
+        phone,
+        success: isSuccess,
+        error: errorMessage || undefined,
+      })
 
       const convText =
         isChatbot && fallbackUsed
@@ -456,7 +516,7 @@ Deno.serve(async (req: Request) => {
             ? (tituloTexto ? `*${tituloTexto}*\n\n` : '') + `${perguntaTexto}`
             : mensagemTexto
 
-      // Individual logging per number
+      // Individual logging per number com erro real gravado em erro_detalhe
       const { error: insertError } = await supabase.from('mensagens_whatsapp').insert({
         candidato_id: candidato.id,
         etapa_id: etapa_id,
@@ -470,6 +530,7 @@ Deno.serve(async (req: Request) => {
         conteudo: convText,
         direcao: 'enviada',
         tipo: isChatbot ? 'interativa' : 'texto',
+        erro_detalhe: !isSuccess ? errorMessage : null,
       } as any)
 
       if (insertError) {
@@ -477,13 +538,41 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    if (!allSuccess && errors.length > 0) {
+    const successfulAttempts = attemptResults.filter((r) => r.success)
+    const failedAttempts = attemptResults.filter((r) => !r.success)
+    const totalPhones = attemptResults.length
+    const allFailed = totalPhones > 0 && failedAttempts.length === totalPhones
+
+    if (allFailed) {
+      const primeiroErroFormatado = failedAttempts[0]?.error
+        ? formatUazapiErrorForDisplay(failedAttempts[0].error)
+        : 'Motivo não informado pela API'
+
       return new Response(
         JSON.stringify({
           error: true,
-          warning: false,
-          message: 'Alguns envios falharam.',
+          all_failed: true,
+          candidate_name: candidato.nome,
+          message: `Todos os números de ${candidato.nome || 'o candidato'} falharam no WhatsApp — confira o telefone do candidato.`,
           detalhe: errors.join(' | '),
+          motivo_real: primeiroErroFormatado,
+          attempts: attemptResults,
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
+    }
+
+    if (failedAttempts.length > 0) {
+      return new Response(
+        JSON.stringify({
+          warning: true,
+          all_failed: false,
+          message: `Mensagem enviada com sucesso para ${successfulAttempts.length} número(s), mas falhou em ${failedAttempts.length}.`,
+          detalhe: errors.join(' | '),
+          attempts: attemptResults,
         }),
         {
           status: 200,
@@ -496,6 +585,7 @@ Deno.serve(async (req: Request) => {
       JSON.stringify({
         success: true,
         message: 'Mensagens enviadas com sucesso',
+        attempts: attemptResults,
       }),
       {
         status: 200,

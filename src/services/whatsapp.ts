@@ -4,21 +4,23 @@ export interface WhatsappCandidate {
   id: string
   nome: string
   telefone: string
+  whatsapp_status?: string | null
   lastMessage: string
   lastMessageTime: string
-  lastResponse: string | null
-  isUnlinked?: boolean
+  lastResponse: 'sim' | 'nao' | null
+  isUnlinked: boolean
   etapaId: string | null
-  conversations: {
+  conversations: Array<{
     id: string
     texto: string
     direcao: 'enviada' | 'recebida'
     criado_em: string
-    status?: string | null
-    respostaAssociada?: string | null
-  }[]
+    status: string | null
+    respostaAssociada: string | null
+    erro_detalhe?: string | null
+    numero_whatsapp?: string | null
+  }>
 }
-
 export async function getWhatsappDashboardData() {
   const { data: userData } = await supabase.auth.getUser()
   if (!userData.user) throw new Error('Não autenticado')
@@ -74,7 +76,7 @@ export async function getWhatsappDashboardData() {
         supabase
           .from('mensagens_whatsapp')
           .select(
-            'id, candidato_id, conteudo, direcao, status, criado_em, uazapi_message_id, external_id, numero_whatsapp, template_id, tipo, candidatos(nome, telefone, user_id, ultima_resposta_whatsapp, etapa_id)',
+            'id, candidato_id, conteudo, direcao, status, criado_em, uazapi_message_id, external_id, numero_whatsapp, template_id, tipo, erro_detalhe, candidatos(nome, telefone, user_id, ultima_resposta_whatsapp, etapa_id, whatsapp_status)',
           )
           .in('candidato_id', batch)
           .not('conteudo', 'is', null)
@@ -257,6 +259,7 @@ export async function getWhatsappDashboardData() {
         id: candidateId,
         nome: (c.candidatos as any)?.nome || candInfo?.nome || 'Contato Desconhecido',
         telefone: (c.candidatos as any)?.telefone || candInfo?.telefone || c.numero_whatsapp || '',
+        whatsapp_status: (c.candidatos as any)?.whatsapp_status || null,
         lastMessage: '',
         lastMessageTime: '',
         lastResponse: (() => {
@@ -314,6 +317,8 @@ export async function getWhatsappDashboardData() {
       criado_em: c.criado_em,
       status: c.status || null,
       respostaAssociada: resposta,
+      erro_detalhe: c.erro_detalhe || null,
+      numero_whatsapp: c.numero_whatsapp || null,
     })
     cand.lastMessage = c.conteudo
     cand.lastMessageTime = c.criado_em

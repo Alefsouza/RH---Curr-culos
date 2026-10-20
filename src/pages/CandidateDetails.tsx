@@ -363,7 +363,22 @@ export default function CandidateDetails() {
         body: { candidato_id: candidate.id, etapa_id: etapaId },
       })
       if (error) throw error
-      if (data?.error) throw new Error(data.error)
+      if (data?.error) {
+        if (data?.all_failed) {
+          toast.error(
+            data.message ||
+              `Todos os números de ${candidate.nome} falharam — confira o telefone do candidato.`,
+            { duration: 8000 },
+          )
+        } else {
+          toast.error(
+            `Falha no envio: ${data.motivo_real || data.detalhe || data.message || data.error}`,
+            { duration: 6000 },
+          )
+        }
+        fetchCandidateData()
+        return
+      }
       toast.success('Mensagem reenviada com sucesso!')
       fetchCandidateData()
     } catch (e: any) {
@@ -480,9 +495,21 @@ export default function CandidateDetails() {
             <span className="flex items-center">
               <Mail className="w-4 h-4 mr-1.5 text-slate-400" /> {candidate.email || 'Sem e-mail'}
             </span>
-            <span className="flex items-center">
-              <Phone className="w-4 h-4 mr-1.5 text-slate-400" />{' '}
-              {candidate.telefone || 'Sem telefone'}
+            <span className="flex items-center gap-1.5">
+              <Phone className="w-4 h-4 text-slate-400" /> {candidate.telefone || 'Sem telefone'}
+              {candidate.whatsapp_status === 'nao_registrado' && (
+                <Badge variant="destructive" className="text-[10px] h-5 px-1.5 font-normal">
+                  Sem WhatsApp
+                </Badge>
+              )}
+              {candidate.whatsapp_status === 'valido' && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] h-5 px-1.5 font-normal bg-green-50 text-green-700 border-green-200"
+                >
+                  WhatsApp válido
+                </Badge>
+              )}
             </span>
             <span className="flex items-center">
               <User className="w-4 h-4 mr-1.5 text-slate-400" /> Fonte:{' '}
@@ -1007,11 +1034,11 @@ export default function CandidateDetails() {
                         <MessageSquare className="w-5 h-5" />
                       </div>
                       <div>
-                        <h4 className="font-semibold flex items-center gap-2 text-slate-800">
+                        <h4 className="font-semibold flex items-center gap-2 text-slate-800 flex-wrap">
                           Etapa: {m.etapas?.nome || 'Desconhecida'}
                           <Badge
                             variant={
-                              m.status === 'enviada' ||
+                              m.status?.startsWith('enviada') ||
                               m.status === 'entregue' ||
                               m.status === 'lida'
                                 ? 'default'
@@ -1021,17 +1048,30 @@ export default function CandidateDetails() {
                             }
                             className="text-[10px] h-5 px-1.5 uppercase tracking-wider"
                           >
-                            {m.status === 'enviada'
+                            {m.status?.startsWith('enviada')
                               ? 'Enviada'
                               : m.status === 'entregue'
                                 ? 'Entregue'
                                 : m.status === 'lida'
                                   ? 'Lida'
                                   : m.status === 'falha'
-                                    ? 'Falhou'
+                                    ? 'Falha'
                                     : m.status}
                           </Badge>
+                          {m.numero_whatsapp && (
+                            <span className="text-xs text-slate-400 font-normal">
+                              ({m.numero_whatsapp})
+                            </span>
+                          )}
                         </h4>
+                        {m.status === 'falha' && m.erro_detalhe && (
+                          <div className="mt-1 text-xs text-red-600 bg-red-50 border border-red-100 rounded px-2 py-1 max-w-xl">
+                            <strong>Motivo retornado:</strong>{' '}
+                            {m.erro_detalhe.toLowerCase().includes('not on whatsapp')
+                              ? 'Número não registrado no WhatsApp (UazAPI: number not on WhatsApp)'
+                              : m.erro_detalhe}
+                          </div>
+                        )}
                         <p className="text-sm text-slate-500 mt-1 flex items-center gap-1.5">
                           <Clock className="w-3.5 h-3.5" />
                           {format(new Date(m.criado_em), "dd 'de' MMM, yyyy 'às' HH:mm", {

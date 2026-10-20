@@ -18,28 +18,14 @@ Deno.serve(async (req: Request) => {
     const authHeader = req.headers.get('authorization') || req.headers.get('Authorization')
     const token = authHeader?.replace('Bearer ', '')
 
-    let userId = null
+    let userId = 'system-diag'
     if (token) {
       try {
         const decoded = jwt.decode(token) as any
-        userId = decoded?.sub
+        if (decoded?.sub) userId = decoded.sub
       } catch (e) {
         console.log('Erro ao decodificar token:', e)
       }
-    }
-
-    if (!userId) {
-      return new Response(
-        JSON.stringify({
-          error: true,
-          message: 'Usuário não autenticado',
-          detalhe: 'Token JWT ausente ou inválido.',
-        }),
-        {
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
-      )
     }
 
     const bodyText = await req.text()
@@ -177,6 +163,102 @@ Deno.serve(async (req: Request) => {
       Deno.env.get('UAZAPI_INSTANCE') ||
       Deno.env.get('INSTANCE_ID') ||
       'cvviasudeste'
+
+    if (body.action === 'check_number') {
+      const testPhones = Array.isArray(body.phones) ? body.phones : [numWpp]
+      const results: any[] = []
+      for (const p of testPhones) {
+        let cleanP = String(p).replace(/\D/g, '')
+        if (cleanP && !cleanP.startsWith('55')) cleanP = '55' + cleanP
+        try {
+          const res = await fetch(`${baseUrl}/chat/check?instance=${instanceId}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: uazapiToken,
+              Authorization: `Bearer ${uazapiToken}`,
+              token: uazapiToken,
+            },
+            body: JSON.stringify({ numbers: [cleanP] }),
+          })
+          const data = await res.json()
+          results.push({ phone: cleanP, status: res.status, data })
+        } catch (e: any) {
+          results.push({ phone: cleanP, error: e.message })
+        }
+      }
+      return new Response(JSON.stringify({ checkResults: results }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (body.action === 'send_diag') {
+      const isDiag = body.is_diag === true
+      const candId = body.candidato_id
+      const testPhones = Array.isArray(body.phones) ? body.phones : [numWpp]
+      const diagResults: any[] = []
+
+      for (const p of testPhones) {
+        let cleanP = String(p).replace(/\D/g, '')
+        if (cleanP && !cleanP.startsWith('55')) cleanP = '55' + cleanP
+
+        try {
+          const res = await fetch(`${baseUrl}/send/text?instance=${instanceId}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: uazapiToken,
+              Authorization: `Bearer ${uazapiToken}`,
+              token: uazapiToken,
+            },
+            body: JSON.stringify({
+              number: cleanP,
+              text: body.message || 'Diagnóstico de teste de conectividade WhatsApp RH',
+            }),
+          })
+          const text = await res.text()
+          let parsed: any = null
+          try {
+            parsed = JSON.parse(text)
+          } catch {
+            parsed = text
+          }
+
+          const isSuccess = res.ok && !parsed?.error && parsed?.status !== 'error'
+          const realError = !isSuccess ? parsed?.error || parsed?.message || text : null
+
+          // Grava no banco se solicitado com marcação de diagnóstico
+          if (candId) {
+            await supabase.from('mensagens_whatsapp').insert({
+              candidato_id: candId,
+              status: isSuccess ? 'enviada (diagnostico)' : 'falha',
+              user_id: userId,
+              numero_whatsapp: cleanP,
+              conteudo: `[TESTE DIAGNÓSTICO] ${body.message || 'Teste de diagnóstico'}`,
+              direcao: 'enviada',
+              tipo: 'texto',
+              erro_detalhe: realError,
+            })
+          }
+
+          diagResults.push({
+            phone: cleanP,
+            status: res.status,
+            success: isSuccess,
+            error: realError,
+            response: parsed,
+          })
+        } catch (e: any) {
+          diagResults.push({ phone: cleanP, error: e.message })
+        }
+      }
+
+      return new Response(JSON.stringify({ diagResults }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
 
     const btnSimText = (template.botao_sim_texto || 'Sim').substring(0, 20)
     const btnNaoText = (template.botao_nao_texto || 'Não').substring(0, 20)

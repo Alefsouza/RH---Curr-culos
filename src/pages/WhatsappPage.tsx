@@ -118,8 +118,30 @@ export default function WhatsappPage() {
       if (error) {
         throw new Error((error as any).message || 'Falha no envio')
       }
+      if (data && data.all_failed) {
+        toast({
+          title: `⚠️ Todos os números falharam`,
+          description:
+            data.message ||
+            'Confira o telefone do candidato. Erro: ' + (data.motivo_real || data.detalhe),
+          variant: 'destructive',
+          duration: 9000,
+        })
+        loadData()
+        return
+      }
       if (data && data.success === false) {
-        throw new Error(data.message || 'Falha no envio')
+        const errorDesc = data.motivo_real
+          ? `Motivo: ${data.motivo_real}`
+          : data.detalhe || data.message || 'Falha no envio'
+        toast({
+          title: 'Falha no envio de WhatsApp',
+          description: errorDesc,
+          variant: 'destructive',
+          duration: 7000,
+        })
+        loadData()
+        return
       }
       setMessageInput('')
       toast({
@@ -382,6 +404,14 @@ export default function WhatsappPage() {
                             <AlertCircle className="w-3 h-3 text-amber-500 shrink-0" />
                           )}
                           <span className="truncate">{c.nome}</span>
+                          {c.whatsapp_status === 'nao_registrado' && (
+                            <span
+                              title="Número sem WhatsApp"
+                              className="text-[9px] bg-red-100 text-red-700 px-1 rounded shrink-0 font-normal"
+                            >
+                              Sem Wpp
+                            </span>
+                          )}
                         </span>
                         <span className="text-[10px] text-slate-400 shrink-0 font-normal">
                           {c.lastMessageTime ? format(new Date(c.lastMessageTime), 'HH:mm') : ''}
@@ -468,6 +498,11 @@ export default function WhatsappPage() {
                         <p className="text-[10px] sm:text-xs text-white/80 truncate">
                           {selectedCandidate.telefone}
                         </p>
+                        {selectedCandidate.whatsapp_status === 'nao_registrado' && (
+                          <Badge variant="destructive" className="text-[10px] h-4 px-1 py-0">
+                            Sem WhatsApp
+                          </Badge>
+                        )}
                         <div className="flex sm:hidden shrink-0">
                           {selectedCandidate.lastResponse?.toLowerCase() === 'sim' && (
                             <span className="text-green-300">
@@ -492,6 +527,31 @@ export default function WhatsappPage() {
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
+
+                  {/* Alerta de aviso se todas as mensagens enviadas falharam */}
+                  {(selectedCandidate.whatsapp_status === 'nao_registrado' ||
+                    (selectedCandidate.conversations.length > 0 &&
+                      selectedCandidate.conversations.every(
+                        (m) => m.direcao === 'enviada' && m.status === 'falha',
+                      ))) && (
+                    <div className="bg-amber-50 border-b border-amber-200 px-3 py-2 text-xs text-amber-800 flex items-center justify-between gap-2 shrink-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span className="truncate sm:whitespace-normal">
+                          <strong>Aviso:</strong> Envios para este candidato falharam na UazAPI.
+                          Confira os telefones no cadastro.
+                        </span>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 text-[11px] px-2 border-amber-300 hover:bg-amber-100 shrink-0"
+                        onClick={() => navigate(`/candidates/${selectedCandidate.id}`)}
+                      >
+                        Ver cadastro
+                      </Button>
+                    </div>
+                  )}
 
                   {/* Messages Area - with independent vertical scrollbar and full scroll-to-end */}
                   <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-5 min-h-0 chat-scrollbar">
@@ -534,11 +594,10 @@ export default function WhatsappPage() {
                                   )}
                                   {msg.direcao === 'enviada' && msg.status === 'falha' && (
                                     <span
-                                      title="Falha no envio (erro de comunicação/503)"
+                                      title={msg.erro_detalhe || 'Falha no envio'}
                                       className="flex items-center gap-1 text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-medium border border-amber-300"
                                     >
                                       <AlertCircle className="w-2.5 h-2.5 text-amber-600" /> Falha
-                                      no envio
                                     </span>
                                   )}
                                   <span className="text-[10px] text-slate-500 font-medium leading-none whitespace-nowrap mt-[1px]">
@@ -546,6 +605,16 @@ export default function WhatsappPage() {
                                   </span>
                                 </span>
                               </div>
+                              {msg.direcao === 'enviada' &&
+                                msg.status === 'falha' &&
+                                msg.erro_detalhe && (
+                                  <div className="mt-1 text-[11px] text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1 max-w-sm self-end">
+                                    <span className="font-semibold">Motivo:</span>{' '}
+                                    {msg.erro_detalhe.toLowerCase().includes('not on whatsapp')
+                                      ? 'Número não registrado no WhatsApp (number not on WhatsApp)'
+                                      : msg.erro_detalhe}
+                                  </div>
+                                )}
                             </div>
                           </div>
                         ))
