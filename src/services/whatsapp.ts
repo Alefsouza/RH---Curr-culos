@@ -22,8 +22,10 @@ export interface WhatsappCandidate {
   }>
 }
 export async function getWhatsappDashboardData() {
-  const { data: userData } = await supabase.auth.getUser()
-  if (!userData.user) throw new Error('Não autenticado')
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+  if (!session?.user) throw new Error('Não autenticado')
 
   // 1. Busca todos os candidatos do sistema com sua etapa definida e status no Kanban
   // Ancoramos a busca de WhatsApp nos candidatos que estão no Kanban ou vinculados

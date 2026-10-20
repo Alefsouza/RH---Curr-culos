@@ -60,12 +60,29 @@ export default function WhatsappPage() {
 
   const isMobile = useIsMobile()
 
+  const isMountedRef = useRef(true)
+
+  const isAbortError = (err: any): boolean => {
+    if (!err) return false
+    const name = err.name || err.code || ''
+    const msg = String(err.message || err.details || err || '')
+    return (
+      name === 'AbortError' ||
+      msg.includes('AbortError') ||
+      msg.includes('Lock broken by another request') ||
+      msg.includes('Request was aborted') ||
+      msg.includes('signal is aborted')
+    )
+  }
+
   const loadData = async () => {
     try {
       const [dashboardData, stagesData] = await Promise.all([
         getWhatsappDashboardData(),
         fetchStages(),
       ])
+      if (!isMountedRef.current) return
+
       setData(dashboardData)
       setStages(stagesData)
 
@@ -78,10 +95,16 @@ export default function WhatsappPage() {
         if (!prev) return null
         return dashboardData.candidates.find((c) => c.id === prev.id) || null
       })
-    } catch (err) {
+    } catch (err: any) {
+      if (isAbortError(err)) {
+        // Ignora silenciosamente AbortError de requisições canceladas/interrompidas
+        return
+      }
       console.error(err)
     } finally {
-      setLoading(false)
+      if (isMountedRef.current) {
+        setLoading(false)
+      }
     }
   }
 
@@ -170,22 +193,22 @@ export default function WhatsappPage() {
   }, [selectedCandidate?.id, selectedCandidate?.conversations.length])
 
   useEffect(() => {
+    isMountedRef.current = true
     loadData()
     const channel = supabase
       .channel('whatsapp-dashboard')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'mensagens_whatsapp' },
-        loadData,
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'respostas_whatsapp' },
-        loadData,
-      )
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'candidatos' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mensagens_whatsapp' }, () => {
+        if (isMountedRef.current) loadData()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'respostas_whatsapp' }, () => {
+        if (isMountedRef.current) loadData()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'candidatos' }, () => {
+        if (isMountedRef.current) loadData()
+      })
       .subscribe()
     return () => {
+      isMountedRef.current = false
       supabase.removeChannel(channel)
     }
   }, [])
