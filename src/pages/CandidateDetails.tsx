@@ -510,6 +510,14 @@ export default function CandidateDetails() {
                   WhatsApp válido
                 </Badge>
               )}
+              {(!candidate.whatsapp_status || candidate.whatsapp_status === 'nao_verificado') && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] h-5 px-1.5 font-normal bg-slate-50 text-slate-600 border-slate-200"
+                >
+                  Não verificado
+                </Badge>
+              )}
             </span>
             <span className="flex items-center">
               <User className="w-4 h-4 mr-1.5 text-slate-400" /> Fonte:{' '}

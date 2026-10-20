@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { getWhatsappDashboardData, WhatsappCandidate } from '@/services/whatsapp'
 import { fetchStages } from '@/services/kanban'
@@ -39,6 +40,7 @@ import { cn } from '@/lib/utils'
 import { useIsMobile } from '@/hooks/use-mobile'
 
 export default function WhatsappPage() {
+  const navigate = useNavigate()
   const [data, setData] = useState<{
     stats: { sent: number; failed: number; yes: number; no: number }
     statsByStage: Record<string, { sent: number; failed: number; yes: number; no: number }>
@@ -412,6 +414,14 @@ export default function WhatsappPage() {
                               Sem Wpp
                             </span>
                           )}
+                          {c.whatsapp_status === 'valido' && (
+                            <span
+                              title="WhatsApp válido"
+                              className="text-[9px] bg-green-100 text-green-700 px-1 rounded shrink-0 font-normal"
+                            >
+                              Wpp OK
+                            </span>
+                          )}
                         </span>
                         <span className="text-[10px] text-slate-400 shrink-0 font-normal">
                           {c.lastMessageTime ? format(new Date(c.lastMessageTime), 'HH:mm') : ''}
@@ -501,6 +511,20 @@ export default function WhatsappPage() {
                         {selectedCandidate.whatsapp_status === 'nao_registrado' && (
                           <Badge variant="destructive" className="text-[10px] h-4 px-1 py-0">
                             Sem WhatsApp
+                          </Badge>
+                        )}
+                        {selectedCandidate.whatsapp_status === 'valido' && (
+                          <Badge className="text-[10px] h-4 px-1 py-0 bg-green-500 text-white hover:bg-green-600">
+                            WhatsApp válido
+                          </Badge>
+                        )}
+                        {(!selectedCandidate.whatsapp_status ||
+                          selectedCandidate.whatsapp_status === 'nao_verificado') && (
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] h-4 px-1 py-0 bg-white/20 text-white border-none"
+                          >
+                            Não verificado
                           </Badge>
                         )}
                         <div className="flex sm:hidden shrink-0">
