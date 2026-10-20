@@ -55,23 +55,91 @@ export default function DashboardPage() {
     setLoading(true)
     setError(null)
     try {
-      const [candRes, etapasRes, vagasRes, analisesRes, ceRes] = await Promise.all([
-        supabase.from('candidatos').select('*').is('duplicado_de', null),
-        supabase.from('etapas').select('*').order('ordem'),
-        supabase.from('vagas').select('*'),
-        supabase.from('analises').select('*'),
-        supabase.from('candidato_etapa').select('*').order('data_entrada'),
-      ])
-      if (candRes.error) throw candRes.error
-      if (analisesRes.error) throw analisesRes.error
+      // Executamos cada query individualmente com Promise.allSettled para garantir
+      // que se uma query secundária falhar ou estourar timeout, a página consiga
+      // renderizar o que carregou com sucesso e exibir aviso de retry para o usuário.
+      // Além disso, selecionamos SOMENTE as colunas necessárias para o dashboard,
+      // evitando transferir colunas gigantes (dados_extraidos, curriculo_url, detalhes de IA, etc.).
+      const [candSettled, etapasSettled, vagasSettled, analisesSettled, ceSettled] =
+        await Promise.allSettled([
+          supabase
+            .from('candidatos')
+            .select('id, nome, vaga_id, etapa_id, criado_em, duplicado_de')
+            .is('duplicado_de', null),
+          supabase.from('etapas').select('id, nome, cor, ordem').order('ordem'),
+          supabase.from('vagas').select('id, titulo, ativa'),
+          supabase
+            .from('analises')
+            .select('id, candidato_id, vaga_id, resultado, criado_em')
+            .order('criado_em', { ascending: false }),
+          supabase
+            .from('candidato_etapa')
+            .select('id, candidato_id, etapa_id, data_entrada')
+            .order('data_entrada', { ascending: true }),
+        ])
 
-      setData({
-        candidatos: candRes.data || [],
-        etapas: etapasRes.data || [],
-        vagas: vagasRes.data || [],
-        analises: analisesRes.data || [],
-        candidatoEtapas: ceRes.data || [],
-      })
+      const errors: string[] = []
+      let loadedCandidatos: any[] = []
+      let loadedEtapas: any[] = []
+      let loadedVagas: any[] = []
+      let loadedAnalises: any[] = []
+      let loadedCE: any[] = []
+
+      if (candSettled.status === 'fulfilled' && !candSettled.value.error) {
+        loadedCandidatos = candSettled.value.data || []
+      } else {
+        const err = candSettled.status === 'rejected' ? candSettled.reason : candSettled.value.error
+        errors.push(`Candidatos: ${err?.message || 'Falha ao carregar'}`)
+      }
+
+      if (etapasSettled.status === 'fulfilled' && !etapasSettled.value.error) {
+        loadedEtapas = etapasSettled.value.data || []
+      } else {
+        const err =
+          etapasSettled.status === 'rejected' ? etapasSettled.reason : etapasSettled.value.error
+        errors.push(`Etapas: ${err?.message || 'Falha ao carregar'}`)
+      }
+
+      if (vagasSettled.status === 'fulfilled' && !vagasSettled.value.error) {
+        loadedVagas = vagasSettled.value.data || []
+      } else {
+        const err =
+          vagasSettled.status === 'rejected' ? vagasSettled.reason : vagasSettled.value.error
+        errors.push(`Vagas: ${err?.message || 'Falha ao carregar'}`)
+      }
+
+      if (analisesSettled.status === 'fulfilled' && !analisesSettled.value.error) {
+        loadedAnalises = analisesSettled.value.data || []
+      } else {
+        const err =
+          analisesSettled.status === 'rejected'
+            ? analisesSettled.reason
+            : analisesSettled.value.error
+        errors.push(`Análises: ${err?.message || 'Falha ao carregar'}`)
+      }
+
+      if (ceSettled.status === 'fulfilled' && !ceSettled.value.error) {
+        loadedCE = ceSettled.value.data || []
+      } else {
+        const err = ceSettled.status === 'rejected' ? ceSettled.reason : ceSettled.value.error
+        errors.push(`Histórico de etapas: ${err?.message || 'Falha ao carregar'}`)
+      }
+
+      // Se todas as consultas falharam, ou a principal de candidatos falhou sem dados
+      if (loadedCandidatos.length === 0 && errors.length > 0 && loadedEtapas.length === 0) {
+        setError(errors.join(' | '))
+      } else {
+        setData({
+          candidatos: loadedCandidatos,
+          etapas: loadedEtapas,
+          vagas: loadedVagas,
+          analises: loadedAnalises,
+          candidatoEtapas: loadedCE,
+        })
+        if (errors.length > 0) {
+          setError(`Alguns dados não puderam ser carregados: ${errors.join(' | ')}`)
+        }
+      }
     } catch (err: any) {
       setError(err.message || 'Erro ao carregar dados do dashboard.')
     } finally {
@@ -246,18 +314,20 @@ export default function DashboardPage() {
     )
   }
 
-  if (error) {
+  const isEmpty = data.candidatos.length === 0
+
+  if (isEmpty && error) {
     return (
-      <div className="p-6 flex flex-col items-center justify-center h-full min-h-[400px] text-center">
+      <div className="p-6 flex flex-col items-center justify-center h-full min-h-[400px] text-center max-w-7xl mx-auto">
         <AlertCircle className="h-12 w-12 text-red-500 mb-4" />
-        <h2 className="text-xl font-bold text-slate-800 mb-2">Erro ao carregar relatórios</h2>
-        <p className="text-slate-600 mb-6">{error}</p>
+        <h2 className="text-xl font-bold text-slate-800 mb-2">
+          Erro ao carregar dados do dashboard
+        </h2>
+        <p className="text-slate-600 max-w-md mb-6">{error}</p>
         <Button onClick={loadData}>Tentar Novamente</Button>
       </div>
     )
   }
-
-  const isEmpty = data.candidatos.length === 0
 
   if (isEmpty) {
     return (
@@ -293,11 +363,46 @@ export default function DashboardPage() {
             Acompanhe o desempenho do seu processo seletivo
           </p>
         </div>
-        <Button onClick={handlePrint} className="gap-2" variant="outline">
-          <Download className="h-4 w-4" />
-          <span>Exportar PDF</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          {error && (
+            <Button
+              onClick={loadData}
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-xs text-amber-700 border-amber-300 hover:bg-amber-50"
+            >
+              <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+              <span>Tentar recarregar</span>
+            </Button>
+          )}
+          <Button onClick={handlePrint} className="gap-2" variant="outline">
+            <Download className="h-4 w-4" />
+            <span>Exportar PDF</span>
+          </Button>
+        </div>
       </div>
+
+      {error && (
+        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start justify-between gap-3 text-amber-800 print:hidden">
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium">
+                Alguns dados não puderam ser totalmente carregados
+              </p>
+              <p className="text-xs text-amber-700 mt-0.5">{error}</p>
+            </div>
+          </div>
+          <Button
+            onClick={loadData}
+            variant="ghost"
+            size="sm"
+            className="shrink-0 h-8 text-xs text-amber-800 hover:text-amber-900 hover:bg-amber-100"
+          >
+            Recarregar
+          </Button>
+        </div>
+      )}
 
       {/* Filtros (dropdowns + datas) */}
       <div className="bg-slate-50 p-4 sm:p-5 rounded-xl mb-6 border border-slate-200 print:hidden">
