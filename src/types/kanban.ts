@@ -9,6 +9,7 @@ export interface Candidate {
   vagaId?: string | null
   appliedAt: string
   criado_em?: string
+  curriculo_url?: string | null
   analysisResult?: string | null
   analysisDetails?: any
   ultima_resposta_whatsapp?: string | null

@@ -19,6 +19,7 @@ type CandidateWithRelations = {
   nome: string
   email: string | null
   telefone: string | null
+  curriculo_url: string | null
   fonte: string | null
   etapa_id: string | null
   criado_em: string
@@ -76,6 +77,7 @@ export async function fetchCandidates() {
         vagaId: (d as any).vaga_id || null,
         appliedAt: d.criado_em,
         criado_em: d.criado_em,
+        curriculo_url: d.curriculo_url || null,
         analysisResult: latestIa?.resultado || null,
         analysisDetails: latestIa?.detalhes || null,
         proximidade: (d as any).proximidade || null,

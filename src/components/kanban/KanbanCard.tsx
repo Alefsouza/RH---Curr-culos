@@ -13,7 +13,9 @@ import {
   Users,
   MapPin,
   Archive,
+  FileText,
 } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { removeFromKanban, archiveCandidate } from '@/services/kanban'
@@ -163,6 +165,22 @@ export function KanbanCard({
       String(candidate.analysisDetails.aderencia).slice(1)
     : null
 
+  const handleOpenCurriculo = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!candidate.curriculo_url) {
+      toast({
+        variant: 'destructive',
+        title: 'Sem currículo',
+        description: 'Este candidato não possui currículo anexado.',
+      })
+      return
+    }
+    window.open(candidate.curriculo_url, '_blank', 'noopener,noreferrer')
+  }
+
+  const hasCurriculo = Boolean(candidate.curriculo_url && candidate.curriculo_url.trim() !== '')
+
   return (
     <Card
       draggable
@@ -201,7 +219,33 @@ export function KanbanCard({
         />
       </div>
 
-      <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+      <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10 flex items-center gap-0.5">
+        <TooltipProvider delayDuration={200}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                disabled={!hasCurriculo}
+                onClick={handleOpenCurriculo}
+                className={cn(
+                  'h-6 w-6',
+                  hasCurriculo
+                    ? 'text-slate-500 hover:text-primary hover:bg-slate-100 cursor-pointer'
+                    : 'text-slate-300 hover:text-slate-300 hover:bg-transparent cursor-not-allowed opacity-50',
+                )}
+                aria-label={hasCurriculo ? 'Ver currículo do candidato' : 'Sem currículo anexado'}
+              >
+                <FileText size={14} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">
+              {hasCurriculo ? 'Ver currículo' : 'Sem currículo'}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
