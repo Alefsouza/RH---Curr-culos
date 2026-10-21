@@ -43,7 +43,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json()
-    const { candidate_id, force_reextract, target_vaga_id } = body
+    const { candidate_id, force_reextract, target_vaga_id, target_etapa } = body
 
     if (!candidate_id) {
       return new Response(JSON.stringify({ error: 'candidate_id é obrigatório.' }), {
@@ -1217,29 +1217,43 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
           .eq('id', candidato.id)
           .maybeSingle()
 
+        const upd: Record<string, any> = {}
+
         if (
           candStatus &&
           candStatus.ativo_kanban === false &&
           typeof candStatus.motivo_inativo === 'string' &&
           candStatus.motivo_inativo.toLowerCase().includes('não qualificado')
         ) {
-          const upd: Record<string, any> = {
-            ativo_kanban: true,
-            motivo_inativo: null,
+          upd.ativo_kanban = true
+          upd.motivo_inativo = null
+        }
+
+        if (target_etapa) {
+          const { data: etapaObj } = await supabase
+            .from('etapas')
+            .select('id')
+            .ilike('nome', target_etapa)
+            .maybeSingle()
+          if (etapaObj?.id) {
+            upd.etapa_id = etapaObj.id
           }
-          if (!candStatus.etapa_id) {
-            const { data: etapaTriagem } = await supabase
-              .from('etapas')
-              .select('id')
-              .ilike('nome', 'Triagem')
-              .maybeSingle()
-            if (etapaTriagem?.id) {
-              upd.etapa_id = etapaTriagem.id
-            }
+        } else if (!candStatus?.etapa_id) {
+          const { data: etapaTriagem } = await supabase
+            .from('etapas')
+            .select('id')
+            .ilike('nome', 'Triagem')
+            .maybeSingle()
+          if (etapaTriagem?.id) {
+            upd.etapa_id = etapaTriagem.id
           }
+        }
+
+        if (Object.keys(upd).length > 0) {
           await supabase.from('candidatos').update(upd).eq('id', candidato.id)
           console.log(
-            `[reanalisar-candidato] Candidato ${candidato.id} reativado automaticamente no Kanban após reanálise qualificada.`,
+            `[reanalisar-candidato] Candidato ${candidato.id} atualizado pós-qualificação:`,
+            upd,
           )
         }
       }
