@@ -726,26 +726,25 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
 
     let candidatoId: string | null = null
 
+    // Identificar vaga ANTES de criar/atualizar para garantir melhor encaixe de endereço e perfil
+    if (!finalVagaId) {
+      try {
+        const identifyRes = await supabase.functions.invoke('identify-vaga-from-cv', {
+          body: {
+            candidato_id: existingCandidate?.id || null,
+            user_id: user_id,
+            texto_cv: extractedText || '',
+            dados_extraidos: extractedData,
+          },
+        })
+        finalVagaId = identifyRes.data?.vaga_id || null
+      } catch (idErr: any) {
+        console.warn('Erro ao identificar vaga:', idErr?.message)
+      }
+    }
+
     if (existingCandidate) {
       candidatoId = existingCandidate.id
-      finalVagaId = vaga_id || existingCandidate.vaga_id || null
-
-      // Se ainda não tem vaga_id, tenta identificar vaga compatível
-      if (!finalVagaId) {
-        try {
-          const identifyRes = await supabase.functions.invoke('identify-vaga-from-cv', {
-            body: {
-              candidato_id: candidatoId,
-              user_id: user_id,
-              texto_cv: extractedText || '',
-              dados_extraidos: extractedData,
-            },
-          })
-          finalVagaId = identifyRes.data?.vaga_id || null
-        } catch (idErr: any) {
-          console.warn('Erro ao identificar vaga:', idErr?.message)
-        }
-      }
 
       const updatePayload: Record<string, any> = {
         nome: finalNome || existingCandidate.nome,
@@ -753,7 +752,13 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
         telefone: finalTelefone || existingCandidate.telefone,
         curriculo_url: publicUrlData.publicUrl,
         dados_extraidos: extractedData,
-        vaga_id: finalVagaId,
+        vaga_id: finalVagaId || existingCandidate.vaga_id || null,
+      }
+
+      // Se não possui vaga compatível identificada nem existente
+      if (!updatePayload.vaga_id) {
+        updatePayload.ativo_kanban = false
+        updatePayload.motivo_inativo = 'aguardando vaga adequada'
       }
 
       const { error: updateError } = await supabase
@@ -765,22 +770,9 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
         console.error('Erro ao atualizar candidato duplicado:', updateError)
         throw updateError
       }
+      finalVagaId = updatePayload.vaga_id
     } else {
-      // Se não veio vaga_id, tenta identificar vaga compatível
-      if (!finalVagaId) {
-        try {
-          const identifyRes = await supabase.functions.invoke('identify-vaga-from-cv', {
-            body: {
-              user_id: user_id,
-              texto_cv: extractedText || '',
-              dados_extraidos: extractedData,
-            },
-          })
-          finalVagaId = identifyRes.data?.vaga_id || null
-        } catch (idErr: any) {
-          console.warn('Erro ao identificar vaga:', idErr?.message)
-        }
-      }
+      const isAguardandoVaga = !finalVagaId
 
       const { data: newCandidate, error: insertCandidateError } = await supabase
         .from('candidatos')
@@ -791,8 +783,10 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
           fonte: 'site',
           curriculo_url: publicUrlData.publicUrl,
           dados_extraidos: extractedData,
-          vaga_id: finalVagaId,
+          vaga_id: finalVagaId || null,
           user_id: user_id,
+          ativo_kanban: !isAguardandoVaga,
+          motivo_inativo: isAguardandoVaga ? 'aguardando vaga adequada' : null,
         })
         .select('id')
         .single()
@@ -803,45 +797,47 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
       candidatoId = newCandidate.id
     }
 
-    // Atribuir etapa Triagem se não tiver
-    const { data: currentCandidate } = await supabase
-      .from('candidatos')
-      .select('etapa_id')
-      .eq('id', candidatoId)
-      .single()
+    // Atribuir etapa Triagem se tiver vaga identificada
+    if (finalVagaId) {
+      const { data: currentCandidate } = await supabase
+        .from('candidatos')
+        .select('etapa_id')
+        .eq('id', candidatoId)
+        .single()
 
-    if (!currentCandidate?.etapa_id) {
-      let { data: etapa } = await supabase
-        .from('etapas')
-        .select('id')
-        .ilike('nome', 'Triagem')
-        .maybeSingle()
-
-      if (!etapa) {
-        const { data: newEtapa } = await supabase
+      if (!currentCandidate?.etapa_id) {
+        let { data: etapa } = await supabase
           .from('etapas')
-          .insert({
-            nome: 'Triagem',
-            ordem: 0,
-            cor: '#6b7280',
-            user_id: user_id,
-          })
           .select('id')
-          .single()
-        etapa = newEtapa
-      }
+          .ilike('nome', 'Triagem')
+          .maybeSingle()
 
-      if (etapa) {
-        await supabase.from('candidato_etapa').insert({
-          candidato_id: candidatoId,
-          etapa_id: etapa.id,
-          usuario_id: user_id,
-        })
-        await supabase.from('candidatos').update({ etapa_id: etapa.id }).eq('id', candidatoId)
+        if (!etapa) {
+          const { data: newEtapa } = await supabase
+            .from('etapas')
+            .insert({
+              nome: 'Triagem',
+              ordem: 0,
+              cor: '#6b7280',
+              user_id: user_id,
+            })
+            .select('id')
+            .single()
+          etapa = newEtapa
+        }
+
+        if (etapa) {
+          await supabase.from('candidato_etapa').insert({
+            candidato_id: candidatoId,
+            etapa_id: etapa.id,
+            usuario_id: user_id,
+          })
+          await supabase.from('candidatos').update({ etapa_id: etapa.id }).eq('id', candidatoId)
+        }
       }
     }
 
-    // Executar análise de critérios
+    // Executar análise de critérios APENAS contra a vaga atribuída ao card
     const analisesRealizadas = []
     if (finalVagaId) {
       try {

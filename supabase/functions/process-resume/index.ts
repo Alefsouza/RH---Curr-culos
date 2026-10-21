@@ -782,15 +782,29 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
         if (identifyRes.data?.vaga_id) {
           targetVagaId = identifyRes.data.vaga_id
           await supabase.from('candidatos').update({ vaga_id: targetVagaId }).eq('id', candidatoId)
+        } else {
+          // Nenhum encaixe de vaga aberta: sinalizar aguardando vaga adequada
+          await supabase
+            .from('candidatos')
+            .update({
+              vaga_id: null,
+              etapa_id: null,
+              ativo_kanban: false,
+              motivo_inativo: 'aguardando vaga adequada',
+            })
+            .eq('id', candidatoId)
         }
       } catch (idErr: any) {
         console.warn('Erro ao identificar vaga pelo CV em process-resume:', idErr?.message)
       }
     }
 
-    // 7. Analyze against job criteria
+    // 7. Analyze against job criteria — APENAS se houver vaga atribuída
     const analisesRealizadas = []
     if (targetVagaId) {
+      // Coerência vaga_id da tabela candidatos
+      await supabase.from('candidatos').update({ vaga_id: targetVagaId }).eq('id', candidatoId)
+
       try {
         const critRes = await supabase.functions.invoke('analisar-cv-criterios', {
           body: {

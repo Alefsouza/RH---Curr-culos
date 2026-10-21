@@ -324,16 +324,37 @@ function extractVagaLocations(vaga: any): string[] {
 }
 
 // Escolhe a vaga mais próxima do candidato dentre um conjunto de vagas candidatas
+// e avalia se está dentro do raio aceitável da vaga.
 async function pickBestVagaByProximity(
   candidateAddressStr: string | null,
   vagasList: any[],
   googleApiKey: string | null,
-): Promise<{ vaga: any; menorDistanciaKm: number | null }> {
+): Promise<{
+  vaga: any
+  menorDistanciaKm: number | null
+  dentroDoRaio: boolean
+  raioMaximoKm: number | null
+}> {
   if (vagasList.length === 0) {
-    return { vaga: null, menorDistanciaKm: null }
+    return { vaga: null, menorDistanciaKm: null, dentroDoRaio: false, raioMaximoKm: null }
   }
+
+  const getVagaRaio = (vaga: any): number | null => {
+    if (vaga?.criterios_qualificacao && typeof vaga.criterios_qualificacao === 'object') {
+      return vaga.criterios_qualificacao.raio_km || null
+    }
+    return null
+  }
+
   if (vagasList.length === 1) {
-    return { vaga: vagasList[0], menorDistanciaKm: null }
+    const singleVaga = vagasList[0]
+    const singleRaio = getVagaRaio(singleVaga)
+    return {
+      vaga: singleVaga,
+      menorDistanciaKm: null,
+      dentroDoRaio: true, // sem dados de cálculo, preserva
+      raioMaximoKm: singleRaio,
+    }
   }
 
   // Se não temos endereço do candidato ou apiKey do Google, tenta fallback textual ou retorna a primeira vaga
@@ -356,10 +377,22 @@ async function pickBestVagaByProximity(
             }
           }
         }
-        return { vaga: bestVaga, menorDistanciaKm: bestDist }
+        const raioBest = getVagaRaio(bestVaga)
+        const inside = bestDist === null || raioBest === null || bestDist <= raioBest
+        return {
+          vaga: bestVaga,
+          menorDistanciaKm: bestDist,
+          dentroDoRaio: inside,
+          raioMaximoKm: raioBest,
+        }
       }
     }
-    return { vaga: vagasList[0], menorDistanciaKm: null }
+    return {
+      vaga: vagasList[0],
+      menorDistanciaKm: null,
+      dentroDoRaio: true,
+      raioMaximoKm: getVagaRaio(vagasList[0]),
+    }
   }
 
   try {
@@ -443,10 +476,22 @@ async function pickBestVagaByProximity(
       }
     }
 
-    return { vaga: bestVaga, menorDistanciaKm: bestDist }
+    const raioBest = getVagaRaio(bestVaga)
+    const inside = bestDist === null || raioBest === null || bestDist <= raioBest
+    return {
+      vaga: bestVaga,
+      menorDistanciaKm: bestDist,
+      dentroDoRaio: inside,
+      raioMaximoKm: raioBest,
+    }
   } catch (geoErr: any) {
     console.error('[identify-vaga] Erro ao calcular proximidade:', geoErr?.message)
-    return { vaga: vagasList[0], menorDistanciaKm: null }
+    return {
+      vaga: vagasList[0],
+      menorDistanciaKm: null,
+      dentroDoRaio: true,
+      raioMaximoKm: getVagaRaio(vagasList[0]),
+    }
   }
 }
 
@@ -810,11 +855,12 @@ Deno.serve(async (req: Request) => {
           .map((item) => item.vaga)
 
         if (topMatchedVagas.length > 0 && maxScore > 0) {
-          const { vaga: bestMatchVaga, menorDistanciaKm } = await pickBestVagaByProximity(
-            candidatoEndereco,
-            topMatchedVagas,
-            googleApiKey,
-          )
+          const {
+            vaga: bestMatchVaga,
+            menorDistanciaKm,
+            dentroDoRaio,
+            raioMaximoKm,
+          } = await pickBestVagaByProximity(candidatoEndereco, topMatchedVagas, googleApiKey)
 
           let proxText = ''
           if (topMatchedVagas.length > 1) {
@@ -823,6 +869,24 @@ Deno.serve(async (req: Request) => {
             } else if (candidatoEndereco) {
               proxText = ` Vagas com mesmo cargo disponíveis (${topMatchedVagas.map((v) => v.titulo).join(', ')}); selecionada a unidade com base no cadastro.`
             }
+          }
+
+          // Validar se está dentro do raio aceitável da vaga
+          if (!dentroDoRaio && menorDistanciaKm !== null && bestMatchVaga) {
+            console.log(
+              `[identify-vaga-from-cv] Candidato tem match direto para ${bestMatchVaga.titulo}, mas distância (${menorDistanciaKm.toFixed(1)} km) excede o raio (${raioMaximoKm} km).`,
+            )
+            return new Response(
+              JSON.stringify({
+                vaga_id: null,
+                confianca: 'baixa',
+                distancia_km: menorDistanciaKm,
+                raio_maximo_km: raioMaximoKm,
+                justificativa: `Candidato tem perfil para "${candidatoObjetivo}", mas mora a ${menorDistanciaKm.toFixed(1)} km, excedendo o raio limite de ${raioMaximoKm} km da garagem mais próxima (${bestMatchVaga.titulo}).`,
+                aguardando_vaga: true,
+              }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+            )
           }
 
           console.log(
@@ -976,11 +1040,27 @@ Deno.serve(async (req: Request) => {
           }
 
           if (fallbackVagasGroup.length > 0) {
-            const { vaga: chosenFallbackVaga, menorDistanciaKm } = await pickBestVagaByProximity(
-              candidatoEndereco,
-              fallbackVagasGroup,
-              googleApiKey,
-            )
+            const {
+              vaga: chosenFallbackVaga,
+              menorDistanciaKm,
+              dentroDoRaio,
+              raioMaximoKm,
+            } = await pickBestVagaByProximity(candidatoEndereco, fallbackVagasGroup, googleApiKey)
+
+            if (!dentroDoRaio && menorDistanciaKm !== null && chosenFallbackVaga) {
+              return new Response(
+                JSON.stringify({
+                  vaga_id: null,
+                  confianca: 'baixa',
+                  distancia_km: menorDistanciaKm,
+                  raio_maximo_km: raioMaximoKm,
+                  justificativa: `Candidato possui experiência em "${fallbackRoleMentioned}", mas mora a ${menorDistanciaKm.toFixed(1)} km da unidade mais próxima (${chosenFallbackVaga.titulo}), excedendo o raio limite de ${raioMaximoKm} km.`,
+                  aguardando_vaga: true,
+                }),
+                { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+              )
+            }
+
             let proxText = ''
             if (menorDistanciaKm !== null) {
               proxText = ` Selecionada a garagem mais próxima do endereço do candidato (${candidatoEndereco || 'N/I'}), a aproximadamente ${menorDistanciaKm.toFixed(1)} km.`
@@ -1158,6 +1238,55 @@ Deno.serve(async (req: Request) => {
       result.vaga_id = null
     }
 
+    // Se a IA escolheu uma vaga de uma família (ex: Cobrador ou Motorista),
+    // validar se a vaga escolhida é a da garagem MAIS PRÓXIMA do endereço do candidato
+    if (result.vaga_id) {
+      const selectedVaga = vagas.find((v) => v.id === result.vaga_id)
+      if (selectedVaga) {
+        const normTitle = normalizeString(selectedVaga.titulo || '')
+        let sameFamilyVagas: any[] = []
+        if (normTitle.includes('cobrador')) {
+          sameFamilyVagas = vagas.filter((v) =>
+            normalizeString(v.titulo || '').includes('cobrador'),
+          )
+        } else if (normTitle.includes('motorista')) {
+          sameFamilyVagas = vagas.filter((v) =>
+            normalizeString(v.titulo || '').includes('motorista'),
+          )
+        } else if (normTitle.includes('abastecedor')) {
+          sameFamilyVagas = vagas.filter((v) =>
+            normalizeString(v.titulo || '').includes('abastecedor'),
+          )
+        }
+
+        if (sameFamilyVagas.length > 1) {
+          const {
+            vaga: closerVaga,
+            menorDistanciaKm,
+            dentroDoRaio,
+            raioMaximoKm,
+          } = await pickBestVagaByProximity(candidatoEndereco, sameFamilyVagas, googleApiKey)
+
+          if (closerVaga) {
+            if (!dentroDoRaio && menorDistanciaKm !== null) {
+              console.log(
+                `[identify-vaga-from-cv] Família compatível identificada, mas nenhuma garagem dentro do raio (${menorDistanciaKm.toFixed(1)} km > ${raioMaximoKm} km).`,
+              )
+              result.vaga_id = null
+              result.confianca = 'baixa'
+              result.justificativa = `Candidato compatível com a função (${selectedVaga.titulo}), mas distância até a garagem mais próxima (${closerVaga.titulo}, ${menorDistanciaKm.toFixed(1)} km) excede o raio de ${raioMaximoKm} km.`
+            } else if (closerVaga.id !== result.vaga_id) {
+              console.log(
+                `[identify-vaga-from-cv] Ajustando vaga da mesma família por proximidade: de "${selectedVaga.titulo}" para "${closerVaga.titulo}".`,
+              )
+              result.vaga_id = closerVaga.id
+              result.justificativa = `${result.justificativa || ''} Garagem ajustada para "${closerVaga.titulo}" por estar mais próxima do endereço.`
+            }
+          }
+        }
+      }
+    }
+
     // GUARDA DE SEGURANÇA: Se o objetivo do candidato era de MOTORISTA OU se o candidato possui histórico REAL de MOTORISTA (ou CNH D/E)
     // mas a IA retornou Cobrador, impedir a realocação para Cobrador e redirecionar para a vaga de Motorista mais próxima.
     if (result.vaga_id) {
@@ -1207,17 +1336,24 @@ Deno.serve(async (req: Request) => {
               normalizeString(v.titulo || '').includes('cobrador'),
             )
             if (cobradorVagas.length > 0) {
-              const { vaga: cobradorVaga } = await pickBestVagaByProximity(
-                candidatoEndereco,
-                cobradorVagas,
-                googleApiKey,
-              )
+              const {
+                vaga: cobradorVaga,
+                dentroDoRaio,
+                menorDistanciaKm,
+                raioMaximoKm,
+              } = await pickBestVagaByProximity(candidatoEndereco, cobradorVagas, googleApiKey)
               console.log(
-                `[identify-vaga-from-cv] Salvaguarda anti-falso-motorista acionada: IA associou a Motorista ("${targetVaga?.titulo}"), mas candidato NÃO possui cargo real de condução nem CNH D/E (termos como ajudante, estacionamento, leve mobilidade, loja ou lavador não contam). Revertendo automaticamente para Cobrador da garagem mais próxima ("${cobradorVaga.titulo}").`,
+                `[identify-vaga-from-cv] Salvaguarda anti-falso-motorista acionada: IA associou a Motorista ("${targetVaga?.titulo}"), mas candidato NÃO possui cargo real de condução nem CNH D/E (termos como ajudante, estacionamento, leve mobilidade, loja ou lavador não contam). Revertendo para Cobrador da garagem mais próxima ("${cobradorVaga?.titulo}").`,
               )
-              result.vaga_id = cobradorVaga.id
-              result.confianca = 'alta'
-              result.justificativa = `Candidato não possui experiência em condução real de veículos nem CNH D/E comprovada (cargos como ajudante de motorista, lavador, operador de caixa ou empresa de estacionamento não qualificam como motorista). Pela salvaguarda estrita, foi direcionado para a vaga de Cobrador da garagem mais próxima ("${cobradorVaga.titulo}").`
+              if (cobradorVaga && (dentroDoRaio || menorDistanciaKm === null)) {
+                result.vaga_id = cobradorVaga.id
+                result.confianca = 'alta'
+                result.justificativa = `Candidato não possui experiência em condução real de veículos nem CNH D/E comprovada. Direcionado para a vaga de Cobrador da garagem mais próxima ("${cobradorVaga.titulo}").`
+              } else {
+                result.vaga_id = null
+                result.confianca = 'nenhuma'
+                result.justificativa = `Candidato não possui perfil de Motorista e a vaga de Cobrador mais próxima excede o raio limite.`
+              }
             } else {
               result.vaga_id = null
               result.confianca = 'nenhuma'
@@ -1240,14 +1376,21 @@ Deno.serve(async (req: Request) => {
           normalizeString(v.titulo || '').includes('motorista'),
         )
         if (motoristaVagas.length > 0) {
-          const { vaga: motoristaVaga } = await pickBestVagaByProximity(
-            candidatoEndereco,
-            motoristaVagas,
-            googleApiKey,
-          )
-          result.vaga_id = motoristaVaga.id
-          result.confianca = 'alta'
-          result.justificativa = `Candidato possui objetivo específico de Motorista ("${candidatoObjetivo}"). Vinculado à vaga de Motorista ("${motoristaVaga.titulo}").`
+          const {
+            vaga: motoristaVaga,
+            dentroDoRaio,
+            menorDistanciaKm,
+            raioMaximoKm,
+          } = await pickBestVagaByProximity(candidatoEndereco, motoristaVagas, googleApiKey)
+          if (motoristaVaga && (dentroDoRaio || menorDistanciaKm === null)) {
+            result.vaga_id = motoristaVaga.id
+            result.confianca = 'alta'
+            result.justificativa = `Candidato possui objetivo específico de Motorista ("${candidatoObjetivo}"). Vinculado à vaga de Motorista ("${motoristaVaga.titulo}").`
+          } else {
+            result.vaga_id = null
+            result.confianca = 'nenhuma'
+            result.justificativa = `Candidato possui objetivo de Motorista, mas mora a ${menorDistanciaKm?.toFixed(1)} km, excedendo o raio limite (${raioMaximoKm} km) de todas as garagens.`
+          }
         }
       }
     } else {
@@ -1318,14 +1461,21 @@ Deno.serve(async (req: Request) => {
             normalizeString(v.titulo || '').includes('cobrador'),
           )
           if (cobradorVagas.length > 0) {
-            const { vaga: chosenCobrador } = await pickBestVagaByProximity(
-              candidatoEndereco,
-              cobradorVagas,
-              googleApiKey,
-            )
-            result.vaga_id = chosenCobrador.id
-            result.confianca = 'media'
-            result.justificativa = `Candidato possui objetivo sem vaga aberta ("${candidatoObjetivo || 'N/I'}"), mas o histórico profissional comprova experiência em atendimento/caixa/loja. Direcionado para a vaga de Cobrador da garagem mais próxima ("${chosenCobrador.titulo}").`
+            const {
+              vaga: chosenCobrador,
+              dentroDoRaio,
+              menorDistanciaKm,
+              raioMaximoKm,
+            } = await pickBestVagaByProximity(candidatoEndereco, cobradorVagas, googleApiKey)
+            if (chosenCobrador && (dentroDoRaio || menorDistanciaKm === null)) {
+              result.vaga_id = chosenCobrador.id
+              result.confianca = 'media'
+              result.justificativa = `Candidato possui perfil compatível com Cobrador e melhor proximidade com a garagem ("${chosenCobrador.titulo}").`
+            } else if (chosenCobrador && !dentroDoRaio && menorDistanciaKm !== null) {
+              result.vaga_id = null
+              result.confianca = 'nenhuma'
+              result.justificativa = `Candidato compatível com Cobrador, mas distância (${menorDistanciaKm.toFixed(1)} km) excede o raio limite (${raioMaximoKm} km) de todas as garagens abertas.`
+            }
           }
         }
       }

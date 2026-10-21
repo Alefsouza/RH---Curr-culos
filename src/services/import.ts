@@ -76,6 +76,17 @@ export async function identifyAndAssignVaga(candidatoId: string, userId: string)
     } catch {
       // analysis failure is non-critical — vaga was still assigned
     }
+  } else {
+    // Nenhum encaixe de vaga aberta: sinalizar aguardando vaga adequada
+    await supabase
+      .from('candidatos')
+      .update({
+        vaga_id: null,
+        etapa_id: null,
+        ativo_kanban: false,
+        motivo_inativo: 'aguardando vaga adequada',
+      })
+      .eq('id', candidatoId)
   }
   return data as { vaga_id: string | null; confianca: string; justificativa: string }
 }

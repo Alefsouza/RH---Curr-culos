@@ -907,9 +907,15 @@ ${ocrText.substring(0, 15000)}`
             console.warn('Erro na análise de critérios:', critErr?.message)
           }
         } else {
+          // Nenhum encaixe de vaga aberta: sinalizar aguardando vaga adequada
           await supabase
             .from('candidatos')
-            .update({ vaga_id: null, etapa_id: null })
+            .update({
+              vaga_id: null,
+              etapa_id: null,
+              ativo_kanban: false,
+              motivo_inativo: 'aguardando vaga adequada',
+            })
             .eq('id', candidatoId)
           finalStatus = 'sem_vaga_compativel'
         }

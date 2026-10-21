@@ -43,7 +43,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json()
-    const { candidate_id, force_reextract } = body
+    const { candidate_id, force_reextract, target_vaga_id } = body
 
     if (!candidate_id) {
       return new Response(JSON.stringify({ error: 'candidate_id é obrigatório.' }), {
@@ -750,29 +750,32 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
       currentNome = formattedPrefix
     }
 
-    // =========================================================================
-    // SALVAGUARDA 1: MOTORISTA EM "REVISAR"
-    // Se existe uma análise prévia com resultado "revisar" para uma vaga de Motorista,
-    // a reanálise NÃO PODE reclassificar o candidato para Cobrador ou outra vaga:
-    // ele DEVE permanecer vinculado à vaga de Motorista, aguardando revisão humana (Paola).
-    // =========================================================================
-    const { data: previousMotoristaAnalises } = await supabase
-      .from('analises')
-      .select('id, vaga_id, resultado, criado_em, vagas (id, titulo)')
-      .eq('candidato_id', candidato.id)
-      .order('criado_em', { ascending: false })
-
+    // Se target_vaga_id foi fornecido expressamente, respeitá-lo sem sobrepor por salvaguarda de revisão anterior
     let motoristaEmRevisaoVagaId: string | null = null
     let motoristaEmRevisaoVagaTitulo: string = ''
 
-    if (Array.isArray(previousMotoristaAnalises)) {
-      for (const a of previousMotoristaAnalises) {
-        const vagaObj: any = Array.isArray(a.vagas) ? a.vagas[0] : a.vagas
-        const tituloVaga = (vagaObj?.titulo || '').toLowerCase()
-        if (tituloVaga.includes('motorista') && a.resultado === 'revisar') {
-          motoristaEmRevisaoVagaId = a.vaga_id
-          motoristaEmRevisaoVagaTitulo = vagaObj?.titulo || 'Motorista'
-          break
+    if (!target_vaga_id) {
+      // =========================================================================
+      // SALVAGUARDA 1: MOTORISTA EM "REVISAR"
+      // Se existe uma análise prévia com resultado "revisar" para uma vaga de Motorista,
+      // a reanálise NÃO PODE reclassificar o candidato para Cobrador ou outra vaga:
+      // ele DEVE permanecer vinculado à vaga de Motorista, aguardando revisão humana (Paola).
+      // =========================================================================
+      const { data: previousMotoristaAnalises } = await supabase
+        .from('analises')
+        .select('id, vaga_id, resultado, criado_em, vagas (id, titulo)')
+        .eq('candidato_id', candidato.id)
+        .order('criado_em', { ascending: false })
+
+      if (Array.isArray(previousMotoristaAnalises)) {
+        for (const a of previousMotoristaAnalises) {
+          const vagaObj: any = Array.isArray(a.vagas) ? a.vagas[0] : a.vagas
+          const tituloVaga = (vagaObj?.titulo || '').toLowerCase()
+          if (tituloVaga.includes('motorista') && a.resultado === 'revisar') {
+            motoristaEmRevisaoVagaId = a.vaga_id
+            motoristaEmRevisaoVagaTitulo = vagaObj?.titulo || 'Motorista'
+            break
+          }
         }
       }
     }
@@ -789,28 +792,36 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
       identifyHeaders['x-forwarded-auth'] = incomingAuth
     }
 
-    const identifyRes = await fetch(`${supabaseUrl}/functions/v1/identify-vaga-from-cv`, {
-      method: 'POST',
-      headers: identifyHeaders,
-      body: JSON.stringify({
-        candidato_id: candidato.id,
-        user_id: effectiveUserId,
-        dados_extraidos: currentDadosExtraidos,
-      }),
-    })
+    let identifiedVagaId = target_vaga_id || null
+    let justificativaIdentificacao = ''
+    let identifyData: any = {}
 
-    const identifyData = await identifyRes.json()
-
-    if (identifyData.error) {
-      return new Response(JSON.stringify({ error: identifyData.error }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    if (!identifiedVagaId) {
+      const identifyRes = await fetch(`${supabaseUrl}/functions/v1/identify-vaga-from-cv`, {
+        method: 'POST',
+        headers: identifyHeaders,
+        body: JSON.stringify({
+          candidato_id: candidato.id,
+          user_id: effectiveUserId,
+          dados_extraidos: currentDadosExtraidos,
+        }),
       })
-    }
 
-    let identifiedVagaId = identifyData.vaga_id || null
-    let justificativaIdentificacao =
-      identifyData.justificativa || 'Nenhuma vaga compatível foi identificada no sistema.'
+      identifyData = await identifyRes.json()
+
+      if (identifyData.error) {
+        return new Response(JSON.stringify({ error: identifyData.error }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      identifiedVagaId = identifyData.vaga_id || null
+      justificativaIdentificacao =
+        identifyData.justificativa || 'Nenhuma vaga compatível foi identificada no sistema.'
+    } else {
+      justificativaIdentificacao = 'Vaga alvo especificada explicitamente para reanálise.'
+    }
 
     // Se temos análise prévia de Motorista com resultado "revisar", verificar se identify tentou desviar para não-motorista (ex: Cobrador)
     // EXCEÇÃO DA SALVAGUARDA: Se a análise "revisar" prévia de Motorista foi decorrente do bug de termos de ambiente
@@ -914,15 +925,17 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
     // =========================================================================
     if (!identifiedVagaId) {
       console.log(
-        `[reanalisar-candidato] Nenhuma vaga compatível para candidato ${candidato.id}. Limpando vaga_id e etapa_id, e registrando nao_qualificado.`,
+        `[reanalisar-candidato] Nenhuma vaga compatível para candidato ${candidato.id}. Limpando vaga_id e etapa_id, e marcando aguardando vaga adequada.`,
       )
 
-      // 1. Limpa vaga_id e etapa_id do candidato para que ele não apareça no Kanban como qualificado
+      // 1. Limpa vaga_id e etapa_id do candidato e marca aguardando vaga adequada
       await supabase
         .from('candidatos')
         .update({
           vaga_id: null,
           etapa_id: null,
+          ativo_kanban: false,
+          motivo_inativo: 'aguardando vaga adequada',
         })
         .eq('id', candidato.id)
 

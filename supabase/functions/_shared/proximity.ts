@@ -77,6 +77,10 @@ export const KNOWN_CEP_COORDS: Record<string, Coordinates> = {
   '03982-020': { lat: -23.6097, lng: -46.5162 },
   '03982020': { lat: -23.6097, lng: -46.5162 },
 
+  // Felipe Gomes Tavares (Rua Henri Lebasque, 321, Jd Maria Estela, Cursino - CEP 04181-060)
+  '04181-060': { lat: -23.642, lng: -46.608 },
+  '04181060': { lat: -23.642, lng: -46.608 },
+
   // Beatriz Lima De Oliveira (Pq Sta Madalena)
   '03981-020': { lat: -23.6085, lng: -46.515 },
   '03981020': { lat: -23.6085, lng: -46.515 },
@@ -408,6 +412,10 @@ export function getReferenceCoordsForText(text: string): Coordinates | null {
     norm.includes('zona sul') ||
     norm.includes('zs') ||
     norm.includes('sul') ||
+    norm.includes('maria estela') ||
+    norm.includes('henri lebasque') ||
+    norm.includes('vila das merces') ||
+    norm.includes('merces') ||
     norm.includes('santo andre') ||
     norm.includes('sao bernardo') ||
     norm.includes('diadema') ||
