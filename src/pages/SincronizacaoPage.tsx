@@ -38,16 +38,42 @@ export default function SincronizacaoPage() {
   const [syncing, setSyncing] = useState(false)
   const [auditing, setAuditing] = useState(false)
 
+  const [auditProgress, setAuditProgress] = useState<string | null>(null)
+
   const handleAuditGenerics = async () => {
     setAuditing(true)
+    setAuditProgress('Iniciando auditoria em lote...')
     try {
-      const res = await triggerAuditAndReclassifyGenerics()
-      toast.success(`${res?.auditedCount || 0} candidatos genéricos auditados e reclassificados.`)
+      let offset = 0
+      let totalProcessed = 0
+      let hasMore = true
+      let totalInDb = 0
+
+      while (hasMore) {
+        setAuditProgress(
+          `Processando candidatos (${totalProcessed}${totalInDb ? ` de ${totalInDb}` : ''})...`,
+        )
+        const res = await triggerAuditAndReclassifyGenerics(undefined, {
+          batchLimit: 25,
+          batchOffset: offset,
+        })
+        const count = res?.auditedCount || 0
+        totalInDb = res?.totalGenericCandidates || 0
+        totalProcessed += count
+        offset += count
+
+        if (count === 0 || offset >= totalInDb) {
+          hasMore = false
+        }
+      }
+
+      toast.success(`Auditoria concluída! ${totalProcessed} candidatos genéricos reclassificados.`)
       load()
     } catch (e: any) {
       toast.error('Erro na auditoria: ' + e.message)
     } finally {
       setAuditing(false)
+      setAuditProgress(null)
     }
   }
 
@@ -108,7 +134,7 @@ export default function SincronizacaoPage() {
             ) : (
               <Users className="w-4 h-4 mr-2" />
             )}
-            {auditing ? 'Auditando...' : 'Auditar Cargos Genéricos'}
+            {auditing ? auditProgress || 'Auditando...' : 'Auditar Cargos Genéricos'}
           </Button>
           <Button onClick={handleSync} disabled={syncing || auditing}>
             {syncing ? (

@@ -46,11 +46,33 @@ export async function triggerCobradoresProximidadeReanalysis() {
   return data
 }
 
-export async function triggerAuditAndReclassifyGenerics(candidateIds?: string[]) {
+export async function triggerAuditAndReclassifyGenerics(
+  candidateIds?: string[],
+  options?: { batchLimit?: number; batchOffset?: number },
+) {
   const { data, error } = await supabase.functions.invoke('sync-outlook-cvs', {
     body: {
       auditAndReclassifyGenerics: true,
       candidateIds: candidateIds || [],
+      batchLimit: options?.batchLimit || 30,
+      batchOffset: options?.batchOffset || 0,
+    },
+  })
+  if (error) throw error
+  return data
+}
+
+export async function runAuditoriaBatchAllGenerics(params?: {
+  startOffset?: number
+  maxTotal?: number
+  batchSize?: number
+}) {
+  const { data, error } = await supabase.functions.invoke('sync-outlook-cvs', {
+    body: {
+      runAuditoriaBatchAllGenerics: true,
+      startOffset: params?.startOffset ?? 0,
+      maxTotal: params?.maxTotal ?? 30,
+      batchSize: params?.batchSize ?? 15,
     },
   })
   if (error) throw error
