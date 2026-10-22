@@ -76,17 +76,22 @@ function normalizeFormacoes(dados: any): any[] {
   if (typeof raw === 'string' && raw.trim()) return [raw]
   return []
 }
-function ReviewDetail({ analise, etapas, onConfirm, onCancel, isSubmitting }: any) {
+function ReviewDetail({ analise, vagas, etapas, onConfirm, onCancel, isSubmitting }: any) {
   const [decision, setDecision] = useState<string>('')
   const [notes, setNotes] = useState('')
   const [stageId, setStageId] = useState<string>('none')
+  const [selectedVagaId, setSelectedVagaId] = useState<string>('keep')
 
   const candidato = analise.candidatos
   const dados = typeof candidato?.dados_extraidos === 'object' ? candidato.dados_extraidos : {}
   const detalhes = typeof analise.detalhes === 'object' ? analise.detalhes : {}
 
+  const currentVagaTitle = analise.vagas?.titulo || 'Nenhuma vaga vinculada'
+
   const handleConfirm = () => {
-    onConfirm(decision, notes, stageId === 'none' ? null : stageId)
+    // Se selecionou 'keep', passa undefined para manter a atual; se selecionou uma vaga específica, passa o id
+    const vagaToSet = selectedVagaId === 'keep' ? undefined : selectedVagaId
+    onConfirm(decision, notes, stageId === 'none' ? null : stageId, vagaToSet)
   }
 
   return (
@@ -258,21 +263,40 @@ function ReviewDetail({ analise, etapas, onConfirm, onCancel, isSubmitting }: an
               </div>
             </div>
 
-            <div className="space-y-3">
-              <Label>Mover para Etapa</Label>
-              <Select value={stageId} onValueChange={setStageId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione uma etapa..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Não mover da etapa atual</SelectItem>
-                  {etapas.map((e: any) => (
-                    <SelectItem key={e.id} value={e.id}>
-                      {e.nome}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Definir Vaga</Label>
+                <Select value={selectedVagaId} onValueChange={setSelectedVagaId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione a vaga..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="keep">Manter vaga atual ({currentVagaTitle})</SelectItem>
+                    {vagas.map((v: any) => (
+                      <SelectItem key={v.id} value={v.id}>
+                        {v.titulo}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Mover para Etapa</Label>
+                <Select value={stageId} onValueChange={setStageId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione uma etapa..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Não mover da etapa atual</SelectItem>
+                    {etapas.map((e: any) => (
+                      <SelectItem key={e.id} value={e.id}>
+                        {e.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <div className="space-y-3">
@@ -339,7 +363,12 @@ export default function ReviewPage() {
     loadData()
   }, [vagaFilter, dateFilter])
 
-  const handleConfirm = async (decision: string, notes: string, stageId: string | null) => {
+  const handleConfirm = async (
+    decision: string,
+    notes: string,
+    stageId: string | null,
+    vagaId?: string | null,
+  ) => {
     if (!selectedReview) return
     setIsSubmitting(true)
     try {
@@ -350,6 +379,7 @@ export default function ReviewPage() {
         notes,
         stageId,
         user,
+        vagaId,
       )
       toast({ title: 'Sucesso', description: 'Revisão concluída com sucesso!' })
       setSelectedReview(null)
@@ -366,6 +396,7 @@ export default function ReviewPage() {
       <div className="p-6 md:p-8 max-w-7xl mx-auto">
         <ReviewDetail
           analise={selectedReview}
+          vagas={vagas}
           etapas={etapas}
           onConfirm={handleConfirm}
           onCancel={() => setSelectedReview(null)}

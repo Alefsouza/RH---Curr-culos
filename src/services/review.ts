@@ -137,22 +137,34 @@ export async function updateReview(
   notas: string,
   novaEtapaId: string | null,
   user: any,
+  novaVagaId?: string | null,
 ) {
-  const { data: analise, error: getError } = await supabase
-    .from('analises')
-    .select('detalhes')
-    .eq('id', analiseId)
-    .single()
+  const [{ data: analise, error: getError }, { data: candidatoAtual, error: candGetError }] =
+    await Promise.all([
+      supabase.from('analises').select('detalhes, vaga_id').eq('id', analiseId).single(),
+      supabase
+        .from('candidatos')
+        .select('id, vaga_id, etapa_id, ativo_kanban, motivo_inativo')
+        .eq('id', candidatoId)
+        .single(),
+    ])
+
   if (getError) throw getError
+  if (candGetError) throw candGetError
+
+  const vagaAnterior = candidatoAtual?.vaga_id || analise?.vaga_id || null
+  const vagaFinal = novaVagaId !== undefined ? novaVagaId : vagaAnterior
 
   const detalhes = (typeof analise?.detalhes === 'object' ? analise.detalhes : {}) as any
-  const log = {
+  const log: Record<string, any> = {
     revisado_em: new Date().toISOString(),
-    revisado_por: user.id,
-    revisado_por_nome: user.user_metadata?.name || user.email || 'Admin',
+    revisado_por: user?.id,
+    revisado_por_nome: user?.user_metadata?.name || user?.email || 'Admin',
     notas,
     status_anterior: 'revisar',
     novo_status: novoResultado,
+    vaga_anterior: vagaAnterior,
+    vaga_definida_por_rh: vagaFinal,
   }
 
   const novosDetalhes = {
@@ -160,28 +172,93 @@ export async function updateReview(
     revisao_rh: log,
   }
 
+  const analiseUpdatePayload: {
+    resultado: string
+    detalhes: any
+    vaga_id?: string | null
+  } = {
+    resultado: novoResultado,
+    detalhes: novosDetalhes,
+  }
+
+  if (vagaFinal) {
+    analiseUpdatePayload.vaga_id = vagaFinal
+  }
+
   const { error: updateError } = await supabase
     .from('analises')
-    .update({
-      resultado: novoResultado,
-      detalhes: novosDetalhes,
-    })
+    .update(analiseUpdatePayload)
     .eq('id', analiseId)
 
   if (updateError) throw updateError
 
-  if (novaEtapaId) {
-    const { error: insertError } = await supabase.from('candidato_etapa').insert({
-      candidato_id: candidatoId,
-      etapa_id: novaEtapaId,
-      usuario_id: user.id,
-    })
-    if (insertError) throw insertError
+  // Determinar etapa final caso não tenha sido informada explicitamente
+  let etapaFinalId = novaEtapaId
 
+  if (!etapaFinalId && novoResultado === 'qualificado' && !candidatoAtual?.etapa_id) {
+    // Se o candidato está sendo qualificado e ainda não tem etapa, mover para Triagem (ou primeira etapa)
+    const { data: triagemEtapa } = await supabase
+      .from('etapas')
+      .select('id')
+      .ilike('nome', 'Triagem')
+      .limit(1)
+      .maybeSingle()
+
+    if (triagemEtapa?.id) {
+      etapaFinalId = triagemEtapa.id
+    } else {
+      const { data: firstEtapa } = await supabase
+        .from('etapas')
+        .select('id')
+        .order('ordem', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      if (firstEtapa?.id) {
+        etapaFinalId = firstEtapa.id
+      }
+    }
+  }
+
+  // Atualizar candidato
+  const candUpdatePayload: {
+    vaga_id?: string | null
+    etapa_id?: string | null
+    ativo_kanban?: boolean | null
+    motivo_inativo?: string | null
+  } = {}
+
+  if (novaVagaId !== undefined) {
+    candUpdatePayload.vaga_id = novaVagaId
+  }
+
+  if (etapaFinalId) {
+    candUpdatePayload.etapa_id = etapaFinalId
+  }
+
+  if (novoResultado === 'qualificado') {
+    candUpdatePayload.ativo_kanban = true
+    candUpdatePayload.motivo_inativo = null
+  } else if (novoResultado === 'nao_qualificado') {
+    candUpdatePayload.ativo_kanban = false
+    candUpdatePayload.motivo_inativo = 'Não Qualificado'
+  }
+
+  if (Object.keys(candUpdatePayload).length > 0) {
     const { error: candError } = await supabase
       .from('candidatos')
-      .update({ etapa_id: novaEtapaId })
+      .update(candUpdatePayload)
       .eq('id', candidatoId)
     if (candError) throw candError
+  }
+
+  if (etapaFinalId && etapaFinalId !== candidatoAtual?.etapa_id) {
+    const { error: insertError } = await supabase.from('candidato_etapa').insert({
+      candidato_id: candidatoId,
+      etapa_id: etapaFinalId,
+      usuario_id: user?.id,
+    })
+    if (insertError) {
+      console.error('Erro ao inserir histórico de etapa:', insertError)
+    }
   }
 }
