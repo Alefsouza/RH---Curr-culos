@@ -20,6 +20,210 @@ import {
   Coordinates,
 } from './proximity.ts'
 
+export interface InferredCandidateRole {
+  roles: string[]
+  details: string[]
+  summary: string
+  shortExperience: boolean
+}
+
+/**
+ * Infere áreas funcionais a partir do histórico de experiências e empresas.
+ * Ex.: Agente de atendimento / Assistente de monitoramento -> relação com COC / Monitoramento / Atendimento.
+ * A formação acadêmica complementa quando a experiência é curta ou ausente.
+ */
+export function inferCandidateRoleFromExperience(cvData: any): InferredCandidateRole {
+  const rawExps: any[] = Array.isArray(cvData?.experiencia_profissional)
+    ? cvData.experiencia_profissional
+    : Array.isArray(cvData?.experiencias)
+      ? cvData.experiencias
+      : []
+
+  const roles: string[] = []
+  const details: string[] = []
+
+  for (const exp of rawExps) {
+    const cargo = normalizeStringBasic(typeof exp === 'string' ? exp : exp?.cargo || '')
+    const empresa = normalizeStringBasic(typeof exp === 'string' ? '' : exp?.empresa || '')
+    const desc = normalizeStringBasic(typeof exp === 'string' ? '' : exp?.descricao || '')
+    const combined = `${cargo} ${empresa} ${desc}`
+
+    if (
+      combined.includes('monitoramento') ||
+      combined.includes('cftv') ||
+      combined.includes('rastreamento') ||
+      combined.includes('telemetria') ||
+      combined.includes('central de operac') ||
+      combined.includes('coc') ||
+      cargo.includes('operador de camera')
+    ) {
+      if (!roles.includes('monitoramento')) roles.push('monitoramento')
+      details.push(
+        `experiência em monitoramento/CFTV (${typeof exp === 'string' ? exp : exp?.cargo || 'monitoramento'})`,
+      )
+    }
+
+    if (
+      combined.includes('atendimento') ||
+      combined.includes('call center') ||
+      combined.includes('telemarketing') ||
+      combined.includes('recepc') ||
+      combined.includes('sac') ||
+      cargo.includes('agente de atendimento') ||
+      cargo.includes('atendente')
+    ) {
+      if (!roles.includes('atendimento')) roles.push('atendimento')
+      details.push(
+        `experiência em atendimento (${typeof exp === 'string' ? exp : exp?.cargo || 'atendimento'})`,
+      )
+    }
+
+    if (
+      combined.includes('cobrador') ||
+      combined.includes('troco') ||
+      combined.includes('caixa') ||
+      combined.includes('bilheteiro')
+    ) {
+      if (!roles.includes('cobrador')) roles.push('cobrador')
+      details.push(
+        `experiência em cobrança/caixa (${typeof exp === 'string' ? exp : exp?.cargo || 'cobrança'})`,
+      )
+    }
+
+    if (
+      combined.includes('motorista') ||
+      combined.includes('condutor') ||
+      combined.includes('carreteiro')
+    ) {
+      if (!roles.includes('motorista')) roles.push('motorista')
+      details.push(
+        `experiência em condução/motorista (${typeof exp === 'string' ? exp : exp?.cargo || 'motorista'})`,
+      )
+    }
+
+    if (
+      combined.includes('mecanic') ||
+      combined.includes('manutencao') ||
+      combined.includes('eletricista') ||
+      combined.includes('funilaria')
+    ) {
+      if (!roles.includes('mecanica')) roles.push('mecanica')
+      details.push(
+        `experiência em manutenção/mecânica (${typeof exp === 'string' ? exp : exp?.cargo || 'mecânica'})`,
+      )
+    }
+
+    if (
+      combined.includes('abastec') ||
+      combined.includes('frentista') ||
+      combined.includes('combustivel')
+    ) {
+      if (!roles.includes('abastecimento')) roles.push('abastecimento')
+      details.push(
+        `experiência em abastecimento (${typeof exp === 'string' ? exp : exp?.cargo || 'abastecimento'})`,
+      )
+    }
+
+    if (
+      combined.includes('almoxarif') ||
+      combined.includes('estoque') ||
+      combined.includes('expedicao') ||
+      combined.includes('conferente') ||
+      combined.includes('logistica')
+    ) {
+      if (!roles.includes('almoxarifado')) roles.push('almoxarifado')
+      details.push(
+        `experiência em almoxarifado/logística (${typeof exp === 'string' ? exp : exp?.cargo || 'almoxarifado'})`,
+      )
+    }
+
+    if (
+      combined.includes('lavador') ||
+      combined.includes('estetica automotiva') ||
+      combined.includes('higienizacao')
+    ) {
+      if (!roles.includes('lavagem')) roles.push('lavagem')
+      details.push(
+        `experiência em lavagem (${typeof exp === 'string' ? exp : exp?.cargo || 'lavagem'})`,
+      )
+    }
+
+    if (
+      combined.includes('limpeza') ||
+      combined.includes('asg') ||
+      combined.includes('servicos gerais') ||
+      combined.includes('zelador')
+    ) {
+      if (!roles.includes('limpeza')) roles.push('limpeza')
+      details.push(
+        `experiência em limpeza (${typeof exp === 'string' ? exp : exp?.cargo || 'limpeza'})`,
+      )
+    }
+
+    if (
+      combined.includes('auxiliar administrat') ||
+      combined.includes('assistente administrat') ||
+      combined.includes('escritorio')
+    ) {
+      if (!roles.includes('administrativo')) roles.push('administrativo')
+      details.push(
+        `experiência administrativa (${typeof exp === 'string' ? exp : exp?.cargo || 'administrativo'})`,
+      )
+    }
+  }
+
+  // Avaliação de formação acadêmica quando experiência é curta (< 2 experiências ou sem histórico específico)
+  const formacoes = Array.isArray(cvData?.formacao_academica) ? cvData.formacao_academica : []
+  const hasShortExperience = rawExps.length <= 1
+
+  const formacaoSummary: string[] = []
+  if (hasShortExperience && formacoes.length > 0) {
+    for (const f of formacoes) {
+      const formText = normalizeStringBasic(
+        typeof f === 'string' ? f : `${f?.curso || ''} ${f?.instituicao || ''}`,
+      )
+      if (
+        formText.includes('ti') ||
+        formText.includes('informatica') ||
+        formText.includes('telecom')
+      ) {
+        if (!roles.includes('monitoramento')) roles.push('monitoramento')
+        formacaoSummary.push('formação em informática/TI (monitoramento)')
+      }
+      if (formText.includes('mecanic') || formText.includes('automot')) {
+        if (!roles.includes('mecanica')) roles.push('mecanica')
+        formacaoSummary.push('formação em mecânica/automotiva')
+      }
+      if (formText.includes('logistica')) {
+        if (!roles.includes('almoxarifado')) roles.push('almoxarifado')
+        formacaoSummary.push('formação em logística/estoque')
+      }
+      if (
+        formText.includes('administrac') ||
+        formText.includes('gestao') ||
+        formText.includes('contab')
+      ) {
+        if (!roles.includes('administrativo')) roles.push('administrativo')
+        formacaoSummary.push('formação em administração/gestão')
+      }
+    }
+  }
+
+  let summary = ''
+  if (roles.length > 0) {
+    summary = `função inferida pela experiência: ${roles.join('/')}`
+  } else if (hasShortExperience && formacaoSummary.length > 0) {
+    summary = `função inferida por formação complementar: ${formacaoSummary.join('/')}`
+  }
+
+  return {
+    roles,
+    details,
+    summary,
+    shortExperience: hasShortExperience,
+  }
+}
+
 // Padrões canônicos de objetivos genéricos
 export const GENERIC_OBJECTIVE_PATTERNS = [
   'todos',
@@ -204,6 +408,7 @@ export function parseVagaRequirements(vaga: any): VagaBasicRequirements {
   if (req.raioKm === null || req.raioKm === undefined) {
     if (tituloNorm.includes('motorista')) req.raioKm = 20
     else if (tituloNorm.includes('cobrador')) req.raioKm = 20
+    else if (tituloNorm.includes('coc') || tituloNorm.includes('monitoramento')) req.raioKm = 25
     else if (tituloNorm.includes('abastecedor') || tituloNorm.includes('mecanico')) req.raioKm = 35
     else req.raioKm = 10
   }
@@ -293,6 +498,10 @@ export function parseVagaRequirements(vaga: any): VagaBasicRequirements {
     req.coords = REFERENCE_LOCATIONS.cursino.approxCoords
   } else if (tituloNorm.includes('leste') || tituloNorm.includes('sapopemba')) {
     req.coords = REFERENCE_LOCATIONS.sapopemba.approxCoords
+  } else if (fullText.includes('cursino')) {
+    req.coords = REFERENCE_LOCATIONS.cursino.approxCoords
+  } else if (fullText.includes('sapopemba') || fullText.includes('leste')) {
+    req.coords = REFERENCE_LOCATIONS.sapopemba.approxCoords
   } else if (req.locations && req.locations.length > 0) {
     const locStr = req.locations.join(' ').toLowerCase()
     if (locStr.includes('cursino')) {
@@ -316,6 +525,8 @@ export interface CandidateEvaluationResult {
   raioMaximoKm: number | null
   score: number // 0 a 100
   passouBasicos: boolean // se atende a TODOS os eliminatórios
+  temAderenciaReal: boolean
+  funcaoInferida?: string | null
   detalhes: {
     motivosNaoEncaixe: string[]
     atendimentos: string[]
@@ -491,11 +702,50 @@ export function evaluateCandidateAgainstVaga(
     }
   }
 
-  // Bonificações adicionais por aderência ao cargo
+  // Inferência de funções a partir da experiência profissional
+  const inferredRoleData = inferCandidateRoleFromExperience(cvData)
+  const inferredRolesText = inferredRoleData.summary
+
+  // Bonificações adicionais por aderência funcional ao cargo
   const tituloNorm = normalizeStringBasic(vaga?.titulo || '')
   let temAderenciaReal = false
 
-  if (tituloNorm.includes('cobrador')) {
+  // Se a vaga for COC ou Monitoramento ou Central de Operações
+  if (
+    tituloNorm.includes('coc') ||
+    tituloNorm.includes('monitoramento') ||
+    tituloNorm.includes('central de operacoes') ||
+    tituloNorm.includes('operador de cftv') ||
+    tituloNorm.includes('rastreamento')
+  ) {
+    if (
+      allExpText.includes('monitoramento') ||
+      allExpText.includes('cftv') ||
+      allExpText.includes('rastreamento') ||
+      allExpText.includes('telemetria') ||
+      allExpText.includes('central de operac') ||
+      allExpText.includes('atendimento') ||
+      allExpText.includes('operador de camera') ||
+      allExpText.includes('fiscal de monitor') ||
+      allExpText.includes('agente de atendimento') ||
+      inferredRoleData.roles.includes('monitoramento') ||
+      inferredRoleData.roles.includes('atendimento')
+    ) {
+      atendimentos.push(
+        `Histórico profissional altamente aderente à função de monitoramento/COC (função inferida: ${inferredRolesText || 'monitoramento/atendimento'})`,
+      )
+      score += 35
+      temAderenciaReal = true
+    } else if (
+      formacaoText.includes('ti') ||
+      formacaoText.includes('informatica') ||
+      formacaoText.includes('telecom')
+    ) {
+      atendimentos.push(`Formação técnica complementar para monitoramento/COC`)
+      score += 15
+      temAderenciaReal = true
+    }
+  } else if (tituloNorm.includes('cobrador')) {
     // Experiências de atendimento, caixa, cobrador, ajudante de motorista, conferente, troco contam favoravelmente
     if (
       allExpText.includes('cobrador') ||
@@ -504,37 +754,65 @@ export function evaluateCandidateAgainstVaga(
       allExpText.includes('ajudante de motorista') ||
       allExpText.includes('conferente') ||
       allExpText.includes('fiscal de onibus') ||
-      allExpText.includes('troco')
+      allExpText.includes('troco') ||
+      inferredRoleData.roles.includes('cobrador') ||
+      inferredRoleData.roles.includes('atendimento') ||
+      inferredRoleData.roles.includes('caixa')
     ) {
-      atendimentos.push(`Histórico profissional aderente à rotina de atendimento/cobrança`)
+      atendimentos.push(
+        `Histórico profissional aderente à rotina de atendimento/cobrança${inferredRolesText ? ` (função inferida: ${inferredRolesText})` : ''}`,
+      )
       score += 20
+      temAderenciaReal = true
+    } else if (
+      formacaoText.includes('administrac') ||
+      formacaoText.includes('comerc') ||
+      formacaoText.includes('atendimento') ||
+      formacaoText.includes('gestao')
+    ) {
+      atendimentos.push(
+        `Formação complementar em área administrativa/atendimento para suporte à cobrança`,
+      )
+      score += 10
       temAderenciaReal = true
     }
   } else if (tituloNorm.includes('abastecedor')) {
     if (
       allExpText.includes('abastec') ||
       allExpText.includes('frentista') ||
-      allExpText.includes('posto')
+      allExpText.includes('posto') ||
+      inferredRoleData.roles.includes('abastecimento')
     ) {
       atendimentos.push(`Histórico com experiência em abastecimento/frentista`)
       score += 25
+      temAderenciaReal = true
+    } else if (formacaoText.includes('mecanic') || formacaoText.includes('automot')) {
+      atendimentos.push(`Formação técnica complementar em mecânica/automotiva`)
+      score += 10
       temAderenciaReal = true
     }
   } else if (tituloNorm.includes('almoxarifado')) {
     if (
       allExpText.includes('almoxarif') ||
       allExpText.includes('estoque') ||
-      allExpText.includes('conferente')
+      allExpText.includes('conferente') ||
+      inferredRoleData.roles.includes('almoxarifado') ||
+      inferredRoleData.roles.includes('logistica')
     ) {
       atendimentos.push(`Histórico com experiência em almoxarifado/controle de estoque`)
       score += 25
+      temAderenciaReal = true
+    } else if (formacaoText.includes('logistica') || formacaoText.includes('administrac')) {
+      atendimentos.push(`Formação complementar em logística/administração para almoxarifado`)
+      score += 10
       temAderenciaReal = true
     }
   } else if (tituloNorm.includes('lavador')) {
     if (
       allExpText.includes('lavador') ||
       allExpText.includes('estetica automotiva') ||
-      allExpText.includes('lavagem')
+      allExpText.includes('lavagem') ||
+      inferredRoleData.roles.includes('lavagem')
     ) {
       atendimentos.push(`Histórico com experiência em lavagem de veículos`)
       score += 25
@@ -545,7 +823,8 @@ export function evaluateCandidateAgainstVaga(
       allExpText.includes('limpeza') ||
       allExpText.includes('asg') ||
       allExpText.includes('servicos gerais') ||
-      allExpText.includes('zelador')
+      allExpText.includes('zelador') ||
+      inferredRoleData.roles.includes('limpeza')
     ) {
       atendimentos.push(`Histórico com experiência em limpeza e conservação`)
       score += 25
@@ -555,6 +834,54 @@ export function evaluateCandidateAgainstVaga(
     if (req.requiresHeavyDrivingExp) {
       temAderenciaReal = true
     }
+  } else if (tituloNorm.includes('mecanico')) {
+    if (
+      allExpText.includes('mecanic') ||
+      allExpText.includes('manutencao') ||
+      allExpText.includes('eletricista') ||
+      inferredRoleData.roles.includes('mecanica')
+    ) {
+      atendimentos.push(`Histórico com experiência em mecânica/manutenção`)
+      score += 25
+      temAderenciaReal = true
+    } else if (
+      formacaoText.includes('mecanic') ||
+      formacaoText.includes('automot') ||
+      formacaoText.includes('eletrotecn')
+    ) {
+      atendimentos.push(`Formação técnica complementar em mecânica/manutenção`)
+      score += 15
+      temAderenciaReal = true
+    }
+  } else if (
+    tituloNorm.includes('administrativo') ||
+    tituloNorm.includes('auxiliar de escritorio')
+  ) {
+    if (
+      inferredRoleData.roles.includes('administrativo') ||
+      inferredRoleData.roles.includes('atendimento') ||
+      allExpText.includes('auxiliar administrat') ||
+      allExpText.includes('assistente administrat')
+    ) {
+      atendimentos.push(`Histórico profissional em funções administrativas/atendimento`)
+      score += 25
+      temAderenciaReal = true
+    } else if (formacaoText.includes('administrac') || formacaoText.includes('gestao')) {
+      atendimentos.push(`Formação complementar em administração`)
+      score += 15
+      temAderenciaReal = true
+    }
+  }
+
+  // REGRA DO USUÁRIO: Requisitos demográficos (idade, CNH, escolaridade) seguem necessários,
+  // mas NUNCA bastam sozinhos para aprovar uma vaga se não houver qualquer relação/aderência com a função.
+  // Se não tem aderência funcional nem experiência/formação correlata, penaliza o score para não aprovar sem relação.
+  if (!temAderenciaReal) {
+    // Vagas que exigem função específica não devem ser aprovadas puramente por requisitos demográficos
+    motivosNaoEncaixe.push(
+      `Sem experiência profissional ou formação correlata com a função "${vaga?.titulo || ''}"`,
+    )
+    score = Math.max(0, score - 35)
   }
 
   // Garante limite 0 a 100
@@ -568,6 +895,8 @@ export function evaluateCandidateAgainstVaga(
     raioMaximoKm: req.raioKm || 20,
     score,
     passouBasicos,
+    temAderenciaReal,
+    funcaoInferida: inferredRolesText || null,
     detalhes: {
       motivosNaoEncaixe,
       atendimentos,
@@ -646,18 +975,26 @@ export async function evaluateGenericCandidateAgainstAllVagas(
     return 0
   })
 
+  // Inferência global para resumo
+  const inferredGlobal = inferCandidateRoleFromExperience(cvData)
+  const inferredComplement = inferredGlobal.summary ? ` (${inferredGlobal.summary})` : ''
+
   // REGRA 2: Fica SOMENTE com a de melhor encaixe nos requisitos básicos
   if (vagasEncaixadas.length > 0) {
     const bestMatch = vagasEncaixadas[0]
     const proxInfo =
       bestMatch.distanciaKm !== null ? ` (~${bestMatch.distanciaKm.toFixed(1)} km)` : ''
+    const inferenciaMsg = bestMatch.funcaoInferida
+      ? ` [${bestMatch.funcaoInferida}]`
+      : inferredComplement
+
     return {
       chosenVaga: bestMatch.vaga,
       rankedEvaluations: vagasEncaixadas,
       candidateCoords,
       foraDeTodasAsGaragens: false,
       motivoDescarte: null,
-      justificativa: `Candidato com objetivo genérico avaliado contra todas as vagas abertas. Melhor encaixe nos requisitos básicos: "${bestMatch.vaga.titulo}"${proxInfo} com score de aderência ${bestMatch.score}/100 (${bestMatch.detalhes.atendimentos.join(', ')}).`,
+      justificativa: `Candidato com objetivo genérico avaliado contra todas as vagas abertas${inferenciaMsg}. Melhor encaixe nos requisitos básicos: "${bestMatch.vaga.titulo}"${proxInfo} com score de aderência ${bestMatch.score}/100 (${bestMatch.detalhes.atendimentos.join(', ')}).`,
       aguardandoVaga: false,
     }
   }
@@ -670,8 +1007,7 @@ export async function evaluateGenericCandidateAgainstAllVagas(
     candidateCoords,
     foraDeTodasAsGaragens: false,
     motivoDescarte: null,
-    justificativa:
-      'Candidato com objetivo genérico avaliado contra todas as vagas abertas próximas, mas não atendeu aos requisitos básicos de nenhuma das funções ativas no momento. Registrado em "Aguardando vaga adequada".',
+    justificativa: `Candidato com objetivo genérico avaliado contra todas as vagas abertas próximas${inferredComplement}, mas não atendeu aos requisitos básicos/aderência de nenhuma das funções ativas no momento. Registrado em "Aguardando vaga adequada".`,
     aguardandoVaga: true,
   }
 }
