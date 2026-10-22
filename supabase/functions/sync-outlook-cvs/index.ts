@@ -1671,6 +1671,31 @@ Deno.serve(async (req: Request) => {
       )
     }
 
+    if (body?.triggerBatchEduardo) {
+      console.log('[sync-outlook-cvs] Ação especial: disparar batch para Eduardo...')
+      const batchRes = await fetch(`${supabaseUrl}/functions/v1/batch-reanalyze-all`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({
+          reanalyzeEduardo: true,
+        }),
+      })
+      const batchText = await batchRes.text()
+      let batchJson: any
+      try {
+        batchJson = JSON.parse(batchText)
+      } catch {
+        batchJson = { raw: batchText }
+      }
+      return new Response(JSON.stringify({ batchResult: batchJson, ok: batchRes.ok }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     if (body?.reanalyzeLeonardo) {
       console.log('[sync-outlook-cvs] Ação especial: reanalisar Leonardo Augusto Damasceno...')
       const reanRes = await fetch(`${supabaseUrl}/functions/v1/reanalisar-candidato`, {

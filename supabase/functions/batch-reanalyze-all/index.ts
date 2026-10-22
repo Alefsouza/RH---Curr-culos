@@ -93,6 +93,35 @@ Deno.serve(async (req: Request) => {
       )
     }
 
+    // Ação direta para invocar reanalisar-candidato para Eduardo Francisco de Freitas
+    if (body.reanalyzeEduardo) {
+      console.log('[batch-reanalyze-all] Executando reanálise para Eduardo Francisco de Freitas...')
+      const eduardoRes = await fetch(`${supabaseUrl}/functions/v1/reanalisar-candidato`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({
+          candidate_id: 'cdbbf741-e60d-451f-9427-fdbc79310a81',
+          force_reextract: false,
+        }),
+      })
+      const eduardoText = await eduardoRes.text()
+      let eduardoJson: any
+      try {
+        eduardoJson = JSON.parse(eduardoText)
+      } catch {
+        eduardoJson = { raw: eduardoText }
+      }
+      return new Response(
+        JSON.stringify({ eduardoJson, ok: eduardoRes.ok, status: eduardoRes.status }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
+    }
+
     // Ação direta para invocar reanalisar-candidato para Robisom com force_reextract
     if (body.reanalyzeRobisom) {
       console.log('[batch-reanalyze-all] Executando reanálise forçada para Robisom...')

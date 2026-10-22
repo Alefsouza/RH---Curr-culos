@@ -11,11 +11,11 @@
     "identify-vaga-from-cv": 256,
     "gmail-poll-curriculos": 252,
     "enviar-mensagem-direta": 251,
-    "sync-outlook-cvs": 261,
+    "sync-outlook-cvs": 264,
     "reanalisar-candidato": 247,
     "recover-candidates": 216,
     "fix-recovered-candidates": 211,
-    "batch-reanalyze-all": 197,
+    "batch-reanalyze-all": 198,
     "backfill-proximidade": 192,
     "reanalisar-cobradores-proximidade": 66
   }
