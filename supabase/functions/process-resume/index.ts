@@ -779,11 +779,23 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
             dados_extraidos: extractedData,
           },
         })
-        if (identifyRes.data?.vaga_id) {
+        if (identifyRes.data?.descartado) {
+          // Fora do raio de todas as vagas (Regra 4)
+          await supabase
+            .from('candidatos')
+            .update({
+              vaga_id: null,
+              etapa_id: null,
+              ativo_kanban: false,
+              motivo_inativo: 'fora do raio de todas as vagas',
+              proximidade: 'fora_raio',
+            })
+            .eq('id', candidatoId)
+        } else if (identifyRes.data?.vaga_id) {
           targetVagaId = identifyRes.data.vaga_id
           await supabase.from('candidatos').update({ vaga_id: targetVagaId }).eq('id', candidatoId)
         } else {
-          // Nenhum encaixe de vaga aberta: sinalizar aguardando vaga adequada
+          // Nenhum encaixe de vaga aberta: sinalizar aguardando vaga adequada (Regra 3)
           await supabase
             .from('candidatos')
             .update({
@@ -811,6 +823,7 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
             cv_id: candidatoId,
             vaga_id: targetVagaId,
             user_id: user_id,
+            enable_cascade: true,
           },
         })
         if (critRes.data?.data?.analise) {

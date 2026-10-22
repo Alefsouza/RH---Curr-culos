@@ -13,31 +13,10 @@ import {
 } from '../_shared/proximity.ts'
 import { resolveCandidateAge } from '../_shared/validation.ts'
 import { checkBusOrTruckDriverExperience, isAppOrLightVehicleDriver } from '../_shared/motorista.ts'
-
-// Regras e salvaguardas de fallback por experiência profissional
-// Padrões de objetivo genérico (normalizados sem acento)
-const GENERIC_OBJECTIVE_PATTERNS = [
-  'a disposicao da empresa',
-  'a disposicao',
-  'disposicao da empresa',
-  'disposicao',
-  'qualquer vaga',
-  'qualquer area',
-  'sem preferencia',
-  'disponivel para qualquer',
-  'disponivel para qualquer area',
-  'disponivel para qualquer funcao',
-  'disponivel para qualquer vaga',
-  'o que a empresa precisar',
-  'o que precisar',
-  'qualquer funcao',
-  'qualquer cargo',
-  'area a definir',
-  'cargo a definir',
-  'a combinar',
-  'em aberto',
-  'a criterio da empresa',
-]
+import {
+  isGenericObjective,
+  evaluateGenericCandidateAgainstAllVagas,
+} from '../_shared/criterios-matching.ts'
 
 // Normalização de texto: minúsculas, sem acentos, sem pontuação, espaços simples
 function normalizeString(str: string): string {
@@ -49,17 +28,6 @@ function normalizeString(str: string): string {
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-}
-
-// Verifica se uma string de objetivo é genérica
-function isGenericObjective(str: string): boolean {
-  if (!str) return false
-  const norm = normalizeString(str)
-  if (!norm) return false
-  return GENERIC_OBJECTIVE_PATTERNS.some((pattern) => {
-    const normPattern = normalizeString(pattern)
-    return norm === normPattern || norm.includes(normPattern) || normPattern.includes(norm)
-  })
 }
 
 // Verifica se uma string de objetivo é especificamente de motorista / condutor
@@ -574,118 +542,102 @@ Deno.serve(async (req: Request) => {
     }
 
     // =========================================================================
-    // REGRA 1: DETECÇÃO DE "OBJETIVO GENÉRICO" ("A disposição da empresa", etc.)
-    // Se o objetivo for genérico, considerar TAMBÉM a experiência profissional do candidato:
-    // - Se possui experiência/cargo de Motorista no histórico, deve ser candidatado à vaga de
-    //   MOTORISTA da garagem mais próxima do endereço dele.
-    // - As vagas de Cobrador exigem idade 18-56 anos; um candidato com idade > 56 ou que tenha
-    //   experiência de motorista NUNCA deve ser mandado para Cobrador quando existe a alternativa de Motorista.
-    // - Só recorrer à vaga de Cobrador se não houver vaga de Motorista compatível ou se ele não tiver perfil de Motorista.
+    // REGRA 1 A 4: AVALIAÇÃO DE CARGOS GENÉRICOS ("TODOS", "DISPOSIÇÃO", VAZIO)
+    // Conforme decisão do usuário:
+    // (1) candidato com objetivo 'Todos', 'Disposição da Empresa', vazio ou não específico
+    //     deve ser avaliado contra TODAS as vagas abertas próximas da garagem dele (dentro do raio de cada uma);
+    // (2) fica SOMENTE com a de melhor encaixe nos requisitos básicos (faixa etária, experiência, CNH, escolaridade)
+    //     — nunca a primeira por palavra-chave;
+    // (3) se não encaixar em nenhuma, NÃO é aprovado em nenhuma — entra como 'Aguardando vaga adequada'
+    //     com o cargo pretendido registrado, nunca aprovado por folga;
+    // (4) se não estiver perto de nenhuma garagem, descartar de cara com motivo 'fora do raio de todas as vagas'.
     // =========================================================================
-    if (candidatoObjetivo && isGenericObjective(candidatoObjetivo)) {
+    if (!candidatoObjetivo || isGenericObjective(candidatoObjetivo)) {
       console.log(
-        `[identify-vaga-from-cv] Objetivo genérico detectado: "${candidatoObjetivo}". Analisando histórico profissional e critérios...`,
+        `[identify-vaga-from-cv] Objetivo genérico/vazio detectado: "${candidatoObjetivo || '(vazio)'}". Avaliando contra TODAS as vagas abertas próximas...`,
       )
 
-      const candidatoTemExpMotorista = hasMotoristaExperience(
-        parsedDadosExtraidos || cvDataToAnalyze,
-      )
-      const idadeCandidato = extractCandidateAge(parsedDadosExtraidos)
-      const motoristaVagas = vagas.filter((v) =>
-        normalizeString(v.titulo || '').includes('motorista'),
-      )
-      const cobradorVagas = vagas.filter((v) =>
-        normalizeString(v.titulo || '').includes('cobrador'),
+      const evalData = parsedDadosExtraidos || cvDataToAnalyze || {}
+      const genericResult = await evaluateGenericCandidateAgainstAllVagas(
+        evalData,
+        vagas,
+        googleApiKey,
       )
 
-      // Se possui experiência como Motorista e existem vagas de Motorista disponíveis:
-      if (candidatoTemExpMotorista && motoristaVagas.length > 0) {
+      // Regra 4: Descartar de cara se fora do raio de todas as vagas
+      if (genericResult.foraDeTodasAsGaragens) {
         console.log(
-          `[identify-vaga-from-cv] Candidato com objetivo genérico ("${candidatoObjetivo}") possui histórico de Motorista. Direcionando para vaga de Motorista da garagem mais próxima.`,
+          `[identify-vaga-from-cv] Candidato genérico descartado: fora do raio de todas as garagens ativas.`,
         )
-
-        const { vaga: chosenMotoristaVaga, menorDistanciaKm } = await pickBestVagaByProximity(
-          candidatoEndereco,
-          motoristaVagas,
-          googleApiKey,
-        )
-
-        let proxText = ''
-        if (menorDistanciaKm !== null) {
-          proxText = ` Selecionada a vaga de Motorista da garagem mais próxima do endereço do candidato (${candidatoEndereco}), a aproximadamente ${menorDistanciaKm.toFixed(1)} km.`
-        } else if (candidatoEndereco) {
-          proxText = ` Endereço do candidato: "${candidatoEndereco}". Selecionada a garagem mais adequada.`
-        } else {
-          proxText = ' Não foi identificado endereço no currículo para desempate geográfico.'
-        }
-
         return new Response(
           JSON.stringify({
-            vaga_id: chosenMotoristaVaga.id,
-            confianca: 'alta',
-            justificativa: `Objetivo do candidato é genérico ("${candidatoObjetivo}"), mas o histórico profissional comprova experiência como Motorista. Pela regra de negócio, foi priorizada a vaga de Motorista ("${chosenMotoristaVaga.titulo}").${proxText}`,
+            vaga_id: null,
+            confianca: 'baixa',
+            descartado: true,
+            motivo_descarte: 'fora do raio de todas as vagas',
+            justificativa: genericResult.justificativa,
+            todas_avaliacoes: genericResult.rankedEvaluations.map((e) => ({
+              vaga_id: e.vaga.id,
+              titulo: e.vaga.titulo,
+              distancia_km: e.distanciaKm,
+              raio_maximo_km: e.raioMaximoKm,
+              dentro_do_raio: e.dentroDoRaio,
+              score: e.score,
+              passou_basicos: e.passouBasicos,
+            })),
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         )
       }
 
-      // Se NÃO tem experiência de motorista, verificar compatibilidade com Cobrador (faixa etária 18-56 anos)
-      // Se a idade for conhecida e for maior que 56 anos ou menor que 18, NÃO direcionar para Cobrador
-      const foraFaixaEtariaCobrador =
-        idadeCandidato !== null && (idadeCandidato < 18 || idadeCandidato > 56)
-
-      if (foraFaixaEtariaCobrador && motoristaVagas.length > 0) {
-        // Candidato fora da faixa etária de Cobrador, mas há vagas de Motorista abertas (onde não há teto de 56 anos)
+      // Regra 2: Fica SOMENTE com a de melhor encaixe nos requisitos básicos
+      if (genericResult.chosenVaga) {
         console.log(
-          `[identify-vaga-from-cv] Candidato tem ${idadeCandidato} anos (fora da faixa de 18-56 anos para Cobrador). Avaliando vaga de Motorista por proximidade.`,
+          `[identify-vaga-from-cv] Candidato genérico alocado na vaga de melhor encaixe: "${genericResult.chosenVaga.titulo}" (ID: ${genericResult.chosenVaga.id})`,
         )
-        const { vaga: chosenMotoristaVaga, menorDistanciaKm } = await pickBestVagaByProximity(
-          candidatoEndereco,
-          motoristaVagas,
-          googleApiKey,
-        )
-
-        let proxText = ''
-        if (menorDistanciaKm !== null) {
-          proxText = ` Selecionada a vaga de Motorista da garagem mais próxima (${menorDistanciaKm.toFixed(1)} km) do endereço (${candidatoEndereco}).`
-        }
-
         return new Response(
           JSON.stringify({
-            vaga_id: chosenMotoristaVaga.id,
+            vaga_id: genericResult.chosenVaga.id,
             confianca: 'alta',
-            justificativa: `Objetivo genérico ("${candidatoObjetivo}"). Como a idade do candidato (${idadeCandidato} anos) não atende ao limite de até 56 anos das vagas de Cobrador, foi direcionado para a vaga de Motorista ("${chosenMotoristaVaga.titulo}").${proxText}`,
+            justificativa: genericResult.justificativa,
+            todas_avaliacoes: genericResult.rankedEvaluations.map((e) => ({
+              vaga_id: e.vaga.id,
+              titulo: e.vaga.titulo,
+              distancia_km: e.distanciaKm,
+              raio_maximo_km: e.raioMaximoKm,
+              dentro_do_raio: e.dentroDoRaio,
+              score: e.score,
+              passou_basicos: e.passouBasicos,
+            })),
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         )
       }
 
-      // Caso padrão para objetivo genérico (candidato sem histórico específico de motorista e dentro da faixa etária)
-      if (cobradorVagas.length > 0 && !foraFaixaEtariaCobrador) {
-        const { vaga: chosenVaga, menorDistanciaKm } = await pickBestVagaByProximity(
-          candidatoEndereco,
-          cobradorVagas,
-          googleApiKey,
-        )
-
-        let proxText = ''
-        if (menorDistanciaKm !== null) {
-          proxText = ` Selecionada a unidade mais próxima do endereço do candidato (${candidatoEndereco}), a aproximadamente ${menorDistanciaKm.toFixed(1)} km.`
-        } else if (candidatoEndereco) {
-          proxText = ` Endereço do candidato: "${candidatoEndereco}".`
-        } else {
-          proxText = ' Não foi identificado endereço no currículo para desempate geográfico.'
-        }
-
-        return new Response(
-          JSON.stringify({
-            vaga_id: chosenVaga.id,
-            confianca: 'alta',
-            justificativa: `Objetivo do candidato identificado como "${candidatoObjetivo}" (disposição da empresa/genérico). Pela regra de negócio, foi direcionado para a vaga de Cobrador ("${chosenVaga.titulo}").${proxText}`,
-          }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-        )
-      }
+      // Regra 3: Não encaixou em nenhuma -> Não aprova em nenhuma -> Aguardando vaga adequada
+      console.log(
+        `[identify-vaga-from-cv] Candidato genérico não atendeu aos requisitos básicos de nenhuma vaga aberta. Entra como Aguardando vaga adequada.`,
+      )
+      return new Response(
+        JSON.stringify({
+          vaga_id: null,
+          confianca: 'nenhuma',
+          aguardando_vaga: true,
+          cargo_pretendido: candidatoObjetivo || 'A disposição da empresa',
+          justificativa: genericResult.justificativa,
+          todas_avaliacoes: genericResult.rankedEvaluations.map((e) => ({
+            vaga_id: e.vaga.id,
+            titulo: e.vaga.titulo,
+            distancia_km: e.distanciaKm,
+            raio_maximo_km: e.raioMaximoKm,
+            dentro_do_raio: e.dentroDoRaio,
+            score: e.score,
+            passou_basicos: e.passouBasicos,
+            motivos: e.detalhes.motivosNaoEncaixe,
+          })),
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
     }
 
     // =========================================================================
@@ -899,7 +851,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // =========================================================================
-    // REGRA 3: FALLBACK OPENAI COM CRITÉRIOS + ENDEREÇOS + REGRA DO COBRADOR
+    // REGRA 3: FALLBACK OPENAI COM CRITÉRIOS + ENDEREÇOS (para objetivos específicos não contemplados acima)
     // =========================================================================
     const openaiKey = Deno.env.get('OPENAI_KEY') || Deno.env.get('OPENIA_KEY')
     if (!openaiKey) {

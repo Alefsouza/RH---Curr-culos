@@ -877,6 +877,7 @@ ${ocrText.substring(0, 15000)}`
 
         // Identificar vaga compatível
         let vagaId: string | null = null
+        let isDescartadoPorRaio = false
         try {
           const identifyRes = await supabase.functions.invoke('identify-vaga-from-cv', {
             body: {
@@ -886,18 +887,34 @@ ${ocrText.substring(0, 15000)}`
               dados_extraidos: extractedData,
             },
           })
-          vagaId = identifyRes.data?.vaga_id || null
+          if (identifyRes.data?.descartado) {
+            isDescartadoPorRaio = true
+          } else {
+            vagaId = identifyRes.data?.vaga_id || null
+          }
         } catch (idErr: any) {
           console.warn('Erro ao identificar vaga:', idErr?.message)
         }
 
         let finalStatus = 'sucesso'
-        if (vagaId) {
+        if (isDescartadoPorRaio) {
+          await supabase
+            .from('candidatos')
+            .update({
+              vaga_id: null,
+              etapa_id: null,
+              ativo_kanban: false,
+              motivo_inativo: 'fora do raio de todas as vagas',
+              proximidade: 'fora_raio',
+            })
+            .eq('id', candidatoId)
+          finalStatus = 'fora_do_raio'
+        } else if (vagaId) {
           await supabase.from('candidatos').update({ vaga_id: vagaId }).eq('id', candidatoId)
 
           try {
             const critRes = await supabase.functions.invoke('analisar-cv-criterios', {
-              body: { cv_id: candidatoId, vaga_id: vagaId, user_id: userId },
+              body: { cv_id: candidatoId, vaga_id: vagaId, user_id: userId, enable_cascade: true },
             })
             if (critRes.data?.data?.analise?.resultado !== 'qualificado') {
               await supabase.from('candidatos').update({ etapa_id: null }).eq('id', candidatoId)
@@ -907,7 +924,7 @@ ${ocrText.substring(0, 15000)}`
             console.warn('Erro na análise de critérios:', critErr?.message)
           }
         } else {
-          // Nenhum encaixe de vaga aberta: sinalizar aguardando vaga adequada
+          // Nenhum encaixe de vaga aberta: sinalizar aguardando vaga adequada (Regra 3)
           await supabase
             .from('candidatos')
             .update({
@@ -1137,6 +1154,74 @@ Deno.serve(async (req: Request) => {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
+    }
+
+    if (body?.auditAndReclassifyGenerics) {
+      console.log(
+        '[sync-outlook-cvs] Ação especial: auditar e reclassificar candidatos genéricos...',
+      )
+      const targetIds: string[] = Array.isArray(body.candidateIds) ? body.candidateIds : []
+      let candidatesToProcess: any[] = []
+
+      if (targetIds.length > 0) {
+        const { data: cands } = await supabase
+          .from('candidatos')
+          .select('id, nome, dados_extraidos')
+          .in('id', targetIds)
+        candidatesToProcess = cands || []
+      } else {
+        // Busca todos os candidatos com objetivo genérico ou vazio
+        const { data: allCands } = await supabase
+          .from('candidatos')
+          .select('id, nome, dados_extraidos')
+          .limit(100)
+
+        candidatesToProcess = (allCands || []).filter((c: any) => {
+          const obj = c?.dados_extraidos?.objetivo || c?.dados_extraidos?.cargo_pretendido || ''
+          const norm = String(obj).toLowerCase()
+          return (
+            !obj ||
+            norm.includes('todos') ||
+            norm.includes('disposi') ||
+            norm.includes('qualquer') ||
+            norm.includes('sem prefer') ||
+            norm.trim() === ''
+          )
+        })
+      }
+
+      console.log(
+        `[auditAndReclassifyGenerics] Processando ${candidatesToProcess.length} candidatos...`,
+      )
+      const auditResults: Record<string, any> = {}
+
+      for (const cand of candidatesToProcess) {
+        try {
+          const rRes = await fetch(`${supabaseUrl}/functions/v1/reanalisar-candidato`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${supabaseKey}`,
+            },
+            body: JSON.stringify({
+              candidate_id: cand.id,
+              force_reextract: false,
+            }),
+          })
+          const rJson = await rRes.json()
+          auditResults[cand.id] = { nome: cand.nome, success: rRes.ok, result: rJson }
+        } catch (cErr: any) {
+          auditResults[cand.id] = { nome: cand.nome, error: cErr.message }
+        }
+      }
+
+      return new Response(
+        JSON.stringify({ auditedCount: candidatesToProcess.length, auditResults, ok: true }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
     }
 
     if (body?.reanalyzeLeonardo) {

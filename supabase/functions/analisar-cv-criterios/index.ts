@@ -27,6 +27,10 @@ import {
   checkRestrictedCompanyStatus,
   RESTRICTED_COMPANIES,
 } from '../_shared/motorista.ts'
+import {
+  isGenericObjective,
+  evaluateGenericCandidateAgainstAllVagas,
+} from '../_shared/criterios-matching.ts'
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -49,7 +53,7 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    const { cv_id, vaga_id, user_id } = body
+    const { cv_id, vaga_id, user_id, enable_cascade } = body
 
     if (!cv_id || !vaga_id) {
       return new Response(
@@ -1215,11 +1219,123 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
       await supabaseAdmin.from('candidatos').update({ nome: validName }).eq('id', cv_id)
     }
 
+    // =========================================================================
+    // REGRA 5: REANÁLISE EM CASCATA PARA CANDIDATOS GENÉRICOS REPROVADOS
+    // Se reprovado na vaga escolhida (statusFinal === 'nao_qualificado'),
+    // testar as próximas vagas próximas compatíveis antes de reprovar de vez!
+    // =========================================================================
+    let cascadeResult: any = null
+    const candidateObjetivo = (extracted?.objetivo || extracted?.cargo_pretendido || '').trim()
+    const shouldCascade =
+      statusFinal === 'nao_qualificado' &&
+      isGenericObjective(candidateObjetivo) &&
+      enable_cascade !== false
+
+    if (shouldCascade) {
+      console.log(
+        `[analisar-cv-criterios] Candidato genérico (${candidato.nome}) reprovado na vaga ${vaga.titulo}. Iniciando reanálise em cascata...`,
+      )
+
+      // Busca todas as outras vagas ativas
+      const { data: allActiveVagas } = await supabaseAdmin
+        .from('vagas')
+        .select('*')
+        .eq('ativa', true)
+        .neq('id', vaga_id)
+        .order('criado_em', { ascending: true })
+
+      if (allActiveVagas && allActiveVagas.length > 0) {
+        const evalGeneric = await evaluateGenericCandidateAgainstAllVagas(
+          cvData,
+          allActiveVagas,
+          googleApiKey,
+        )
+
+        // Se encontrou outra vaga próxima com compatibilidade básica:
+        if (evalGeneric.chosenVaga) {
+          const nextVaga = evalGeneric.chosenVaga
+          console.log(
+            `[analisar-cv-criterios] Cascata: testando próxima vaga compatível "${nextVaga.titulo}" (ID: ${nextVaga.id})...`,
+          )
+
+          try {
+            const nextCallRes = await fetch(`${supabaseUrl}/functions/v1/analisar-cv-criterios`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${supabaseServiceRoleKey}`,
+              },
+              body: JSON.stringify({
+                cv_id: cv_id,
+                vaga_id: nextVaga.id,
+                user_id: effectiveUserId,
+                enable_cascade: false, // Evita loop recursivo infinito
+              }),
+            })
+            const nextCallData = await nextCallRes.json()
+            if (nextCallData?.data?.analise) {
+              const nextResultado = nextCallData.data.analise.resultado
+              console.log(
+                `[analisar-cv-criterios] Cascata resultado na vaga ${nextVaga.titulo}: ${nextResultado}`,
+              )
+
+              if (nextResultado === 'qualificado' || nextResultado === 'revisar') {
+                // Aloca na vaga que deu certo
+                await supabaseAdmin
+                  .from('candidatos')
+                  .update({ vaga_id: nextVaga.id })
+                  .eq('id', cv_id)
+
+                cascadeResult = {
+                  redirecionado: true,
+                  vaga_anterior: vaga.titulo,
+                  vaga_nova: nextVaga.titulo,
+                  nova_analise: nextCallData.data.analise,
+                }
+
+                return new Response(
+                  JSON.stringify({
+                    data: {
+                      success: true,
+                      analise: nextCallData.data.analise,
+                      cascade: cascadeResult,
+                    },
+                  }),
+                  {
+                    status: 200,
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                  },
+                )
+              }
+            }
+          } catch (cascErr: any) {
+            console.error('[analisar-cv-criterios] Erro na reanálise em cascata:', cascErr?.message)
+          }
+        }
+      }
+
+      // Se passou por todas e não encaixou em nenhuma, marca como aguardando vaga adequada
+      // sem aprovar por folga nem forçar alocação errônea
+      console.log(
+        `[analisar-cv-criterios] Cascata: candidato não encaixou em nenhuma outra vaga. Colocado em "Aguardando vaga adequada".`,
+      )
+      await supabaseAdmin
+        .from('candidatos')
+        .update({
+          vaga_id: null,
+          etapa_id: null,
+          ativo_kanban: false,
+          motivo_inativo: 'aguardando vaga adequada',
+        })
+        .eq('id', cv_id)
+    }
+
     return new Response(
       JSON.stringify({
         data: {
           success: true,
           analise: analiseData,
+          cascade: cascadeResult,
         },
       }),
       {

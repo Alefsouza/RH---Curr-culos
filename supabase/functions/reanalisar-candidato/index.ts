@@ -816,6 +816,53 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
         })
       }
 
+      // Trata descarte direto por raio (Regra 4)
+      if (identifyData.descartado) {
+        await supabase
+          .from('candidatos')
+          .update({
+            vaga_id: null,
+            etapa_id: null,
+            ativo_kanban: false,
+            motivo_inativo: 'fora do raio de todas as vagas',
+            proximidade: 'fora_raio',
+          })
+          .eq('id', candidato.id)
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            descartado: true,
+            motivo: identifyData.motivo_descarte || 'fora do raio de todas as vagas',
+            justificativa: identifyData.justificativa,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
+      }
+
+      // Trata aguardando vaga adequada (Regra 3)
+      if (identifyData.aguardando_vaga) {
+        await supabase
+          .from('candidatos')
+          .update({
+            vaga_id: null,
+            etapa_id: null,
+            ativo_kanban: false,
+            motivo_inativo: 'aguardando vaga adequada',
+          })
+          .eq('id', candidato.id)
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            aguardando_vaga: true,
+            motivo: 'aguardando vaga adequada',
+            justificativa: identifyData.justificativa,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
+      }
+
       identifiedVagaId = identifyData.vaga_id || null
       justificativaIdentificacao =
         identifyData.justificativa || 'Nenhuma vaga compatível foi identificada no sistema.'
@@ -1052,6 +1099,7 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
         cv_id: candidato.id,
         vaga_id: identifiedVagaId,
         user_id: effectiveUserId,
+        enable_cascade: true,
       }),
     })
 

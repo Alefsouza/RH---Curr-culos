@@ -4,9 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { RefreshCw, CheckCircle, XCircle, AlertTriangle, Loader2 } from 'lucide-react'
+import { RefreshCw, CheckCircle, XCircle, AlertTriangle, Loader2, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
+import { triggerAuditAndReclassifyGenerics } from '@/services/sync'
 
 const statusConfig: Record<string, any> = {
   running: {
@@ -35,6 +36,20 @@ export default function SincronizacaoPage() {
   const [runs, setRuns] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
+  const [auditing, setAuditing] = useState(false)
+
+  const handleAuditGenerics = async () => {
+    setAuditing(true)
+    try {
+      const res = await triggerAuditAndReclassifyGenerics()
+      toast.success(`${res?.auditedCount || 0} candidatos genéricos auditados e reclassificados.`)
+      load()
+    } catch (e: any) {
+      toast.error('Erro na auditoria: ' + e.message)
+    } finally {
+      setAuditing(false)
+    }
+  }
 
   const load = useCallback(async () => {
     try {
@@ -81,14 +96,29 @@ export default function SincronizacaoPage() {
             Importação automática de currículos — rh@viasudeste.com
           </p>
         </div>
-        <Button onClick={handleSync} disabled={syncing}>
-          {syncing ? (
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-          ) : (
-            <RefreshCw className="w-4 h-4 mr-2" />
-          )}
-          {syncing ? 'Sincronizando...' : 'Sincronizar Agora'}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={handleAuditGenerics}
+            disabled={auditing || syncing}
+            title="Reclassifica candidatos com objetivo 'Todos', 'Disposição da Empresa' ou vazio contra todas as vagas abertas"
+          >
+            {auditing ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Users className="w-4 h-4 mr-2" />
+            )}
+            {auditing ? 'Auditando...' : 'Auditar Cargos Genéricos'}
+          </Button>
+          <Button onClick={handleSync} disabled={syncing || auditing}>
+            {syncing ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4 mr-2" />
+            )}
+            {syncing ? 'Sincronizando...' : 'Sincronizar Agora'}
+          </Button>
+        </div>
       </div>
 
       <Card>

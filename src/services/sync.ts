@@ -45,3 +45,14 @@ export async function triggerCobradoresProximidadeReanalysis() {
   if (error) throw error
   return data
 }
+
+export async function triggerAuditAndReclassifyGenerics(candidateIds?: string[]) {
+  const { data, error } = await supabase.functions.invoke('sync-outlook-cvs', {
+    body: {
+      auditAndReclassifyGenerics: true,
+      candidateIds: candidateIds || [],
+    },
+  })
+  if (error) throw error
+  return data
+}

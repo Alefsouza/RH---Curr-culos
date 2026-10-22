@@ -425,7 +425,30 @@ ${ocrText.substring(0, 15000)}`
           dados_extraidos: extractedData,
         },
       })
-      if (identifyRes.data?.vaga_id) {
+      if (identifyRes.data?.descartado) {
+        // Regra 4: fora do raio de todas as vagas
+        await supabase
+          .from('candidatos')
+          .update({
+            vaga_id: null,
+            etapa_id: null,
+            ativo_kanban: false,
+            motivo_inativo: 'fora do raio de todas as vagas',
+            proximidade: 'fora_raio',
+          })
+          .eq('id', candidatoId)
+      } else if (identifyRes.data?.aguardando_vaga) {
+        // Regra 3: aguardando vaga adequada
+        await supabase
+          .from('candidatos')
+          .update({
+            vaga_id: null,
+            etapa_id: null,
+            ativo_kanban: false,
+            motivo_inativo: 'aguardando vaga adequada',
+          })
+          .eq('id', candidatoId)
+      } else if (identifyRes.data?.vaga_id) {
         assignedVagaId = identifyRes.data.vaga_id
         await supabase.from('candidatos').update({ vaga_id: assignedVagaId }).eq('id', candidatoId)
       }
@@ -442,6 +465,7 @@ ${ocrText.substring(0, 15000)}`
             cv_id: candidatoId,
             vaga_id: assignedVagaId,
             user_id: userId,
+            enable_cascade: true,
           },
         })
         if (critRes.data?.data?.analise) {
@@ -449,32 +473,6 @@ ${ocrText.substring(0, 15000)}`
         }
       } catch (critErr: any) {
         console.warn('[outlook-webhook] Erro ao analisar critérios:', critErr?.message)
-      }
-    } else {
-      // Se nenhuma vaga foi identificada pelo job matcher, rodar análise para as vagas ativas abertas via analisar-cv-criterios
-      const { data: activeVagas } = await supabase
-        .from('vagas')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('ativa', true)
-
-      if (activeVagas && activeVagas.length > 0) {
-        for (const av of activeVagas) {
-          try {
-            const critRes = await supabase.functions.invoke('analisar-cv-criterios', {
-              body: {
-                cv_id: candidatoId,
-                vaga_id: av.id,
-                user_id: userId,
-              },
-            })
-            if (critRes.data?.data?.analise) {
-              analisesRealizadas.push(critRes.data.data.analise)
-            }
-          } catch (e: any) {
-            console.error(`Erro ao analisar vaga ${av.id}:`, e?.message)
-          }
-        }
       }
     }
 
