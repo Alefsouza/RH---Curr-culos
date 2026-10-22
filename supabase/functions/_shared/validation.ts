@@ -272,30 +272,127 @@ export const calculateAgeFromBirthDate = (
  * (com a data atual), em vez de usar o campo "idade" solto.
  * Caso não haja data de nascimento, usa o valor de idade original se for numérico válido.
  */
+export interface CandidateAgeResolution {
+  idade: number | null
+  origem: 'data_nascimento' | 'declarada' | 'recalculada' | null
+  invalida: boolean
+  divergente: boolean
+  paraRevisao: boolean
+  motivoRevisao?: string
+}
+
+/**
+ * Validação de plausibilidade de idade na extração:
+ * - Recusar idade < 16 ou > 75 (marcar inválida / para revisão)
+ * - Cruzar idade declarada x data de nascimento (se divergência -> recalcular pela data de nascimento)
+ * - Se persistir dúvida ou idade fora dos limites plausíveis -> marcar para revisão
+ */
+export const validateAndResolveCandidateAge = (
+  rawIdade: any,
+  dataNascimento: string | null | undefined,
+): CandidateAgeResolution => {
+  const calculated = calculateAgeFromBirthDate(dataNascimento)
+
+  let parsedRaw: number | null = null
+  if (typeof rawIdade === 'number' && !isNaN(rawIdade)) {
+    parsedRaw = Math.floor(rawIdade)
+  } else if (typeof rawIdade === 'string') {
+    const match = rawIdade.match(/\d+/)
+    if (match) {
+      const p = parseInt(match[0], 10)
+      if (!isNaN(p)) parsedRaw = p
+    }
+  }
+
+  // Caso tenhamos data de nascimento:
+  if (calculated !== null) {
+    const calcPlausivel = calculated >= 16 && calculated <= 75
+
+    if (parsedRaw !== null) {
+      const divergencia = Math.abs(calculated - parsedRaw) > 1
+      if (divergencia) {
+        // Se divergente, recalcular pela data de nascimento se for plausível
+        if (calcPlausivel) {
+          return {
+            idade: calculated,
+            origem: 'recalculada',
+            invalida: false,
+            divergente: true,
+            paraRevisao: false,
+            motivoRevisao: `Idade declarada (${parsedRaw} anos) divergia da data de nascimento (${dataNascimento}). Recalculada para ${calculated} anos.`,
+          }
+        } else {
+          return {
+            idade: calculated,
+            origem: 'data_nascimento',
+            invalida: true,
+            divergente: true,
+            paraRevisao: true,
+            motivoRevisao: `Idade calculada pela data de nascimento (${calculated} anos) está fora da faixa plausível (16-75 anos).`,
+          }
+        }
+      }
+    }
+
+    if (!calcPlausivel) {
+      return {
+        idade: calculated,
+        origem: 'data_nascimento',
+        invalida: true,
+        divergente: false,
+        paraRevisao: true,
+        motivoRevisao: `Idade (${calculated} anos) fora da faixa de plausibilidade (16 a 75 anos).`,
+      }
+    }
+
+    return {
+      idade: calculated,
+      origem: 'data_nascimento',
+      invalida: false,
+      divergente: false,
+      paraRevisao: false,
+    }
+  }
+
+  // Apenas idade bruta declarada
+  if (parsedRaw !== null) {
+    if (parsedRaw < 16 || parsedRaw > 75) {
+      return {
+        idade: parsedRaw,
+        origem: 'declarada',
+        invalida: true,
+        divergente: false,
+        paraRevisao: true,
+        motivoRevisao: `Idade declarada (${parsedRaw} anos) é implausível (< 16 ou > 75 anos).`,
+      }
+    }
+    return {
+      idade: parsedRaw,
+      origem: 'declarada',
+      invalida: false,
+      divergente: false,
+      paraRevisao: false,
+    }
+  }
+
+  return {
+    idade: null,
+    origem: null,
+    invalida: false,
+    divergente: false,
+    paraRevisao: false,
+  }
+}
+
+/**
+ * Normaliza e resolve a idade do candidato (retorna null se implausível ou nulo)
+ */
 export const resolveCandidateAge = (
   rawIdade: any,
   dataNascimento: string | null | undefined,
 ): number | null => {
-  const calculatedFromBirth = calculateAgeFromBirthDate(dataNascimento)
-  if (calculatedFromBirth !== null) {
-    return calculatedFromBirth
-  }
-
-  if (typeof rawIdade === 'number' && !isNaN(rawIdade) && rawIdade > 0 && rawIdade < 130) {
-    return Math.floor(rawIdade)
-  }
-
-  if (typeof rawIdade === 'string') {
-    const match = rawIdade.match(/\d+/)
-    if (match) {
-      const parsed = parseInt(match[0], 10)
-      if (!isNaN(parsed) && parsed > 0 && parsed < 130) {
-        return parsed
-      }
-    }
-  }
-
-  return null
+  const res = validateAndResolveCandidateAge(rawIdade, dataNascimento)
+  return res.idade
 }
 
 const INVALID_EMAIL_DOMAINS = [

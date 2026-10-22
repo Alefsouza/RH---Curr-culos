@@ -490,8 +490,38 @@ export default function CandidateDetails() {
             <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">
               {candidate.etapas?.nome || 'Sem etapa'}
             </Badge>
+            {candidate.vagas?.titulo ? (
+              <Badge variant="secondary" className="bg-slate-100 text-slate-800 border-slate-300">
+                Vaga vinculada: {candidate.vagas.titulo}
+              </Badge>
+            ) : (
+              <Badge
+                variant="outline"
+                className="bg-amber-50 text-amber-800 border-amber-300 font-medium"
+              >
+                Aguardando vaga adequada
+              </Badge>
+            )}
           </h1>
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mt-2 text-sm text-slate-600">
+            {objetivo ? (
+              <span className="flex items-center text-xs font-semibold text-amber-900 border border-amber-300 rounded px-2.5 py-1 bg-amber-50 shadow-sm">
+                🎯 Cargo Pretendido: {safeText(objetivo)}
+              </span>
+            ) : (
+              <span className="flex items-center text-xs text-slate-400 border border-dashed rounded px-2 py-0.5 bg-slate-50">
+                Cargo Pretendido: Não especificado
+              </span>
+            )}
+            {idade ? (
+              <span className="flex items-center text-xs font-medium text-purple-800 border border-purple-300 rounded px-2.5 py-1 bg-purple-50">
+                🎂 Idade: {idade} anos {dataNascimento ? `(${dataNascimento})` : ''}
+              </span>
+            ) : dataNascimento ? (
+              <span className="flex items-center text-xs text-purple-700 border border-purple-200 rounded px-2 py-0.5 bg-purple-50 font-medium">
+                🎂 Nascimento: {dataNascimento}
+              </span>
+            ) : null}
             <span className="flex items-center">
               <Mail className="w-4 h-4 mr-1.5 text-slate-400" /> {candidate.email || 'Sem e-mail'}
             </span>
@@ -523,24 +553,9 @@ export default function CandidateDetails() {
               <User className="w-4 h-4 mr-1.5 text-slate-400" /> Fonte:{' '}
               {candidate.fonte || 'Desconhecida'}
             </span>
-            {idade && (
-              <span className="flex items-center text-xs text-purple-700 border border-purple-200 rounded px-2 py-0.5 bg-purple-50 font-medium">
-                Idade: {idade} anos {dataNascimento ? `(${dataNascimento})` : ''}
-              </span>
-            )}
-            {!idade && dataNascimento && (
-              <span className="flex items-center text-xs text-purple-700 border border-purple-200 rounded px-2 py-0.5 bg-purple-50 font-medium">
-                Nascimento: {dataNascimento}
-              </span>
-            )}
-            {objetivo && (
-              <span className="flex items-center text-xs text-blue-700 border border-blue-200 rounded px-2 py-0.5 bg-blue-50 font-medium">
-                Objetivo pretendido: {safeText(objetivo)}
-              </span>
-            )}
             {endereco && (
               <span className="flex items-center text-xs text-slate-500 border rounded px-2 py-0.5 bg-slate-50">
-                Endereço extraído: {endereco}
+                Endereço: {endereco}
               </span>
             )}
           </div>
@@ -837,11 +852,29 @@ export default function CandidateDetails() {
                     {a.detalhes?.motivo && (
                       <div className="bg-amber-50/50 p-3 rounded-md border border-amber-100 mt-4">
                         <span className="font-semibold text-amber-800 flex items-center gap-1.5 mb-1">
-                          Motivo (Regra / Localização)
+                          Motivo (Regra / Localização / Evidências)
                         </span>
                         <p className="text-slate-600 text-sm">{safeText(a.detalhes.motivo)}</p>
                       </div>
                     )}
+
+                    {a.detalhes?.evidencias_citadas &&
+                      Array.isArray(a.detalhes.evidencias_citadas) &&
+                      a.detalhes.evidencias_citadas.length > 0 && (
+                        <div className="bg-indigo-50/50 p-3 rounded-md border border-indigo-100 mt-4">
+                          <span className="font-semibold text-indigo-900 flex items-center gap-1.5 mb-2">
+                            <FileText className="w-4 h-4 text-indigo-600" /> Evidências Literais
+                            Citadas do Currículo
+                          </span>
+                          <ul className="list-disc pl-5 space-y-1 text-xs text-indigo-950 font-mono bg-white/70 p-2.5 rounded border border-indigo-100">
+                            {a.detalhes.evidencias_citadas.map((ev: any, idx: number) => (
+                              <li key={idx} className="leading-relaxed">
+                                &ldquo;{safeText(ev)}&rdquo;
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
 
                     {a.detalhes?.summary && (
                       <div className="bg-blue-50/50 p-3 rounded-md border border-blue-100 mt-4">

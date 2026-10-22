@@ -305,7 +305,28 @@ export function KanbanCard({
               <ExternalLink className="w-3 h-3 opacity-0 group-hover/link:opacity-100 transition-opacity" />
             </Link>
           </h4>
-          <p className="text-xs text-slate-500 font-medium truncate">{candidate.job}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            <Badge
+              variant="outline"
+              className="text-[11px] font-semibold text-slate-700 bg-slate-50 border-slate-200"
+            >
+              Vaga: {candidate.job}
+            </Badge>
+            {candidate.cargoPretendido && (
+              <Badge
+                variant="secondary"
+                className="text-[10px] font-medium bg-amber-50 text-amber-800 border border-amber-200 truncate max-w-[190px]"
+                title={`Cargo pretendido: ${candidate.cargoPretendido}`}
+              >
+                Pretende: {candidate.cargoPretendido}
+              </Badge>
+            )}
+            {candidate.idade !== null && candidate.idade !== undefined && (
+              <span className="text-[10px] text-purple-700 bg-purple-50 border border-purple-200 rounded px-1.5 py-0 font-medium">
+                {candidate.idade} anos
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="space-y-1.5">

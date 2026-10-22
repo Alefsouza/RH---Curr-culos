@@ -66,6 +66,12 @@ export async function fetchCandidates() {
         : []
       const latestIa = sortedAnalises[0]
 
+      const de = (d as any).dados_extraidos || {}
+      const cargoPretendido =
+        de.cargo_pretendido || de.cargo || de.objetivo || de.objetivo_profissional || null
+      const candIdade = de.idade ?? null
+      const candDataNasc = de.data_nascimento || null
+
       return {
         id: d.id,
         name: d.nome,
@@ -81,6 +87,9 @@ export async function fetchCandidates() {
         analysisResult: latestIa?.resultado || null,
         analysisDetails: latestIa?.detalhes || null,
         proximidade: (d as any).proximidade || null,
+        cargoPretendido,
+        idade: candIdade,
+        dataNascimento: candDataNasc,
       }
     })
 }

@@ -399,9 +399,14 @@ DIRETRIZES CRÍTICAS PARA AVALIAÇÃO DE CRITÉRIOS:
    - Quando o candidato tiver um objetivo específico que difere do título da vaga (ex: objetivo "Manutenção" avaliado para a vaga de "Abastecedor Leste"), considere prioritariamente a EXPERIÊNCIA PROFISSIONAL do candidato compatível com a vaga (ex: experiência como Frentista, Abastecimento, Posto Shell é altamente aderente para a vaga de Abastecedor).
    - NUNCA reprove o candidato apenas pelo campo "objetivo" ter uma palavra diferente do título da vaga, desde que o histórico profissional atenda ao perfil e às exigências da vaga.
 
+9. EXIGÊNCIA OBRIGATÓRIA DE EVIDÊNCIAS CITADAS DO CURRÍCULO (ANÁLISE COM EVIDÊNCIAS):
+   - Toda decisão e cada critério (tanto atendido quanto não atendido) DEVE OBRIGATORIAMENTE citar o trecho ou informação literal do CV que sustenta o veredito (ex.: "43 anos, declarado no cabeçalho", "Idade 23 anos calculada a partir da data de nascimento 14/05/2002", "CNH Categoria D citada nas informações complementares", "Último cargo de Motorista na empresa XYZ de 2019 a 2023").
+   - NUNCA faça afirmações vagas como "atende" ou "não atende" sem evidência extraída do documento.
+   - No campo 'evidencias_citadas', inclua uma lista com as principais citações literais do CV que sustentam o parecer geral.
+
 Retorne ESTRITAMENTE um JSON com as seguintes chaves:
 - resultado (qualificado, nao_qualificado ou revisar)
-- detalhes (objeto com score (número inteiro de 0 a 100 representando a compatibilidade geral do candidato), matched_criteria (array de objetos com nome (string) e evidencia (string)), unmatched_criteria (array de objetos com nome (string) e motivo (string)), summary (string com resumo conciso da análise), pontos_fortes (array de strings), pontos_fracos (array de strings), aderencia (string ex: '85%') e motivo (string, explicação breve sobre a decisão, focando no critério eliminatório como idade ou localização se for reprovado))`
+- detalhes (objeto com score (número inteiro de 0 a 100 representando a compatibilidade geral do candidato), matched_criteria (array de objetos com nome (string) e evidencia (string contendo citação literal do trecho do CV que comprova)), unmatched_criteria (array de objetos com nome (string), motivo (string) e evidencia_cv (string com o trecho do CV ou menção à ausência no texto)), summary (string com resumo conciso da análise citando evidências), pontos_fortes (array de strings), pontos_fracos (array de strings), aderencia (string ex: '85%'), motivo (string, explicação fundamentada citando trechos do CV), evidencias_citadas (array de strings com trechos literais extraídos do CV que sustentam cada veredito))`
 
     const openaiKey =
       Deno.env.get('OPENAI_KEY') || Deno.env.get('OPENAI_API_KEY') || Deno.env.get('OPENIA_KEY')
@@ -487,8 +492,23 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
 
     if (localizacoesVaga.length > 0 && raioKm > 0) {
       if (!enderecoCV) {
-        statusFinal = 'nao_qualificado'
-        motivoFinal = `Reprovado por localização: O endereço do candidato não foi encontrado no currículo. ${motivoFinal}`
+        // REGRA DE NEGÓCIO MANDATÓRIA (Item 4 da especificação):
+        // Se o currículo não tiver endereço ou ele não for geolocalizável, marcar para_revisao (status "revisar")
+        // com aviso "distância não verificada" — NUNCA escolher/reprovar vaga como se a distância tivesse sido validada!
+        statusFinal = 'revisar'
+        motivoFinal = `distância não verificada: O endereço do candidato não foi encontrado no currículo. Candidato marcado para revisão humana.`
+        if (resultJson.detalhes) {
+          resultJson.detalhes.distancia_nao_verificada = true
+          resultJson.detalhes.aviso_localizacao = 'distância não verificada'
+        }
+      } else if (!distanciaCalculada) {
+        // Endereço existe mas não foi geolocalizável
+        statusFinal = 'revisar'
+        motivoFinal = `distância não verificada: Não foi possível geolocalizar o endereço ("${enderecoCV}"). Candidato marcado para revisão humana.`
+        if (resultJson.detalhes) {
+          resultJson.detalhes.distancia_nao_verificada = true
+          resultJson.detalhes.aviso_localizacao = 'distância não verificada'
+        }
       } else if (distanciaCalculada && !qualificadoPorLocalizacao) {
         // SALVAGUARDA DE DISTÂNCIA IMPLAUSÍVEL:
         // Distância > 150 km em regiões metropolitanas frequentemente decorre de ambiguidade de geocodificação

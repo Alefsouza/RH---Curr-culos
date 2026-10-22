@@ -357,40 +357,14 @@ async function pickBestVagaByProximity(
     }
   }
 
-  // Se não temos endereço do candidato ou apiKey do Google, tenta fallback textual ou retorna a primeira vaga
+  // REGRA DE NEGÓCIO MANDATÓRIA (Item 4 da especificação):
+  // A verificação de endereço só vale quando houver geolocalização real.
+  // Se não temos endereço do candidato ou apiKey do Google, indicar distância_nao_verificada (menorDistanciaKm = null, geolocalizado = false).
   if (!candidateAddressStr || !googleApiKey) {
-    if (candidateAddressStr) {
-      const fallbackRef = getReferenceCoordsForText(candidateAddressStr)
-      if (fallbackRef) {
-        // Encontra a vaga mais compatível com essa coordenada de referência
-        let bestVaga = vagasList[0]
-        let bestDist: number | null = null
-        for (const vaga of vagasList) {
-          const vagaRef =
-            getReferenceCoordsForText(vaga.titulo || '') ||
-            getReferenceCoordsForText(vaga.descricao || '')
-          if (vagaRef) {
-            const dist = calculateHaversineDistance(fallbackRef, vagaRef)
-            if (bestDist === null || dist < bestDist) {
-              bestDist = dist
-              bestVaga = vaga
-            }
-          }
-        }
-        const raioBest = getVagaRaio(bestVaga)
-        const inside = bestDist === null || raioBest === null || bestDist <= raioBest
-        return {
-          vaga: bestVaga,
-          menorDistanciaKm: bestDist,
-          dentroDoRaio: inside,
-          raioMaximoKm: raioBest,
-        }
-      }
-    }
     return {
       vaga: vagasList[0],
       menorDistanciaKm: null,
-      dentroDoRaio: true,
+      dentroDoRaio: false, // Não afirmar que está dentro do raio sem geolocalização
       raioMaximoKm: getVagaRaio(vagasList[0]),
     }
   }
@@ -903,191 +877,23 @@ Deno.serve(async (req: Request) => {
         }
 
         // O candidato possui um objetivo específico e NÃO houve correspondência com os títulos das vagas ativas.
-        // Regra de negócio solicitada: quando o objetivo for específico mas não houver vaga ativa correspondente,
-        // usar a experiência profissional como fallback para escolher a vaga mais compatível
-        // (ex.: experiência de frentista/abastecimento -> Abastecedor da garagem mais próxima; motorista -> Motorista mais próxima)
-        // em vez de retornar imediatamente "sem vaga compatível".
+        // REGRA DE NEGÓCIO MANDATÓRIA (Item 2 da especificação):
+        // Candidato com objetivo específico sem vaga aberta (ex.: Funileiro, Pintor, Eletricista, Soldador etc.)
+        // NUNCA deve ser empurrado para Cobrador nem para outra vaga aleatória!
+        // Entra como "Aguardando vaga adequada" com o cargo pretendido registrado e visível (vaga_id: null).
         console.log(
-          `[identify-vaga-from-cv] Objetivo específico "${candidatoObjetivo}" não possui vaga ativa correspondente direta. Avaliando fallback por experiência profissional...`,
+          `[identify-vaga-from-cv] Objetivo específico informado ("${candidatoObjetivo}") não possui vaga aberta correspondente no sistema. Candidato entra como "Aguardando vaga adequada" com o cargo pretendido registrado. NUNCA empurrar para Cobrador.`,
         )
 
-        const fallbackExperiences = getExperiencesList(parsedDadosExtraidos || cvDataToAnalyze)
-
-        if (fallbackExperiences.length > 0) {
-          // Extrair palavras-chave dos cargos do histórico profissional
-          const expKeywords: { text: string; role: string }[] = []
-          for (const item of fallbackExperiences) {
-            const cargo =
-              typeof item === 'string' ? item : item.cargo || item.funcao || item.titulo || ''
-            const desc =
-              typeof item === 'object' && item !== null
-                ? item.descricao || item.atividades || item.resumo || ''
-                : ''
-            if (cargo) expKeywords.push({ text: normalizeString(`${cargo} ${desc}`), role: cargo })
-          }
-
-          // Mapeamento direto de famílias/áreas conhecidas por experiência profissional:
-          // REGRAS RIGOROSAS:
-          // - A associação deve ser pelos CARGOS REAIS do histórico (ex.: Operador de Caixa, Atendimento, Cobrança, Vigilância de loja etc. -> Cobrador)
-          // - Termos de ambiente/setor (estacionamento, loja, leve mobilidade, shopping) NÃO devem ser interpretados como Motorista!
-          // - Motorista SOMENTE se houver cargo/função de condução de veículos no histórico OU CNH categoria D/E comprovada no currículo.
-          // - Respeitar a restrição de idade 18-56 anos das vagas de Cobrador.
-
-          // 1. Motorista -> SOMENTE com cargo/função de condução real OU CNH D/E comprovada
-          const hasMotoristaExp = hasMotoristaExperience(parsedDadosExtraidos || cvDataToAnalyze)
-
-          // 2. Abastecimento / Frentista -> Família Abastecedor (preservar)
-          const hasAbastecimentoExp = expKeywords.some(
-            (k) =>
-              k.text.includes('frentista') ||
-              k.text.includes('abastecedor') ||
-              k.text.includes('abastecimento') ||
-              k.text.includes('posto de gasolina') ||
-              k.text.includes('posto de combustivel') ||
-              k.text.includes('lubrificador') ||
-              k.text.includes('troca de oleo'),
-          )
-
-          // 3. Mecânico / Manutenção mecânica -> Família Mecânico (preservar)
-          const hasMecanicaExp = expKeywords.some(
-            (k) =>
-              k.text.includes('mecanico') ||
-              k.text.includes('mecanica') ||
-              k.text.includes('auto eletrico') ||
-              k.text.includes('diesel'),
-          )
-
-          // 4. Cobrador / Operador de Caixa / Atendimento / Cobrança / Vigilância de loja / Balconista
-          // Verifica cargos reais no histórico profissional ou nas skills
-          const candidateAgeForFallback = extractCandidateAge(parsedDadosExtraidos)
-          const isAgeCompatibleWithCobrador =
-            candidateAgeForFallback === null ||
-            (candidateAgeForFallback >= 18 && candidateAgeForFallback <= 56)
-
-          const hasCobradorExp = expKeywords.some((k) => {
-            const roleNorm = normalizeString(k.role)
-            const textNorm = k.text
-            return (
-              roleNorm.includes('cobrador') ||
-              roleNorm.includes('bilheteiro') ||
-              roleNorm.includes('fiscal de catraca') ||
-              roleNorm.includes('operador de caixa') ||
-              roleNorm.includes('caixa') ||
-              roleNorm.includes('atendimento') ||
-              roleNorm.includes('cobranca') ||
-              roleNorm.includes('vigilancia') ||
-              roleNorm.includes('vigilante') ||
-              roleNorm.includes('operador de loja') ||
-              roleNorm.includes('balconista') ||
-              roleNorm.includes('fiscal de loja') ||
-              textNorm.includes('operador de caixa') ||
-              textNorm.includes('atendimento ao cliente') ||
-              textNorm.includes('operar caixa')
-            )
-          })
-
-          let fallbackVagasGroup: any[] = []
-          let fallbackFamilyName = ''
-          let fallbackRoleMentioned = ''
-
-          // Verificar vagas de mecânico ativas
-          const mecanicoVagas = vagas.filter((v) => {
-            const t = normalizeString(v.titulo || '')
-            return t.includes('mecanico') && !t.includes('jovem aprendiz')
-          })
-
-          if (hasMotoristaExp) {
-            fallbackVagasGroup = vagas.filter((v) =>
-              normalizeString(v.titulo || '').includes('motorista'),
-            )
-            fallbackFamilyName = 'Motorista'
-            fallbackRoleMentioned = 'Motorista'
-          } else if (hasAbastecimentoExp) {
-            fallbackVagasGroup = vagas.filter((v) =>
-              normalizeString(v.titulo || '').includes('abastecedor'),
-            )
-            fallbackFamilyName = 'Abastecedor'
-            const expMatch = expKeywords.find(
-              (k) =>
-                k.text.includes('frentista') ||
-                k.text.includes('abastece') ||
-                k.text.includes('posto'),
-            )
-            fallbackRoleMentioned = expMatch?.role || 'Frentista / Abastecimento'
-          } else if (hasMecanicaExp && mecanicoVagas.length > 0) {
-            fallbackVagasGroup = mecanicoVagas
-            fallbackFamilyName = 'Mecânico'
-            const expMatch = expKeywords.find(
-              (k) => k.text.includes('mecanic') || k.text.includes('diesel'),
-            )
-            fallbackRoleMentioned = expMatch?.role || 'Mecânica'
-          } else if (hasCobradorExp && isAgeCompatibleWithCobrador) {
-            fallbackVagasGroup = vagas.filter((v) =>
-              normalizeString(v.titulo || '').includes('cobrador'),
-            )
-            fallbackFamilyName = 'Cobrador'
-            const expMatch = expKeywords.find(
-              (k) =>
-                k.text.includes('caixa') ||
-                k.text.includes('atendimento') ||
-                k.text.includes('cobranca') ||
-                k.text.includes('vigil') ||
-                k.text.includes('loja') ||
-                k.text.includes('cobrador') ||
-                k.text.includes('bilheteiro'),
-            )
-            fallbackRoleMentioned = expMatch?.role || 'Operador de Caixa / Atendimento'
-          }
-
-          if (fallbackVagasGroup.length > 0) {
-            const {
-              vaga: chosenFallbackVaga,
-              menorDistanciaKm,
-              dentroDoRaio,
-              raioMaximoKm,
-            } = await pickBestVagaByProximity(candidatoEndereco, fallbackVagasGroup, googleApiKey)
-
-            if (!dentroDoRaio && menorDistanciaKm !== null && chosenFallbackVaga) {
-              return new Response(
-                JSON.stringify({
-                  vaga_id: null,
-                  confianca: 'baixa',
-                  distancia_km: menorDistanciaKm,
-                  raio_maximo_km: raioMaximoKm,
-                  justificativa: `Candidato possui experiência em "${fallbackRoleMentioned}", mas mora a ${menorDistanciaKm.toFixed(1)} km da unidade mais próxima (${chosenFallbackVaga.titulo}), excedendo o raio limite de ${raioMaximoKm} km.`,
-                  aguardando_vaga: true,
-                }),
-                { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-              )
-            }
-
-            let proxText = ''
-            if (menorDistanciaKm !== null) {
-              proxText = ` Selecionada a garagem mais próxima do endereço do candidato (${candidatoEndereco || 'N/I'}), a aproximadamente ${menorDistanciaKm.toFixed(1)} km.`
-            } else if (candidatoEndereco) {
-              proxText = ` Endereço do candidato: "${candidatoEndereco}". Selecionada a unidade mais compatível.`
-            }
-
-            console.log(
-              `[identify-vaga-from-cv] Fallback por experiência acionado: objetivo era "${candidatoObjetivo}", mas experiência profissional em "${fallbackRoleMentioned}" direcionou para a vaga "${chosenFallbackVaga.titulo}" (ID: ${chosenFallbackVaga.id}).`,
-            )
-
-            return new Response(
-              JSON.stringify({
-                vaga_id: chosenFallbackVaga.id,
-                confianca: 'media',
-                justificativa: `O objetivo informado pelo candidato ("${candidatoObjetivo}") não possui vaga aberta correspondente. Utilizada a experiência profissional como fallback ("${fallbackRoleMentioned}"), direcionando para a vaga de ${fallbackFamilyName} ("${chosenFallbackVaga.titulo}").${proxText}`,
-              }),
-              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-            )
-          }
-        }
-
-        // Se o fallback heurístico por palavras-chave diretas não encontrou grupo específico,
-        // não retornar null aqui: deixar fluir para a REGRA 3 (Fallback OpenAI com critérios e histórico profissional),
-        // que agora está instruída a usar a experiência profissional como fallback quando não houver vaga para o cargo pretendido.
-        console.log(
-          `[identify-vaga-from-cv] Fallback heurístico direto não encontrou correspondência inequívoca. Encaminhando para fallback semântico com histórico profissional (Regra 3)...`,
+        return new Response(
+          JSON.stringify({
+            vaga_id: null,
+            confianca: 'nenhuma',
+            aguardando_vaga: true,
+            cargo_pretendido: candidatoObjetivo,
+            justificativa: `Candidato possui objetivo específico para "${candidatoObjetivo}", porém atualmente não há vaga aberta para este cargo no sistema. O candidato foi colocado em "Aguardando vaga adequada" preservando seu cargo pretendido.`,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         )
       }
     }
@@ -1192,24 +998,19 @@ Deno.serve(async (req: Request) => {
          Se o candidato informar objetivo como "À disposição da empresa", "Disposição da empresa", "Qualquer vaga", "Sem preferência", "O que precisar" ou expressar genericamente disponibilidade:
          - ANALISE O HISTÓRICO PROFISSIONAL: Se o candidato tem cargo de Motorista, experiência na condução de veículos de passageiros/ônibus ou CNH D/E no histórico: ATRIBUA À VAGA DE MOTORISTA DA GARAGEM MAIS PRÓXIMA do endereço do candidato (Cursino ou Leste).
          - FAIXA ETÁRIA: As vagas de Cobrador exigem idade entre 18 e 56 anos. Se o candidato tiver mais de 56 anos (ex: 57, 58 anos ou mais), NUNCA o atribua para Cobrador caso haja vaga de Motorista ou outra vaga compatível onde não há limite de idade.
-         - Só atribua a vaga de Cobrador para objetivo genérico se o candidato NÃO possuir histórico de Motorista e tiver idade compatível (18 a 56 anos).
+         - Se não tiver experiência e tiver entre 18 e 56 anos, pode ser atribuído a Cobrador.
          - Confiança deve ser "alta".
 
-      2. OBJETIVO / CARGO PRETENDIDO ESPECÍFICO QUE NÃO TEM VAGA ABERTA (REGRA DE FALLBACK NA EXPERIÊNCIA):
-         - Quando o objetivo do candidato for específico mas não houver vaga ativa correspondente ao cargo (ex: objetivo "Lavador", "Auxiliar Geral" etc. e não há vaga correspondente aberta):
-         - NUNCA descarte imediatamente como "sem vaga compatível" se o candidato possuir EXPERIÊNCIA PROFISSIONAL em áreas correspondentes a alguma vaga ativa aberta no sistema.
-         - USE A EXPERIÊNCIA PROFISSIONAL COMO FALLBACK para escolher a vaga mais compatível seguindo RIGOROSAMENTE as regras abaixo:
-           * CARGOS REAIS: A associação da experiência deve ser feita estritamente pelos CARGOS REAIS do histórico profissional (Operador de Caixa, Atendimento, Cobrança, Vigilância de loja, Operador de loja, Balconista, Balcão etc.) -> ATRIBUA À VAGA DE COBRADOR DA GARAGEM MAIS PRÓXIMA (respeitando a restrição de idade de 18 a 56 anos das vagas de Cobrador).
-           * TERMOS DE AMBIENTE E APOIO NÃO SÃO MOTORISTA: Termos de ambiente/setor/empresa como "estacionamento", "loja", "leve mobilidade", "shopping", "garagem", "pátio", "lavador", "fiscal", "operador de loja" NÃO devem ser interpretados como experiência de Motorista! Ter trabalhado como Caixa ou Vigilante em um estacionamento (ex: Propark Estacionamento / Leve Mobilidade) NÃO É experiência de motorista.
-           * AJUDANTE DE MOTORISTA NÃO É MOTORISTA: Cargos como "Ajudante de motorista", "Auxiliar de motorista", "Ajudante de entrega", "Ajudante geral" ou carga/descarga NÃO são condução nem experiência de motorista! NUNCA conte "ajudante de motorista" como motorista!
-           * UBER / CARRO DE PASSEIO / APLICATIVO NÃO É MOTORISTA DE ÔNIBUS/CAMINHÃO: Motorista de Uber, 99, Cabify, InDrive, motorista particular, carro de passeio ou veículos de pequeno e médio porte NÃO conta como experiência profissional para vagas de Motorista (que exigem ônibus ou caminhão)! NUNCA considere Uber como experiência de motorista profissional para vaga de Motorista de ônibus ou caminhão!
-           * MOTORISTA SOMENTE SE: Vaga de Motorista SOMENTE se houver cargo/função real e comprovada de CONDUÇÃO de veículos no histórico (ex: "motorista de ônibus", "motorista de caminhão", "motorista carreteiro", "condutor") OU CNH categoria D/E comprovada no currículo. Se NÃO houver comprovação de condução real nem CNH D/E, NUNCA atribua vaga de Motorista nem envie para revisão de Motorista. Reverte para Cobrador da garagem mais próxima caso haja experiência em caixa/atendimento/loja/vigilância ou objetivo genérico/sem vaga.
-           * FRENTISTA / ABASTECIMENTO: Se a experiência corresponder a frentista, posto de combustíveis, troca de óleo ou abastecimento -> ATRIBUA À VAGA DE ABASTECEDOR DA GARAGEM MAIS PRÓXIMA pelo endereço do candidato.
-           * MECÂNICA: Se a experiência for em mecânica automotiva / pesada / diesel -> ATRIBUA À VAGA DE MECÂNICO DA GARAGEM MAIS PRÓXIMA (ou Motorista se tiver CNH e condução).
-         - ATENÇÃO: NUNCA force em Cobrador um candidato com objetivo específico a menos que ele tenha experiência correspondente e idade compatível.
-         - Se e somente se o candidato NÃO possuir nenhuma experiência profissional compatível com as vagas ativas abertas: retorne vaga_id como null, confianca como "nenhuma" e justificativa clara explicando que não há vaga aberta nem para o cargo pretendido nem compatível com a experiência.
+      2. CANDIDATO COM OBJETIVO ESPECÍFICO SEM VAGA ABERTA (EX: FUNILEIRO, PINTOR, SOLDADOR, SERRALHEIRO, AUXILIAR ADMINISTRATIVO ETC.):
+         - REGRA RIGOROSA: NUNCA empurre para Cobrador nem para outra vaga arbitrária!
+         - Se o candidato expressou cargo pretendido específico e não existe vaga aberta para tal especialidade, RETORNE vaga_id como null, confianca como "nenhuma" e explique na justificativa que o candidato fica "Aguardando vaga adequada" com o cargo pretendido registrado.
 
-      3. PRIORIDADE MOTORISTA SOBRE COBRADOR E REGRA DE NÃO RECLASSIFICAÇÃO / NÃO REBAIXAMENTO:
+      3. ATRIBUIÇÃO POR ENCAIXE / REQUISITOS (NÃO APENAS PALAVRA-CHAVE):
+         - Antes de associar qualquer vaga, confira se o candidato atende aos REQUISITOS BÁSICOS (faixa etária, escolaridade, CNH e experiência mínima exigida nos critérios da vaga).
+         - Priorize a função com melhor encaixe entre as vagas abertas.
+         - Se o candidato não atender aos requisitos básicos da vaga, NÃO force a atribuição nela.
+
+      4. PRIORIDADE MOTORISTA SOBRE COBRADOR E REGRA DE NÃO RECLASSIFICAÇÃO / NÃO REBAIXAMENTO:
          - Se o candidato expressar objetivo para MOTORISTA ou tiver perfil/histórico voltado para Motorista (ou possuir CNH D/E, experiência como motorista, etc.): ATRIBUA À VAGA DE MOTORISTA (escolhendo a unidade mais próxima).
          - NUNCA reclassifique, desvie ou realoque um candidato a MOTORISTA para a vaga de COBRADOR caso ele necessite de revisão, falte algum comprovante ou o resultado seja "revisar". O candidato de Motorista DEVE permanecer vinculado à vaga de Motorista para revisão humana da Paola.
          - Se o perfil ou qualificações do candidato atenderem/forem compatíveis tanto com a vaga de Motorista quanto com a vaga de Cobrador, DÊ RIGOROSA PRIORIDADE PARA A VAGA DE MOTORISTA (escolhendo a unidade de Motorista mais próxima do endereço do candidato).
@@ -1332,33 +1133,40 @@ Deno.serve(async (req: Request) => {
             (candidateAgeForCheck >= 18 && candidateAgeForCheck <= 56)
 
           if (isAgeOkCobrador) {
-            const cobradorVagas = vagas.filter((v) =>
-              normalizeString(v.titulo || '').includes('cobrador'),
-            )
-            if (cobradorVagas.length > 0) {
-              const {
-                vaga: cobradorVaga,
-                dentroDoRaio,
-                menorDistanciaKm,
-                raioMaximoKm,
-              } = await pickBestVagaByProximity(candidatoEndereco, cobradorVagas, googleApiKey)
-              console.log(
-                `[identify-vaga-from-cv] Salvaguarda anti-falso-motorista acionada: IA associou a Motorista ("${targetVaga?.titulo}"), mas candidato NÃO possui cargo real de condução nem CNH D/E (termos como ajudante, estacionamento, leve mobilidade, loja ou lavador não contam). Revertendo para Cobrador da garagem mais próxima ("${cobradorVaga?.titulo}").`,
+            // Se o objetivo do candidato era específico para outra área (ex: Mecânica, Pintura, etc.), NUNCA empurrar para Cobrador!
+            if (candidatoObjetivo && !isGenericObjective(candidatoObjetivo)) {
+              result.vaga_id = null
+              result.confianca = 'nenhuma'
+              result.justificativa = `Candidato não possui requisitos de Motorista e seu objetivo pretendido é "${candidatoObjetivo}". Sem vaga correspondente aberta, entra em "Aguardando vaga adequada".`
+            } else {
+              const cobradorVagas = vagas.filter((v) =>
+                normalizeString(v.titulo || '').includes('cobrador'),
               )
-              if (cobradorVaga && (dentroDoRaio || menorDistanciaKm === null)) {
-                result.vaga_id = cobradorVaga.id
-                result.confianca = 'alta'
-                result.justificativa = `Candidato não possui experiência em condução real de veículos nem CNH D/E comprovada. Direcionado para a vaga de Cobrador da garagem mais próxima ("${cobradorVaga.titulo}").`
+              if (cobradorVagas.length > 0) {
+                const {
+                  vaga: cobradorVaga,
+                  dentroDoRaio,
+                  menorDistanciaKm,
+                  raioMaximoKm,
+                } = await pickBestVagaByProximity(candidatoEndereco, cobradorVagas, googleApiKey)
+                console.log(
+                  `[identify-vaga-from-cv] Salvaguarda anti-falso-motorista acionada: IA associou a Motorista ("${targetVaga?.titulo}"), mas candidato NÃO possui cargo real de condução nem CNH D/E. Objetivo genérico direcionado para Cobrador.`,
+                )
+                if (cobradorVaga && (dentroDoRaio || menorDistanciaKm === null)) {
+                  result.vaga_id = cobradorVaga.id
+                  result.confianca = 'alta'
+                  result.justificativa = `Candidato não possui condução real nem CNH D/E para Motorista. Com objetivo geral/genérico, direcionado para Cobrador ("${cobradorVaga.titulo}").`
+                } else {
+                  result.vaga_id = null
+                  result.confianca = 'nenhuma'
+                  result.justificativa = `Candidato não possui perfil de Motorista e a vaga de Cobrador mais próxima excede o raio limite.`
+                }
               } else {
                 result.vaga_id = null
                 result.confianca = 'nenhuma'
-                result.justificativa = `Candidato não possui perfil de Motorista e a vaga de Cobrador mais próxima excede o raio limite.`
+                result.justificativa =
+                  'Candidato não possui condução real nem CNH D/E para a vaga de Motorista, e não há vaga compatível aberta.'
               }
-            } else {
-              result.vaga_id = null
-              result.confianca = 'nenhuma'
-              result.justificativa =
-                'Candidato não possui condução real nem CNH D/E para a vaga de Motorista, e não há vaga de Cobrador aberta no momento.'
             }
           } else {
             // Se a idade existe e é comprovadamente fora da faixa de Cobrador (<18 ou >56), não colocar em Cobrador
@@ -1394,90 +1202,14 @@ Deno.serve(async (req: Request) => {
         }
       }
     } else {
-      // Se result.vaga_id foi null (OpenAI não associou nenhuma vaga), verificar se podemos aplicar o fallback de experiência
-      const candidateHasExpMotorista = hasMotoristaExperience(
-        parsedDadosExtraidos || cvDataToAnalyze,
-      )
-      const allExperiences = getExperiencesList(parsedDadosExtraidos || cvDataToAnalyze)
-      const allExpTexts = allExperiences
-        .map((item: any) => {
-          const c = typeof item === 'string' ? item : item.cargo || item.funcao || item.titulo || ''
-          const d =
-            typeof item === 'object' && item !== null
-              ? item.descricao || item.atividades || item.resumo || ''
-              : ''
-          return normalizeString(`${c} ${d}`)
-        })
-        .join(' ')
-
-      if (candidateHasExpMotorista) {
-        const motoristaVagas = vagas.filter((v) =>
-          normalizeString(v.titulo || '').includes('motorista'),
-        )
-        if (motoristaVagas.length > 0) {
-          const { vaga: motoristaVaga } = await pickBestVagaByProximity(
-            candidatoEndereco,
-            motoristaVagas,
-            googleApiKey,
-          )
-          result.vaga_id = motoristaVaga.id
-          result.confianca = 'media'
-          result.justificativa = `Candidato possui objetivo sem vaga aberta ("${candidatoObjetivo || 'N/I'}"), mas o histórico profissional comprova experiência como Motorista ou CNH D/E. Direcionado para a vaga de Motorista da garagem mais próxima ("${motoristaVaga.titulo}").`
-        }
-      } else if (
-        allExpTexts.includes('frentista') ||
-        allExpTexts.includes('abastecedor') ||
-        allExpTexts.includes('abastecimento') ||
-        allExpTexts.includes('posto de gasolina') ||
-        allExpTexts.includes('posto de combustivel')
-      ) {
-        const abastecedorVagas = vagas.filter((v) =>
-          normalizeString(v.titulo || '').includes('abastecedor'),
-        )
-        if (abastecedorVagas.length > 0) {
-          const { vaga: chosenAbastecedor } = await pickBestVagaByProximity(
-            candidatoEndereco,
-            abastecedorVagas,
-            googleApiKey,
-          )
-          result.vaga_id = chosenAbastecedor.id
-          result.confianca = 'media'
-          result.justificativa = `Candidato possui objetivo sem vaga aberta ("${candidatoObjetivo || 'N/I'}"), mas o histórico profissional comprova experiência em posto/abastecimento (Frentista). Direcionado para a vaga de Abastecedor da garagem mais próxima ("${chosenAbastecedor.titulo}").`
-        }
-      } else if (
-        allExpTexts.includes('caixa') ||
-        allExpTexts.includes('atendimento') ||
-        allExpTexts.includes('cobranca') ||
-        allExpTexts.includes('vigil') ||
-        allExpTexts.includes('loja') ||
-        allExpTexts.includes('cobrador') ||
-        allExpTexts.includes('bilheteiro') ||
-        allExpTexts.includes('balconista')
-      ) {
-        const candidateAge = extractCandidateAge(parsedDadosExtraidos)
-        const isAgeCompatible = candidateAge === null || (candidateAge >= 18 && candidateAge <= 56)
-        if (isAgeCompatible) {
-          const cobradorVagas = vagas.filter((v) =>
-            normalizeString(v.titulo || '').includes('cobrador'),
-          )
-          if (cobradorVagas.length > 0) {
-            const {
-              vaga: chosenCobrador,
-              dentroDoRaio,
-              menorDistanciaKm,
-              raioMaximoKm,
-            } = await pickBestVagaByProximity(candidatoEndereco, cobradorVagas, googleApiKey)
-            if (chosenCobrador && (dentroDoRaio || menorDistanciaKm === null)) {
-              result.vaga_id = chosenCobrador.id
-              result.confianca = 'media'
-              result.justificativa = `Candidato possui perfil compatível com Cobrador e melhor proximidade com a garagem ("${chosenCobrador.titulo}").`
-            } else if (chosenCobrador && !dentroDoRaio && menorDistanciaKm !== null) {
-              result.vaga_id = null
-              result.confianca = 'nenhuma'
-              result.justificativa = `Candidato compatível com Cobrador, mas distância (${menorDistanciaKm.toFixed(1)} km) excede o raio limite (${raioMaximoKm} km) de todas as garagens abertas.`
-            }
-          }
-        }
+      // Se a IA não encontrou vaga e o candidato tem objetivo específico sem vaga aberta:
+      // Mantém vaga_id = null e aguardando vaga adequada, SEM empurrar para Cobrador.
+      if (candidatoObjetivo && !isGenericObjective(candidatoObjetivo)) {
+        result.vaga_id = null
+        result.confianca = 'nenhuma'
+        result.aguardando_vaga = true
+        result.cargo_pretendido = candidatoObjetivo
+        result.justificativa = `Candidato com objetivo "${candidatoObjetivo}" não possui vaga ativa correspondente no momento. Aguardando vaga adequada.`
       }
     }
 
