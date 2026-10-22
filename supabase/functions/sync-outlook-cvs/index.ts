@@ -1408,14 +1408,27 @@ Deno.serve(async (req: Request) => {
 
         const allGenerics = (allCands || []).filter((c: any) => {
           const obj = c?.dados_extraidos?.objetivo || c?.dados_extraidos?.cargo_pretendido || ''
-          const norm = String(obj).toLowerCase()
+          const norm = String(obj).toLowerCase().trim()
+          if (!norm) return true
+          // Se for lista de cargos ou tiver palavras de cargos específicos, não é genérico
+          if (/[,;/|]/.test(norm)) return false
+          if (
+            norm.includes('administra') ||
+            norm.includes('comercial') ||
+            norm.includes('venda') ||
+            norm.includes('contabil') ||
+            norm.includes('fiscal') ||
+            norm.includes('finan') ||
+            norm.includes('compras')
+          ) {
+            return false
+          }
           return (
-            !obj ||
-            norm.includes('todos') ||
+            norm === 'todos' ||
+            norm === 'todas' ||
             norm.includes('disposi') ||
             norm.includes('qualquer') ||
-            norm.includes('sem prefer') ||
-            norm.trim() === ''
+            norm.includes('sem prefer')
           )
         })
 
@@ -1583,14 +1596,27 @@ Deno.serve(async (req: Request) => {
 
       const allGenerics = (allCands || []).filter((c: any) => {
         const obj = c?.dados_extraidos?.objetivo || c?.dados_extraidos?.cargo_pretendido || ''
-        const norm = String(obj).toLowerCase()
+        const norm = String(obj).toLowerCase().trim()
+        if (!norm) return true
+        // Se for lista de cargos ou tiver palavras de cargos específicos, não é genérico
+        if (/[,;/|]/.test(norm)) return false
+        if (
+          norm.includes('administra') ||
+          norm.includes('comercial') ||
+          norm.includes('venda') ||
+          norm.includes('contabil') ||
+          norm.includes('fiscal') ||
+          norm.includes('finan') ||
+          norm.includes('compras')
+        ) {
+          return false
+        }
         return (
-          !obj ||
-          norm.includes('todos') ||
+          norm === 'todos' ||
+          norm === 'todas' ||
           norm.includes('disposi') ||
           norm.includes('qualquer') ||
-          norm.includes('sem prefer') ||
-          norm.trim() === ''
+          norm.includes('sem prefer')
         )
       })
 

@@ -31,8 +31,10 @@ export const GENERIC_OBJECTIVE_PATTERNS = [
   'qualquer funcao',
   'qualquer cargo',
   'a disposicao da empresa',
+  'a disposicao de empresa',
   'a disposicao',
   'disposicao da empresa',
+  'disposicao de empresa',
   'disposicao',
   'sem preferencia',
   'sem restricao',
@@ -65,19 +67,79 @@ export function normalizeStringBasic(str: string | null | undefined): string {
 }
 
 /**
- * Retorna true se a string de objetivo profissional for vazia, nula ou genérica.
+ * Retorna true APENAS se a string de objetivo for vazia, nula ou verdadeiramente
+ * indeterminada/genérica ('Todos', 'Disposição da Empresa', etc.).
+ * UMA LISTA de cargos específicos (ex: 'Administração Geral, Venda Externa...')
+ * NÃO é genérico — é objetivo específico.
  */
 export function isGenericObjective(str: string | null | undefined): boolean {
   if (!str) return true
+  const rawTrimmed = String(str).trim()
+  if (!rawTrimmed) return true
+
+  // Se tem separadores de múltiplos cargos pretendidos (vírgula, ponto-e-vírgula, barra, pipe),
+  // e contém termos profissionais específicos, trata-se de lista de cargos específicos, NUNCA genérico.
+  const hasListSeparators = /[,;/|]/.test(rawTrimmed)
+  if (hasListSeparators) {
+    const segments = rawTrimmed
+      .split(/[,;/|]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+    // Se tiver mais de um segmento e algum deles contiver cargo estruturado (ex: admin, venda, fiscal, contas, etc.)
+    if (segments.length > 1) {
+      return false
+    }
+  }
+
   const norm = normalizeStringBasic(str)
   if (!norm) return true
 
-  // Verifica se é idêntico a algum padrão ou se contém / está contido
+  // Se contém palavras-chave de cargos específicos administrativos, comerciais, contábeis ou técnicos, NÃO é genérico
+  const specificRoleKeywords = [
+    'administrac',
+    'comercial',
+    'venda',
+    'vendedor',
+    'contabil',
+    'contabilidade',
+    'fiscal',
+    'financa',
+    'financeir',
+    'compras',
+    'custos',
+    'recepcao',
+    'secretaria',
+    'rh',
+    'recursos humanos',
+    'psicolog',
+    'advogad',
+    'juridic',
+    'ti',
+    'informatica',
+    'programador',
+    'desenvolvedor',
+    'professor',
+    'enfermeir',
+    'medico',
+    'nutricion',
+    'farmac',
+    'designer',
+    'marketing',
+  ]
+
+  for (const kw of specificRoleKeywords) {
+    if (norm.includes(kw)) {
+      return false
+    }
+  }
+
+  // Verifica se é estritamente idêntico a algum padrão canônico genérico ou pequena variação
   return GENERIC_OBJECTIVE_PATTERNS.some((p) => {
     const normP = normalizeStringBasic(p)
     if (norm === normP) return true
-    if (norm.length <= 15 && normP.includes(norm)) return true
-    if (norm.includes(normP)) return true
+    // Frases curtas como "a disposicao da empresa para uma nova oportunidade"
+    if (norm.startsWith(normP) || norm.endsWith(normP)) return true
+    if (norm.length <= 40 && norm.includes(normP)) return true
     return false
   })
 }
@@ -431,19 +493,22 @@ export function evaluateCandidateAgainstVaga(
 
   // Bonificações adicionais por aderência ao cargo
   const tituloNorm = normalizeStringBasic(vaga?.titulo || '')
+  let temAderenciaReal = false
+
   if (tituloNorm.includes('cobrador')) {
-    // Experiências de atendimento, caixa, cobrador, ajudante de motorista, conferente contam muito favoravelmente
+    // Experiências de atendimento, caixa, cobrador, ajudante de motorista, conferente, troco contam favoravelmente
     if (
       allExpText.includes('cobrador') ||
       allExpText.includes('caixa') ||
       allExpText.includes('atendimento') ||
       allExpText.includes('ajudante de motorista') ||
       allExpText.includes('conferente') ||
-      allExpText.includes('fiscal') ||
+      allExpText.includes('fiscal de onibus') ||
       allExpText.includes('troco')
     ) {
       atendimentos.push(`Histórico profissional aderente à rotina de atendimento/cobrança`)
       score += 20
+      temAderenciaReal = true
     }
   } else if (tituloNorm.includes('abastecedor')) {
     if (
@@ -453,6 +518,7 @@ export function evaluateCandidateAgainstVaga(
     ) {
       atendimentos.push(`Histórico com experiência em abastecimento/frentista`)
       score += 25
+      temAderenciaReal = true
     }
   } else if (tituloNorm.includes('almoxarifado')) {
     if (
@@ -462,6 +528,7 @@ export function evaluateCandidateAgainstVaga(
     ) {
       atendimentos.push(`Histórico com experiência em almoxarifado/controle de estoque`)
       score += 25
+      temAderenciaReal = true
     }
   } else if (tituloNorm.includes('lavador')) {
     if (
@@ -471,6 +538,22 @@ export function evaluateCandidateAgainstVaga(
     ) {
       atendimentos.push(`Histórico com experiência em lavagem de veículos`)
       score += 25
+      temAderenciaReal = true
+    }
+  } else if (tituloNorm.includes('limpeza')) {
+    if (
+      allExpText.includes('limpeza') ||
+      allExpText.includes('asg') ||
+      allExpText.includes('servicos gerais') ||
+      allExpText.includes('zelador')
+    ) {
+      atendimentos.push(`Histórico com experiência em limpeza e conservação`)
+      score += 25
+      temAderenciaReal = true
+    }
+  } else if (tituloNorm.includes('motorista')) {
+    if (req.requiresHeavyDrivingExp) {
+      temAderenciaReal = true
     }
   }
 
