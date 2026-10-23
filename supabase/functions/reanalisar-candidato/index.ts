@@ -8,6 +8,8 @@ import {
   sanitizeAndValidateName,
   sanitizeAndValidateEmail,
   resolveCandidateAge,
+  extractBirthDateFromString,
+  calculateAgeFromBirthDate,
 } from '../_shared/validation.ts'
 import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
 import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
@@ -93,6 +95,24 @@ Deno.serve(async (req: Request) => {
       typeof candidato.dados_extraidos === 'object' && candidato.dados_extraidos !== null
         ? { ...candidato.dados_extraidos }
         : {}
+
+    // Fallback determinístico inicial para data de nascimento se ausente nos dados já extraídos
+    if (!currentDadosExtraidos.data_nascimento) {
+      const birthFallback =
+        extractBirthDateFromString(currentDadosExtraidos.resumo_cv) ||
+        extractBirthDateFromString(JSON.stringify(currentDadosExtraidos))
+      if (birthFallback) {
+        currentDadosExtraidos.data_nascimento = birthFallback
+        const calcAge = calculateAgeFromBirthDate(birthFallback)
+        if (calcAge !== null) {
+          currentDadosExtraidos.idade = calcAge
+        }
+        await supabase
+          .from('candidatos')
+          .update({ dados_extraidos: currentDadosExtraidos })
+          .eq('id', candidato.id)
+      }
+    }
 
     // Garantir que a idade seja derivada da data de nascimento se ela existir
     const initialResolvedAge = resolveCandidateAge(
@@ -632,13 +652,20 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
                 }
               }
 
-              // Tenta regex adicional se data_nascimento estiver ausente
-              if (!newlyExtracted.data_nascimento && extractedText) {
-                const birthDateRegex =
-                  /(?:nasc(?:ido|imento|ida)?(?:\s+em)?[:\s]+)?\b([0-3]?\d[\/\-\.][0-1]?\d[\/\-\.](?:19|20)\d{2})\b/i
-                const matchDate = extractedText.match(birthDateRegex)
-                if (matchDate && matchDate[1]) {
-                  newlyExtracted.data_nascimento = matchDate[1]
+              // Fallback determinístico robusto via extractBirthDateFromString sobre o texto bruto do CV
+              if (!newlyExtracted.data_nascimento) {
+                const birthDateFromRaw =
+                  extractBirthDateFromString(extractedText) ||
+                  extractBirthDateFromString(ocrCapturedText)
+                if (birthDateFromRaw) {
+                  newlyExtracted.data_nascimento = birthDateFromRaw
+                } else if (extractedText) {
+                  const birthDateRegex =
+                    /(?:nasc(?:ido|imento|ida)?(?:\s+em)?[:\s]+)?\b([0-3]?\d[\/\-\.][0-1]?\d[\/\-\.](?:19|20)\d{2})\b/i
+                  const matchDate = extractedText.match(birthDateRegex)
+                  if (matchDate && matchDate[1]) {
+                    newlyExtracted.data_nascimento = matchDate[1]
+                  }
                 }
               }
 
@@ -724,6 +751,25 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
                 extractedText,
                 ocrCapturedText,
               ])
+
+              // Garantir fallback determinístico final de data_nascimento e idade em currentDadosExtraidos
+              if (!currentDadosExtraidos.data_nascimento) {
+                const finalBirthDate =
+                  extractBirthDateFromString(extractedText) ||
+                  extractBirthDateFromString(ocrCapturedText) ||
+                  extractBirthDateFromString(JSON.stringify(currentDadosExtraidos))
+                if (finalBirthDate) {
+                  currentDadosExtraidos.data_nascimento = finalBirthDate
+                }
+              }
+              const finalResolvedCalcAge = resolveCandidateAge(
+                currentDadosExtraidos.idade,
+                currentDadosExtraidos.data_nascimento,
+              )
+              if (finalResolvedCalcAge !== null) {
+                currentDadosExtraidos.idade = finalResolvedCalcAge
+              }
+
               candidateUpdate.dados_extraidos = currentDadosExtraidos
 
               if (Object.keys(candidateUpdate).length > 0) {

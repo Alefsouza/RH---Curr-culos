@@ -11,7 +11,11 @@ import {
   isTruncatedOrIncompleteAddress,
   REFERENCE_LOCATIONS,
 } from '../_shared/proximity.ts'
-import { resolveCandidateAge } from '../_shared/validation.ts'
+import {
+  resolveCandidateAge,
+  extractBirthDateFromString,
+  calculateAgeFromBirthDate,
+} from '../_shared/validation.ts'
 import { checkBusOrTruckDriverExperience, isAppOrLightVehicleDriver } from '../_shared/motorista.ts'
 import {
   isGenericObjective,
@@ -269,7 +273,13 @@ function hasMotoristaExperience(cvData: any): boolean {
 // Extrai a idade do candidato (priorizando cálculo por data de nascimento)
 function extractCandidateAge(cvData: any): number | null {
   if (!cvData) return null
-  return resolveCandidateAge(cvData.idade, cvData.data_nascimento)
+  let dataNasc = cvData.data_nascimento
+  if (!dataNasc) {
+    dataNasc =
+      extractBirthDateFromString(cvData.resumo_cv) ||
+      extractBirthDateFromString(JSON.stringify(cvData))
+  }
+  return resolveCandidateAge(cvData.idade, dataNasc)
 }
 
 // Extrai as strings de localização de uma vaga a partir de criterios_qualificacao
@@ -486,6 +496,48 @@ Deno.serve(async (req: Request) => {
       cvDataToAnalyze = candidato.dados_extraidos
       if (typeof candidato.dados_extraidos === 'object' && candidato.dados_extraidos !== null) {
         parsedDadosExtraidos = candidato.dados_extraidos
+      }
+    }
+
+    // Fallback determinístico de data_nascimento e idade sobre o texto do CV / dados_extraidos
+    if (parsedDadosExtraidos && typeof parsedDadosExtraidos === 'object') {
+      let needsSave = false
+      if (!parsedDadosExtraidos.data_nascimento) {
+        const rawTextToSearch =
+          typeof texto_cv === 'string' && texto_cv.trim().length > 0
+            ? texto_cv
+            : JSON.stringify(parsedDadosExtraidos)
+        const extractedBirth = extractBirthDateFromString(rawTextToSearch)
+        if (extractedBirth) {
+          parsedDadosExtraidos.data_nascimento = extractedBirth
+          needsSave = true
+        }
+      }
+
+      const calculatedAge = resolveCandidateAge(
+        parsedDadosExtraidos.idade,
+        parsedDadosExtraidos.data_nascimento,
+      )
+      if (calculatedAge !== null && parsedDadosExtraidos.idade !== calculatedAge) {
+        parsedDadosExtraidos.idade = calculatedAge
+        needsSave = true
+      }
+
+      if (needsSave && candidato_id) {
+        try {
+          await supabase
+            .from('candidatos')
+            .update({ dados_extraidos: parsedDadosExtraidos })
+            .eq('id', candidato_id)
+          console.log(
+            `[identify-vaga-from-cv] data_nascimento e idade persistidos via fallback determinístico para candidato ${candidato_id}: ${parsedDadosExtraidos.data_nascimento} (${parsedDadosExtraidos.idade} anos)`,
+          )
+        } catch (dbErr: any) {
+          console.warn(
+            '[identify-vaga-from-cv] Erro ao persistir data_nascimento/idade:',
+            dbErr?.message,
+          )
+        }
       }
     }
 
