@@ -590,13 +590,19 @@ export function evaluateCandidateAgainstVaga(
 
   // 3. CNH
   const cnhCat = normalizeCnhCategory(cvData?.cnh_categoria || cvData?.cnh || '')
+  // Motorista profissional de ônibus urbano ou caminhão tem CNH D/E implícita/presumida
+  // pela legislação brasileira (CTB exige D/E para conduzir ônibus coletivo urbano).
+  const driverExpCheck = checkBusOrTruckDriverExperience(cvData)
+  const hasBusOrTruckExpImpliesCnh = driverExpCheck.hasValidBusOrTruckExp
+
   const hasCnhDOrE =
     cnhCat === 'D' ||
     cnhCat === 'E' ||
     cnhCat === 'AD' ||
     cnhCat === 'AE' ||
     (typeof cvData?.cnh === 'string' &&
-      /\b(cnh|cat)\s*[:\s]*([a-c]*[de][a-e]*)\b/i.test(cvData.cnh))
+      /\b(cnh|cat)\s*[:\s]*([a-c]*[de][a-e]*)\b/i.test(cvData.cnh)) ||
+    hasBusOrTruckExpImpliesCnh
 
   if (req.requiresCnhDOrE) {
     if (!hasCnhDOrE) {
@@ -605,7 +611,10 @@ export function evaluateCandidateAgainstVaga(
       )
       score -= 40
     } else {
-      atendimentos.push(`Possui CNH Categoria ${cnhCat || 'D/E'} exigida`)
+      const cnhDesc = cnhCat
+        ? `CNH Categoria ${cnhCat}`
+        : 'CNH D/E comprovada por experiência em transporte coletivo'
+      atendimentos.push(`Possui ${cnhDesc} exigida`)
       score += 25
     }
   }

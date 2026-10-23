@@ -286,6 +286,47 @@ export function parseDateString(dateStr: string): Date | null {
     if (!isNaN(d.getTime())) return d
   }
 
+  // Formato nome do mês por extenso (ex: "junho de 2026", "jun/2026", "jun 2026")
+  const monthNamesMap: Record<string, number> = {
+    janeiro: 0,
+    jan: 0,
+    fevereiro: 1,
+    fev: 1,
+    marco: 2,
+    mar: 2,
+    abril: 3,
+    abr: 3,
+    maio: 4,
+    mai: 4,
+    junho: 5,
+    jun: 5,
+    julho: 6,
+    jul: 6,
+    agosto: 7,
+    ago: 7,
+    setembro: 8,
+    set: 8,
+    outubro: 9,
+    out: 9,
+    novembro: 10,
+    nov: 10,
+    dezembro: 11,
+    dez: 11,
+  }
+  const textMonthMatch = normalizeText(clean).match(
+    /\b(janeiro|jan|fevereiro|fev|marco|mar|abril|abr|maio|mai|junho|jun|julho|jul|agosto|ago|setembro|set|outubro|out|novembro|nov|dezembro|dez)\b(?:\s+(?:de\s+)?|\/)((?:19|20)\d{2}|\d{2})\b/i,
+  )
+  if (textMonthMatch) {
+    const monthIdx = monthNamesMap[textMonthMatch[1].toLowerCase()]
+    let year = parseInt(textMonthMatch[2], 10)
+    if (year < 100) {
+      year += 2000
+    }
+    const lastDayOfMonth = new Date(year, monthIdx + 1, 0).getDate()
+    const d = new Date(year, monthIdx, lastDayOfMonth, 23, 59, 59)
+    if (!isNaN(d.getTime())) return d
+  }
+
   // Formato AAAA (ex: 2024, 2026)
   const yMatch = clean.match(/^((?:19|20)\d{2})$/)
   if (yMatch) {
@@ -318,9 +359,9 @@ export function extractPeriodEndDate(periodo: string): {
     )
 
   // Separadores que dividem início e término:
-  // "15/07/24 á 11/09/26", "15/07/2024 a 11/09/2026", "2021 - 2024", "mai/2021 até abr/2023"
+  // "15/07/24 á 11/09/26", "15/07/2024 a 11/09/2026", "2021 - 2024", "mai/2021 até abr/2023", "fevereiro de 2023 a junho de 2026"
   const rangeMatch = periodo.match(
-    /(?:[0-3]?\d[\/\.\-][0-1]?\d[\/\.\-]\d{2,4}|[0-1]?\d[\/\.\-]\d{2,4}|\b\d{4}\b)\s*(?:[aáà\-]|\s+ate\s+|\s+até\s+|\s+a\s+|–|—|\/)\s*([0-3]?\d[\/\.\-][0-1]?\d[\/\.\-]\d{2,4}|[0-1]?\d[\/\.\-]\d{2,4}|\b\d{4}\b|[a-zA-ZÀ-ÿ\s]+)/i,
+    /(?:[0-3]?\d[\/\.\-][0-1]?\d[\/\.\-]\d{2,4}|[0-1]?\d[\/\.\-]\d{2,4}|\b\d{4}\b|[a-zA-ZÀ-ÿ]+\s+(?:de\s+)?\d{4})\s*(?:[aáà\-]|\s+ate\s+|\s+até\s+|\s+a\s+|–|—|\/)\s*([0-3]?\d[\/\.\-][0-1]?\d[\/\.\-]\d{2,4}|[0-1]?\d[\/\.\-]\d{2,4}|\b\d{4}\b|[a-zA-ZÀ-ÿ\s\d]+)/i,
   )
 
   if (rangeMatch) {
@@ -422,11 +463,18 @@ export function checkRestrictedCompanyStatus(
     let isFutureByDate = false
 
     if (parsedEndDate) {
+      // REGRA DO RH / SALVAGUARDA DE DATA DE TÉRMINO:
+      // Se há uma data de término explícita informada no currículo (mesmo que com ano futuro por erro de digitação/digitação futura),
+      // e o texto NÃO diz "atual" / "atualmente" / "presente", trata-se de experiência passada / vínculo com término declarado,
+      // não de emprego ativo atual na concorrente.
+      // Além disso, se a data de término já passou (< now), o vínculo está comprovadamente encerrado.
       if (parsedEndDate.getTime() < now.getTime()) {
-        // Data de término no passado em relação a hoje: vínculo ENCERRADO!
+        isPastByDate = true
+      } else if (!isAtualExplicit && !isCurrentWord) {
+        // Término declarado no currículo sem indicação de "atual": não considerar ativo
         isPastByDate = true
       } else {
-        // Data de término futura em relação a hoje: ainda ativo!
+        // Data de término futura E traz indicação expressa de vínculo atual
         isFutureByDate = true
       }
     }
