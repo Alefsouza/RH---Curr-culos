@@ -288,10 +288,17 @@ export async function geocodeAddress(
   let cleanAddr = sanitizeAddressString(addressToGeocode) || addressToGeocode
 
   // Qualificação inteligente:
-  // Se for endereço de bairro comum (ex: Jardim Paraguaçu, Sapopemba, São Paulo),
-  // garantir que "São Paulo, SP" seja qualificado para evitar interpretar como cidade do interior
+  // Só adiciona São Paulo - SP se o endereço não indicar expressamente outro estado brasileiro (ex: RJ, Rio de Janeiro, MG, etc.)
+  const hasOtherStateOrCity =
+    /\b(rio de janeiro|rj|belo horizonte|mg|curitiba|pr|salvador|ba|porto alegre|rs|recife|pe|fortaleza|ce|brasilia|df|goiania|go|campinas|santos|guarulhos|osasco|santo andre|sbc|diadema)\b/i.test(
+      cleanAddr,
+    )
   if (!/s[aã]o paulo/i.test(cleanAddr) && !/sp\b/i.test(cleanAddr)) {
-    cleanAddr = `${cleanAddr}, São Paulo - SP, Brasil`
+    if (!hasOtherStateOrCity) {
+      cleanAddr = `${cleanAddr}, São Paulo - SP, Brasil`
+    } else {
+      cleanAddr = `${cleanAddr}, Brasil`
+    }
   } else if (!/brasil/i.test(cleanAddr) && !/brazil/i.test(cleanAddr)) {
     cleanAddr = `${cleanAddr}, Brasil`
   }
@@ -405,13 +412,14 @@ export function getReferenceCoordsForText(text: string): Coordinates | null {
   }
 
   // Região Cursino / Zona Sul / Ipiranga / Saúde / ABC / Campo Limpo / M'Boi Mirim / Santo Amaro
+  // NOTA: 'sul' isolado não pode capturar outras cidades/estados como Mato Grosso do Sul ou frases genéricas
   if (
     norm.includes('cursino') ||
     norm.includes('ipiranga') ||
     norm.includes('saude') ||
     norm.includes('zona sul') ||
-    norm.includes('zs') ||
-    norm.includes('sul') ||
+    /\bzs\b/.test(norm) ||
+    /\b(zona\s+sul|sp\s+sul|sao\s+paulo\s+sul)\b/.test(norm) ||
     norm.includes('maria estela') ||
     norm.includes('henri lebasque') ||
     norm.includes('vila das merces') ||

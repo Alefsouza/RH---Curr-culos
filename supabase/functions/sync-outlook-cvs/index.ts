@@ -1697,6 +1697,26 @@ Deno.serve(async (req: Request) => {
       })
     }
 
+    if (body?.reanalyzeIgor) {
+      console.log('[sync-outlook-cvs] Ação especial: reanalisar Igor Mendonça Elói Da Silva...')
+      const reanRes = await fetch(`${supabaseUrl}/functions/v1/reanalisar-candidato`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({
+          candidate_id: '46ab0280-e34b-4d78-b333-1d42d0581415',
+          force_reextract: body?.force_reextract ?? true,
+        }),
+      })
+      const reanJson = await reanRes.json()
+      return new Response(JSON.stringify({ igorResult: reanJson, ok: reanRes.ok }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     if (body?.reanalyzeLeonardo) {
       console.log('[sync-outlook-cvs] Ação especial: reanalisar Leonardo Augusto Damasceno...')
       const reanRes = await fetch(`${supabaseUrl}/functions/v1/reanalisar-candidato`, {

@@ -38,6 +38,14 @@ export async function triggerLeonardoReanalysis() {
   if (error) throw error
   return data
 }
+
+export async function triggerIgorReanalysis(forceReextract = true) {
+  const { data, error } = await supabase.functions.invoke('batch-reanalyze-all', {
+    body: { reanalyzeIgor: true, force_reextract: forceReextract },
+  })
+  if (error) throw error
+  return data
+}
 export async function triggerCobradoresProximidadeReanalysis() {
   const { data, error } = await supabase.functions.invoke('reanalisar-cobradores-proximidade', {
     body: {},

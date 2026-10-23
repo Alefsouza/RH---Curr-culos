@@ -41,6 +41,32 @@ Deno.serve(async (req: Request) => {
       return isUnanalyzed || isGenericName
     })
 
+    // Ação direta para invocar reanalisar-candidato para Igor Mendonça Elói Da Silva
+    if (body.reanalyzeIgor) {
+      console.log('[batch-reanalyze-all] Executando reanálise para Igor Mendonça Elói Da Silva...')
+      const igorRes = await fetch(`${supabaseUrl}/functions/v1/reanalisar-candidato`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({
+          candidate_id: '46ab0280-e34b-4d78-b333-1d42d0581415',
+          force_reextract: body.force_reextract ?? true,
+        }),
+      })
+      const igorText = await igorRes.text()
+      let igorJson: any
+      try {
+        igorJson = JSON.parse(igorText)
+      } catch {
+        igorJson = { raw: igorText }
+      }
+      return new Response(JSON.stringify({ igorJson, ok: igorRes.ok, status: igorRes.status }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     // Ação direta para invocar reanalisar-candidato para Cícero Crisostomo dos Santos
     if (body.reanalyzeCicero) {
       console.log('[batch-reanalyze-all] Executando reanálise para Cícero Crisostomo dos Santos...')

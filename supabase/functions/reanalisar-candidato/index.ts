@@ -878,12 +878,67 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
           })
           .eq('id', candidato.id)
 
+        // Registrar análise com vaga_id null e motivo de descarte por raio
+        const analiseDescartePayload = {
+          candidato_id: candidato.id,
+          vaga_id: null,
+          resultado: 'nao_qualificado',
+          detalhes: {
+            motivo: motivoDescarteFinal,
+            summary: motivoDescarteFinal,
+            justificativa:
+              identifyData.justificativa || 'Candidato fora do raio de todas as garagens.',
+            funcaoInferida: identifyData.funcao_inferida || null,
+            confianca: identifyData.confianca || 'baixa',
+            score: 0,
+            matched_criteria: [],
+            unmatched_criteria: [
+              {
+                nome: 'Localização / Proximidade',
+                motivo: motivoDescarteFinal,
+              },
+            ],
+            todas_avaliacoes: identifyData.todas_avaliacoes || [],
+          },
+          user_id: effectiveUserId || candidato.user_id,
+        }
+
+        const { data: existingNullAnalise } = await supabase
+          .from('analises')
+          .select('id')
+          .eq('candidato_id', candidato.id)
+          .is('vaga_id', null)
+          .maybeSingle()
+
+        let savedAnaliseDescarte: any = null
+        if (existingNullAnalise) {
+          const { data: updAnalise } = await supabase
+            .from('analises')
+            .update({
+              resultado: 'nao_qualificado',
+              detalhes: analiseDescartePayload.detalhes,
+              criado_em: new Date().toISOString(),
+            })
+            .eq('id', existingNullAnalise.id)
+            .select()
+            .single()
+          savedAnaliseDescarte = updAnalise
+        } else {
+          const { data: insAnalise } = await supabase
+            .from('analises')
+            .insert({ ...analiseDescartePayload, criado_em: new Date().toISOString() })
+            .select()
+            .single()
+          savedAnaliseDescarte = insAnalise
+        }
+
         return new Response(
           JSON.stringify({
             success: true,
             descartado: true,
             motivo: motivoDescarteFinal,
             justificativa: identifyData.justificativa,
+            analise: savedAnaliseDescarte,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         )
