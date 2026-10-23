@@ -5,7 +5,11 @@ import { Buffer } from 'node:buffer'
 import pdf from 'npm:pdf-parse@1.1.1'
 import { findExistingCandidate } from '../_shared/candidates.ts'
 import { performGoogleVisionPdfOcr } from '../_shared/ocr.ts'
-import { resolveCandidateAge } from '../_shared/validation.ts'
+import {
+  resolveCandidateAge,
+  extractBirthDateWithContext,
+  isPlausibleBirthDate,
+} from '../_shared/validation.ts'
 import { extractCep, isTruncatedOrIncompleteAddress } from '../_shared/proximity.ts'
 import { mergeExtractedCnh } from '../_shared/cnh.ts'
 
@@ -165,7 +169,7 @@ Retorne ESTRITAMENTE em formato JSON com as seguintes chaves:
   "endereco": "string ou null",
   "cep": "string ou null",
   "idade": "number ou null",
-  "data_nascimento": "string ou null",
+  "data_nascimento": "string ou null (ATENÇÃO: só preencha data_nascimento se a data estiver explicitamente rotulada como nascimento, ex: 'Data de Nascimento', 'Nascimento:', 'nascido em/a'. NUNCA use datas de atualização/validade do documento ou datas soltas no cabeçalho. Dúvida -> null)",
   "cnh": "string ou null",
   "cnh_categoria": "string ou null",
   "objetivo": "string ou null",
@@ -183,19 +187,36 @@ ${pdfText.substring(0, 15000)}
       extractedData = await callOpenAIWithRetry(extractionPrompt)
       if (extractedData) {
         if (!extractedData.data_nascimento && pdfText) {
-          const birthDateRegex =
-            /(?:nasc(?:ido|imento|ida)?(?:\s+em)?[:\s]+)?\b([0-3]?\d[\/\-\.][0-1]?\d[\/\-\.](?:19|20)\d{2})\b/i
-          const matchDate = pdfText.match(birthDateRegex)
-          if (matchDate && matchDate[1]) {
-            extractedData.data_nascimento = matchDate[1]
+          const contextBirthDate = extractBirthDateWithContext(pdfText)
+          if (contextBirthDate) {
+            extractedData.data_nascimento = contextBirthDate
           }
         }
-        const calculatedAge = resolveCandidateAge(
-          extractedData.idade,
-          extractedData.data_nascimento,
-        )
-        if (calculatedAge !== null) {
-          extractedData.idade = calculatedAge
+
+        // Validação de sanidade biológica/legal da data de nascimento
+        if (extractedData.data_nascimento) {
+          const plausibility = isPlausibleBirthDate(extractedData.data_nascimento)
+          if (!plausibility.valida) {
+            console.warn(
+              `[outlook-webhook] Data de nascimento implausível rejeitada: "${extractedData.data_nascimento}". Motivo: ${plausibility.motivo}`,
+            )
+            extractedData.data_nascimento = null
+            extractedData.idade = null
+            extractedData.precisa_revisao = true
+            extractedData.motivo_revisao_idade = plausibility.motivo
+          } else {
+            extractedData.idade = plausibility.idade
+          }
+        } else {
+          const calculatedAge = resolveCandidateAge(extractedData.idade, null)
+          if (calculatedAge !== null) {
+            extractedData.idade = calculatedAge
+          } else if (extractedData.idade !== null && extractedData.idade !== undefined) {
+            extractedData.idade = null
+            extractedData.precisa_revisao = true
+            extractedData.motivo_revisao_idade =
+              'Idade declarada fora dos limites plausíveis (14-90 anos)'
+          }
         }
 
         // Se o nome vier vazio/null, rodar OCR automaticamente antes de salvar com fallback genérico

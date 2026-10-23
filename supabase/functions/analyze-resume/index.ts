@@ -8,6 +8,8 @@ import {
   sanitizeAndValidateName,
   sanitizeAndValidateEmail,
   resolveCandidateAge,
+  extractBirthDateWithContext,
+  isPlausibleBirthDate,
 } from '../_shared/validation.ts'
 import { findExistingCandidate } from '../_shared/candidates.ts'
 import { extractCep, isTruncatedOrIncompleteAddress } from '../_shared/proximity.ts'
@@ -248,7 +250,7 @@ Deno.serve(async (req: Request) => {
 - endereco: Endereço COMPLETO com logradouro, número, complemento, bairro, cidade, UF e CEP se existirem no documento (ex: "R. Timóteo, 88 - Jardim Paraguaçu, São Paulo - SP, 03938-050"). NUNCA trunque para apenas "Jardim - SP" ou apenas o bairro se houver rua, número, cidade ou CEP no currículo.
 - cep: Código de Endereçamento Postal brasileiro (ex: "03938-050"), ou null se não constar
 - idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
-- data_nascimento: Data de nascimento informada em qualquer formato (ex: "16/01/1993", "16-01-1993", "16.01.1993", "1993-01-16", "nascido em 16 de janeiro de 1993"), ou null se não constar
+- data_nascimento: Só preencha data_nascimento se a data estiver explicitamente rotulada como nascimento ("Data de Nascimento", "Nascimento:", "nascido em/a"). NUNCA use datas de atualização/validade do documento ou datas soltas no cabeçalho. Dúvida → null. Formato DD/MM/AAAA ou null se não constar
 - cnh: Informação sobre CNH / Carteira de Habilitação identificada (ex: "Categoria D", "CNH D", "Categoria AB", "Categoria E", "Possui CNH D"), ou null se não informada
 - cnh_categoria: Categoria exata da CNH (ex: "D", "E", "AB", "AD", "AE", "B", "A"), ou null se não informada
 - objetivo: Cargo pretendido, objetivo profissional ou área de interesse expressamente informada no currículo (ex: "Cobrador de Ônibus", "Motorista", "Auxiliar Administrativo", "Mecânico"), ou null se não identificado
@@ -344,7 +346,7 @@ ${extractedText.substring(0, 20000)}`
 - endereco: Endereço COMPLETO com logradouro, número, complemento, bairro, cidade, UF e CEP se existirem no documento (ex: "R. Timóteo, 88 - Jardim Paraguaçu, São Paulo - SP, 03938-050"). NUNCA trunque para apenas "Jardim - SP" ou apenas o bairro se houver rua, número, cidade ou CEP no currículo.
 - cep: Código de Endereçamento Postal brasileiro (ex: "03938-050"), ou null se não constar
 - idade: Idade expressa em número inteiro (ex: 31, 20) ou calculada a partir da data de nascimento se informada, ou null se não constar
-- data_nascimento: Data de nascimento informada (ex: "16/01/1993" ou "1993-01-16"), ou null se não constar
+- data_nascimento: Só preencha data_nascimento se a data estiver explicitamente rotulada como nascimento ("Data de Nascimento", "Nascimento:", "nascido em/a"). NUNCA use datas de atualização/validade do documento ou datas soltas no cabeçalho. Dúvida → null. Formato DD/MM/AAAA ou null se não constar
 - cnh: Informação sobre CNH / Carteira de Habilitação identificada (ex: "Categoria D", "CNH D", "Categoria AB", "Categoria E"), ou null se não informada
 - cnh_categoria: Categoria exata da CNH (ex: "D", "E", "AB", "AD", "AE", "B", "A"), ou null se não informada
 - objetivo: Cargo pretendido, objetivo profissional ou área informada no currículo, ou null se não identificado
@@ -683,17 +685,42 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
 
     const finalEmail = cleanEmail
 
-    // Tenta também pré-processar regex de data de nascimento no texto extraído se ainda não foi identificada
+    // Tenta extrair data de nascimento no texto extraído APENAS com contexto explícito
     if (!extractedData.data_nascimento && extractedText) {
-      const birthDateRegex =
-        /(?:nasc(?:ido|imento|ida)?(?:\s+em)?[:\s]+)?\b([0-3]?\d[\/\-\.][0-1]?\d[\/\-\.](?:19|20)\d{2})\b/i
-      const matchDate = extractedText.match(birthDateRegex)
-      if (matchDate && matchDate[1]) {
-        extractedData.data_nascimento = matchDate[1]
+      const contextBirthDate = extractBirthDateWithContext(extractedText)
+      if (contextBirthDate) {
+        extractedData.data_nascimento = contextBirthDate
       }
     }
 
-    // Recalcular e sobrescrever idade caso haja data de nascimento
+    // Validação de sanidade biológica/legal da data de nascimento
+    if (extractedData.data_nascimento) {
+      const plausibility = isPlausibleBirthDate(extractedData.data_nascimento)
+      if (!plausibility.valida) {
+        console.warn(
+          `[analyze-resume] Data de nascimento implausível rejeitada: "${extractedData.data_nascimento}". Motivo: ${plausibility.motivo}`,
+        )
+        extractedData.data_nascimento = null
+        extractedData.idade = null
+        extractedData.precisa_revisao = true
+        extractedData.motivo_revisao_idade = plausibility.motivo
+      } else {
+        extractedData.idade = plausibility.idade
+      }
+    } else {
+      // Se não há data de nascimento confirmada com contexto explícito, valida idade declarada isolada
+      const resolvedAge = resolveCandidateAge(extractedData.idade, null)
+      if (resolvedAge !== null) {
+        extractedData.idade = resolvedAge
+      } else if (extractedData.idade !== null && extractedData.idade !== undefined) {
+        // Idade declarada fora do plausível
+        extractedData.idade = null
+        extractedData.precisa_revisao = true
+        extractedData.motivo_revisao_idade =
+          'Idade declarada fora dos limites plausíveis (14-90 anos)'
+      }
+    }
+
     // Tenta extrair CEP do texto bruto caso não venha no JSON
     if (!extractedData.cep && extractedText) {
       const detectedCep = extractCep(extractedText)
@@ -703,11 +730,6 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
       if (!extractedData.endereco.includes(extractedData.cep)) {
         extractedData.endereco = `${extractedData.endereco}, ${extractedData.cep}`
       }
-    }
-
-    const resolvedAge = resolveCandidateAge(extractedData.idade, extractedData.data_nascimento)
-    if (resolvedAge !== null) {
-      extractedData.idade = resolvedAge
     }
 
     // Pós-processamento determinístico de CNH / Habilitação com fallback Regex

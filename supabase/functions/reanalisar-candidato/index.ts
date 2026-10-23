@@ -8,7 +8,8 @@ import {
   sanitizeAndValidateName,
   sanitizeAndValidateEmail,
   resolveCandidateAge,
-  extractBirthDateFromString,
+  extractBirthDateWithContext,
+  isPlausibleBirthDate,
   calculateAgeFromBirthDate,
 } from '../_shared/validation.ts'
 import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
@@ -96,35 +97,41 @@ Deno.serve(async (req: Request) => {
         ? { ...candidato.dados_extraidos }
         : {}
 
-    // Fallback determinístico inicial para data de nascimento se ausente nos dados já extraídos
-    if (!currentDadosExtraidos.data_nascimento) {
-      const birthFallback =
-        extractBirthDateFromString(currentDadosExtraidos.resumo_cv) ||
-        extractBirthDateFromString(JSON.stringify(currentDadosExtraidos))
+    // Fallback determinístico inicial para data de nascimento com contexto explícito e sanidade
+    if (
+      !currentDadosExtraidos.data_nascimento &&
+      typeof currentDadosExtraidos.resumo_cv === 'string'
+    ) {
+      const birthFallback = extractBirthDateWithContext(currentDadosExtraidos.resumo_cv)
       if (birthFallback) {
         currentDadosExtraidos.data_nascimento = birthFallback
-        const calcAge = calculateAgeFromBirthDate(birthFallback)
-        if (calcAge !== null) {
-          currentDadosExtraidos.idade = calcAge
-        }
-        await supabase
-          .from('candidatos')
-          .update({ dados_extraidos: currentDadosExtraidos })
-          .eq('id', candidato.id)
       }
     }
 
-    // Garantir que a idade seja derivada da data de nascimento se ela existir
-    const initialResolvedAge = resolveCandidateAge(
-      currentDadosExtraidos.idade,
-      currentDadosExtraidos.data_nascimento,
-    )
-    if (initialResolvedAge !== null && currentDadosExtraidos.idade !== initialResolvedAge) {
-      currentDadosExtraidos.idade = initialResolvedAge
-      await supabase
-        .from('candidatos')
-        .update({ dados_extraidos: currentDadosExtraidos })
-        .eq('id', candidato.id)
+    // Aplica sanidade se houver data de nascimento
+    if (currentDadosExtraidos.data_nascimento) {
+      const plausibility = isPlausibleBirthDate(currentDadosExtraidos.data_nascimento)
+      if (!plausibility.valida) {
+        currentDadosExtraidos.data_nascimento = null
+        currentDadosExtraidos.idade = null
+        currentDadosExtraidos.precisa_revisao = true
+        currentDadosExtraidos.motivo_revisao_idade = plausibility.motivo
+      } else {
+        currentDadosExtraidos.idade = plausibility.idade
+      }
+    } else {
+      const initialResolvedAge = resolveCandidateAge(currentDadosExtraidos.idade, null)
+      if (initialResolvedAge !== null) {
+        currentDadosExtraidos.idade = initialResolvedAge
+      } else if (
+        currentDadosExtraidos.idade !== null &&
+        currentDadosExtraidos.idade !== undefined
+      ) {
+        currentDadosExtraidos.idade = null
+        currentDadosExtraidos.precisa_revisao = true
+        currentDadosExtraidos.motivo_revisao_idade =
+          'Idade declarada fora dos limites plausíveis (14-90 anos)'
+      }
     }
 
     // Só acionar reextração pesada de PDF (OCR/OpenAI Files) se force_reextract === true
@@ -652,30 +659,40 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
                 }
               }
 
-              // Fallback determinístico robusto via extractBirthDateFromString sobre o texto bruto do CV
+              // Fallback determinístico robusto APENAS com contexto explícito
               if (!newlyExtracted.data_nascimento) {
                 const birthDateFromRaw =
-                  extractBirthDateFromString(extractedText) ||
-                  extractBirthDateFromString(ocrCapturedText)
+                  extractBirthDateWithContext(extractedText) ||
+                  extractBirthDateWithContext(ocrCapturedText)
                 if (birthDateFromRaw) {
                   newlyExtracted.data_nascimento = birthDateFromRaw
-                } else if (extractedText) {
-                  const birthDateRegex =
-                    /(?:nasc(?:ido|imento|ida)?(?:\s+em)?[:\s]+)?\b([0-3]?\d[\/\-\.][0-1]?\d[\/\-\.](?:19|20)\d{2})\b/i
-                  const matchDate = extractedText.match(birthDateRegex)
-                  if (matchDate && matchDate[1]) {
-                    newlyExtracted.data_nascimento = matchDate[1]
-                  }
                 }
               }
 
-              // Recalcular e sobrescrever idade caso haja data de nascimento
-              const resolvedAge = resolveCandidateAge(
-                newlyExtracted.idade,
-                newlyExtracted.data_nascimento,
-              )
-              if (resolvedAge !== null) {
-                newlyExtracted.idade = resolvedAge
+              // Validação de sanidade biológica/legal da data de nascimento
+              if (newlyExtracted.data_nascimento) {
+                const plausibility = isPlausibleBirthDate(newlyExtracted.data_nascimento)
+                if (!plausibility.valida) {
+                  console.warn(
+                    `[reanalisar-candidato] Data de nascimento implausível rejeitada: "${newlyExtracted.data_nascimento}". Motivo: ${plausibility.motivo}`,
+                  )
+                  newlyExtracted.data_nascimento = null
+                  newlyExtracted.idade = null
+                  newlyExtracted.precisa_revisao = true
+                  newlyExtracted.motivo_revisao_idade = plausibility.motivo
+                } else {
+                  newlyExtracted.idade = plausibility.idade
+                }
+              } else {
+                const resolvedAge = resolveCandidateAge(newlyExtracted.idade, null)
+                if (resolvedAge !== null) {
+                  newlyExtracted.idade = resolvedAge
+                } else if (newlyExtracted.idade !== null && newlyExtracted.idade !== undefined) {
+                  newlyExtracted.idade = null
+                  newlyExtracted.precisa_revisao = true
+                  newlyExtracted.motivo_revisao_idade =
+                    'Idade declarada fora dos limites plausíveis (14-90 anos)'
+                }
               }
               const cleanName = sanitizeAndValidateName(newlyExtracted.nome)
               const cleanEmail = sanitizeAndValidateEmail(newlyExtracted.email)
@@ -752,22 +769,39 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
                 ocrCapturedText,
               ])
 
-              // Garantir fallback determinístico final de data_nascimento e idade em currentDadosExtraidos
+              // Garantir fallback determinístico final de data_nascimento com contexto explícito e sanidade
               if (!currentDadosExtraidos.data_nascimento) {
                 const finalBirthDate =
-                  extractBirthDateFromString(extractedText) ||
-                  extractBirthDateFromString(ocrCapturedText) ||
-                  extractBirthDateFromString(JSON.stringify(currentDadosExtraidos))
+                  extractBirthDateWithContext(extractedText) ||
+                  extractBirthDateWithContext(ocrCapturedText)
                 if (finalBirthDate) {
                   currentDadosExtraidos.data_nascimento = finalBirthDate
                 }
               }
-              const finalResolvedCalcAge = resolveCandidateAge(
-                currentDadosExtraidos.idade,
-                currentDadosExtraidos.data_nascimento,
-              )
-              if (finalResolvedCalcAge !== null) {
-                currentDadosExtraidos.idade = finalResolvedCalcAge
+
+              if (currentDadosExtraidos.data_nascimento) {
+                const plausibility = isPlausibleBirthDate(currentDadosExtraidos.data_nascimento)
+                if (!plausibility.valida) {
+                  currentDadosExtraidos.data_nascimento = null
+                  currentDadosExtraidos.idade = null
+                  currentDadosExtraidos.precisa_revisao = true
+                  currentDadosExtraidos.motivo_revisao_idade = plausibility.motivo
+                } else {
+                  currentDadosExtraidos.idade = plausibility.idade
+                }
+              } else {
+                const finalResolvedCalcAge = resolveCandidateAge(currentDadosExtraidos.idade, null)
+                if (finalResolvedCalcAge !== null) {
+                  currentDadosExtraidos.idade = finalResolvedCalcAge
+                } else if (
+                  currentDadosExtraidos.idade !== null &&
+                  currentDadosExtraidos.idade !== undefined
+                ) {
+                  currentDadosExtraidos.idade = null
+                  currentDadosExtraidos.precisa_revisao = true
+                  currentDadosExtraidos.motivo_revisao_idade =
+                    'Idade declarada fora dos limites plausíveis (14-90 anos)'
+                }
               }
 
               candidateUpdate.dados_extraidos = currentDadosExtraidos

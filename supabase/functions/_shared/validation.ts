@@ -207,6 +207,96 @@ export const extractBirthDateFromString = (input: string | null | undefined): st
 }
 
 /**
+ * Extrai data de nascimento SOMENTE quando precedida de contexto explícito de nascimento
+ * (ex: 'Data de Nascimento:', 'Nascimento:', 'nascido em/a 15/03/1990', 'nascida em...').
+ * Rejeita qualquer data solta de cabeçalho, rodapé ou data de atualização do currículo.
+ */
+export const extractBirthDateWithContext = (text: string | null | undefined): string | null => {
+  if (!text || typeof text !== 'string') return null
+  const clean = text.trim()
+  if (!clean) return null
+
+  // Normaliza acentos para busca flexível mantendo o conteúdo
+  const normalized = clean.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+
+  // Contexto obrigatório: "data de nascimento", "nascimento", "nascido em", "nascida a", "d.n.:", etc.
+  // Seguido de até ~40 caracteres antes da data propriamente dita:
+  // 1) Formato numérico DD/MM/AAAA, DD-MM-AAAA, DD.MM.AAAA ou ISO AAAA-MM-DD
+  const numericContextRegex =
+    /(?:(?:data\s+de\s+)?nasc(?:imento|encial|ido|ida)?|d\.?\s*n\.?)\b[^0-9\n\r]{0,35}?(?:em|a)?\s*[:\-]?\s*([0-3]?\d[\/\-\.][0-1]?\d[\/\-\.](?:19|20)\d{2}|(?:19|20)\d{2}[\/\-\.][0-1]?\d[\/\-\.][0-3]?\d)\b/i
+
+  const numMatch = normalized.match(numericContextRegex)
+  if (numMatch && numMatch[1]) {
+    const parsed = extractBirthDateFromString(numMatch[1])
+    if (parsed) return parsed
+  }
+
+  // 2) Formato textual brasileiro com contexto explícito: "nascido em 15 de maio de 1985"
+  const textualContextRegex =
+    /(?:(?:data\s+de\s+)?nasc(?:imento|encial|ido|ida)?|d\.?\s*n\.?)\b[^0-9\n\r]{0,35}?(?:em|a)?\s*[:\-]?\s*([0-3]?\d\s+de\s+[a-z]+\s+de\s+(?:19|20)\d{2})\b/i
+
+  const textMatch = normalized.match(textualContextRegex)
+  if (textMatch && textMatch[1]) {
+    const parsed = extractBirthDateFromString(textMatch[1])
+    if (parsed) return parsed
+  }
+
+  return null
+}
+
+/**
+ * Validação de sanidade biológica/legal da data de nascimento:
+ * - Rejeita datas no futuro
+ * - Rejeita idade < 14 anos (Daniel Gadelha bug: idade 10)
+ * - Rejeita idade > 90 anos
+ */
+export const isPlausibleBirthDate = (
+  dateStr: string | null | undefined,
+  referenceDate = new Date(),
+): { valida: boolean; idade: number | null; motivo?: string } => {
+  if (!dateStr || typeof dateStr !== 'string' || !dateStr.trim()) {
+    return { valida: false, idade: null, motivo: 'Data de nascimento não informada' }
+  }
+
+  const age = calculateAgeFromBirthDate(dateStr, referenceDate)
+  if (age === null) {
+    return { valida: false, idade: null, motivo: `Data de nascimento inválida: "${dateStr}"` }
+  }
+
+  // Verificar se a data está no futuro
+  const parsedDate = extractBirthDateFromString(dateStr)
+  if (parsedDate) {
+    const [d, m, y] = parsedDate.split('/').map((v) => parseInt(v, 10))
+    const dt = new Date(y, m - 1, d)
+    if (dt.getTime() > referenceDate.getTime()) {
+      return {
+        valida: false,
+        idade: null,
+        motivo: `Data de nascimento no futuro: ${dateStr}`,
+      }
+    }
+  }
+
+  if (age < 14) {
+    return {
+      valida: false,
+      idade: age,
+      motivo: `Idade calculada (${age} anos) abaixo do limite plausível (< 14 anos)`,
+    }
+  }
+
+  if (age > 90) {
+    return {
+      valida: false,
+      idade: age,
+      motivo: `Idade calculada (${age} anos) acima do limite plausível (> 90 anos)`,
+    }
+  }
+
+  return { valida: true, idade: age }
+}
+
+/**
  * Calcula a idade em anos completos a partir de uma data de nascimento ou string de data.
  * Suporta formatos:
  * - "DD/MM/YYYY", "DD-MM-YYYY", "DD.MM.YYYY"
@@ -304,9 +394,13 @@ export const validateAndResolveCandidateAge = (
     }
   }
 
+  // Faixa de plausibilidade adotada em conformidade com as regras do sistema: 14 a 90 anos
+  const MIN_PLAUSIBLE_AGE = 14
+  const MAX_PLAUSIBLE_AGE = 90
+
   // Caso tenhamos data de nascimento:
   if (calculated !== null) {
-    const calcPlausivel = calculated >= 16 && calculated <= 75
+    const calcPlausivel = calculated >= MIN_PLAUSIBLE_AGE && calculated <= MAX_PLAUSIBLE_AGE
 
     if (parsedRaw !== null) {
       const divergencia = Math.abs(calculated - parsedRaw) > 1
@@ -328,7 +422,7 @@ export const validateAndResolveCandidateAge = (
             invalida: true,
             divergente: true,
             paraRevisao: true,
-            motivoRevisao: `Idade calculada pela data de nascimento (${calculated} anos) está fora da faixa plausível (16-75 anos).`,
+            motivoRevisao: `Idade calculada pela data de nascimento (${calculated} anos) está fora da faixa plausível (${MIN_PLAUSIBLE_AGE}-${MAX_PLAUSIBLE_AGE} anos).`,
           }
         }
       }
@@ -341,7 +435,7 @@ export const validateAndResolveCandidateAge = (
         invalida: true,
         divergente: false,
         paraRevisao: true,
-        motivoRevisao: `Idade (${calculated} anos) fora da faixa de plausibilidade (16 a 75 anos).`,
+        motivoRevisao: `Idade (${calculated} anos) fora da faixa de plausibilidade (${MIN_PLAUSIBLE_AGE} a ${MAX_PLAUSIBLE_AGE} anos).`,
       }
     }
 
@@ -356,14 +450,14 @@ export const validateAndResolveCandidateAge = (
 
   // Apenas idade bruta declarada
   if (parsedRaw !== null) {
-    if (parsedRaw < 16 || parsedRaw > 75) {
+    if (parsedRaw < MIN_PLAUSIBLE_AGE || parsedRaw > MAX_PLAUSIBLE_AGE) {
       return {
         idade: parsedRaw,
         origem: 'declarada',
         invalida: true,
         divergente: false,
         paraRevisao: true,
-        motivoRevisao: `Idade declarada (${parsedRaw} anos) é implausível (< 16 ou > 75 anos).`,
+        motivoRevisao: `Idade declarada (${parsedRaw} anos) é implausível (< ${MIN_PLAUSIBLE_AGE} ou > ${MAX_PLAUSIBLE_AGE} anos).`,
       }
     }
     return {
@@ -386,12 +480,16 @@ export const validateAndResolveCandidateAge = (
 
 /**
  * Normaliza e resolve a idade do candidato (retorna null se implausível ou nulo)
+ * IMPORTANTE: Quando a resolução indicar invalida === true, retorna null para não persistir idade absurda no cadastro.
  */
 export const resolveCandidateAge = (
   rawIdade: any,
   dataNascimento: string | null | undefined,
 ): number | null => {
   const res = validateAndResolveCandidateAge(rawIdade, dataNascimento)
+  if (res.invalida) {
+    return null
+  }
   return res.idade
 }
 

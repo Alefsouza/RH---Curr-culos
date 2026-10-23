@@ -13,7 +13,8 @@ import {
 } from '../_shared/proximity.ts'
 import {
   resolveCandidateAge,
-  extractBirthDateFromString,
+  extractBirthDateWithContext,
+  isPlausibleBirthDate,
   calculateAgeFromBirthDate,
 } from '../_shared/validation.ts'
 import { checkBusOrTruckDriverExperience, isAppOrLightVehicleDriver } from '../_shared/motorista.ts'
@@ -270,16 +271,31 @@ function hasMotoristaExperience(cvData: any): boolean {
   return false
 }
 
-// Extrai a idade do candidato (priorizando cálculo por data de nascimento)
+// Extrai a idade do candidato (priorizando cálculo por data de nascimento com contexto explícito e sanidade)
 function extractCandidateAge(cvData: any): number | null {
   if (!cvData) return null
   let dataNasc = cvData.data_nascimento
   if (!dataNasc) {
-    dataNasc =
-      extractBirthDateFromString(cvData.resumo_cv) ||
-      extractBirthDateFromString(JSON.stringify(cvData))
+    const rawText =
+      typeof cvData.resumo_cv === 'string'
+        ? cvData.resumo_cv
+        : typeof cvData.texto_cv === 'string'
+          ? cvData.texto_cv
+          : null
+    if (rawText) {
+      dataNasc = extractBirthDateWithContext(rawText)
+    }
   }
-  return resolveCandidateAge(cvData.idade, dataNasc)
+
+  if (dataNasc) {
+    const plausibility = isPlausibleBirthDate(dataNasc)
+    if (!plausibility.valida) {
+      return null
+    }
+    return plausibility.idade
+  }
+
+  return resolveCandidateAge(cvData.idade, null)
 }
 
 // Extrai as strings de localização de uma vaga a partir de criterios_qualificacao
@@ -499,28 +515,62 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Fallback determinístico de data_nascimento e idade sobre o texto do CV / dados_extraidos
+    // Fallback determinístico de data_nascimento e idade sobre o texto do CV APENAS com contexto explícito
     if (parsedDadosExtraidos && typeof parsedDadosExtraidos === 'object') {
       let needsSave = false
+
+      // Se não há data_nascimento ou se há texto disponível para buscar contexto explícito
       if (!parsedDadosExtraidos.data_nascimento) {
         const rawTextToSearch =
           typeof texto_cv === 'string' && texto_cv.trim().length > 0
             ? texto_cv
-            : JSON.stringify(parsedDadosExtraidos)
-        const extractedBirth = extractBirthDateFromString(rawTextToSearch)
-        if (extractedBirth) {
-          parsedDadosExtraidos.data_nascimento = extractedBirth
-          needsSave = true
+            : typeof parsedDadosExtraidos.resumo_cv === 'string'
+              ? parsedDadosExtraidos.resumo_cv
+              : null
+
+        if (rawTextToSearch) {
+          const extractedBirth = extractBirthDateWithContext(rawTextToSearch)
+          if (extractedBirth) {
+            parsedDadosExtraidos.data_nascimento = extractedBirth
+            needsSave = true
+          }
         }
       }
 
-      const calculatedAge = resolveCandidateAge(
-        parsedDadosExtraidos.idade,
-        parsedDadosExtraidos.data_nascimento,
-      )
-      if (calculatedAge !== null && parsedDadosExtraidos.idade !== calculatedAge) {
-        parsedDadosExtraidos.idade = calculatedAge
-        needsSave = true
+      // Validação de sanidade sobre a data de nascimento encontrada ou existente
+      if (parsedDadosExtraidos.data_nascimento) {
+        const plausibility = isPlausibleBirthDate(parsedDadosExtraidos.data_nascimento)
+        if (!plausibility.valida) {
+          console.warn(
+            `[identify-vaga-from-cv] Data de nascimento implausível rejeitada: "${parsedDadosExtraidos.data_nascimento}". Motivo: ${plausibility.motivo}`,
+          )
+          parsedDadosExtraidos.data_nascimento = null
+          parsedDadosExtraidos.idade = null
+          parsedDadosExtraidos.precisa_revisao = true
+          parsedDadosExtraidos.motivo_revisao_idade = plausibility.motivo
+          needsSave = true
+        } else {
+          if (parsedDadosExtraidos.idade !== plausibility.idade) {
+            parsedDadosExtraidos.idade = plausibility.idade
+            needsSave = true
+          }
+        }
+      } else {
+        const calculatedAge = resolveCandidateAge(parsedDadosExtraidos.idade, null)
+        if (calculatedAge !== null && parsedDadosExtraidos.idade !== calculatedAge) {
+          parsedDadosExtraidos.idade = calculatedAge
+          needsSave = true
+        } else if (
+          calculatedAge === null &&
+          parsedDadosExtraidos.idade !== null &&
+          parsedDadosExtraidos.idade !== undefined
+        ) {
+          parsedDadosExtraidos.idade = null
+          parsedDadosExtraidos.precisa_revisao = true
+          parsedDadosExtraidos.motivo_revisao_idade =
+            'Idade declarada fora dos limites plausíveis (14-90 anos)'
+          needsSave = true
+        }
       }
 
       if (needsSave && candidato_id) {
@@ -530,7 +580,7 @@ Deno.serve(async (req: Request) => {
             .update({ dados_extraidos: parsedDadosExtraidos })
             .eq('id', candidato_id)
           console.log(
-            `[identify-vaga-from-cv] data_nascimento e idade persistidos via fallback determinístico para candidato ${candidato_id}: ${parsedDadosExtraidos.data_nascimento} (${parsedDadosExtraidos.idade} anos)`,
+            `[identify-vaga-from-cv] data_nascimento/idade validados persistidos para candidato ${candidato_id}: ${parsedDadosExtraidos.data_nascimento} (${parsedDadosExtraidos.idade} anos, precisa_revisao=${Boolean(parsedDadosExtraidos.precisa_revisao)})`,
           )
         } catch (dbErr: any) {
           console.warn(

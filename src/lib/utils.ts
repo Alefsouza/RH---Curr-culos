@@ -263,10 +263,13 @@ export function validateAndResolveCandidateAge(
     }
   }
 
+  const MIN_PLAUSIBLE_AGE = 14
+  const MAX_PLAUSIBLE_AGE = 90
+
   // Caso tenhamos tanto data de nascimento quanto idade declarada:
   if (calculated !== null) {
-    // Verificar plausibilidade do cálculo
-    const calcPlausivel = calculated >= 16 && calculated <= 75
+    // Verificar plausibilidade do cálculo (14 a 90 anos)
+    const calcPlausivel = calculated >= MIN_PLAUSIBLE_AGE && calculated <= MAX_PLAUSIBLE_AGE
 
     if (parsedRaw !== null) {
       const divergencia = Math.abs(calculated - parsedRaw) > 1
@@ -282,14 +285,14 @@ export function validateAndResolveCandidateAge(
             motivoRevisao: `Idade declarada (${parsedRaw} anos) divergia da data de nascimento (${dataNascimento}). Recalculada para ${calculated} anos.`,
           }
         } else {
-          // Data calculada implausível (< 16 ou > 75)
+          // Data calculada implausível (< 14 ou > 90)
           return {
             idade: calculated,
             origem: 'data_nascimento',
             invalida: true,
             divergente: true,
             paraRevisao: true,
-            motivoRevisao: `Idade calculada pela data de nascimento (${calculated} anos) está fora da faixa plausível (16-75 anos).`,
+            motivoRevisao: `Idade calculada pela data de nascimento (${calculated} anos) está fora da faixa plausível (${MIN_PLAUSIBLE_AGE}-${MAX_PLAUSIBLE_AGE} anos).`,
           }
         }
       }
@@ -302,7 +305,7 @@ export function validateAndResolveCandidateAge(
         invalida: true,
         divergente: false,
         paraRevisao: true,
-        motivoRevisao: `Idade (${calculated} anos) fora da faixa de plausibilidade (16 a 75 anos).`,
+        motivoRevisao: `Idade (${calculated} anos) fora da faixa de plausibilidade (${MIN_PLAUSIBLE_AGE} a ${MAX_PLAUSIBLE_AGE} anos).`,
       }
     }
 
@@ -317,14 +320,14 @@ export function validateAndResolveCandidateAge(
 
   // Apenas idade bruta declarada
   if (parsedRaw !== null) {
-    if (parsedRaw < 16 || parsedRaw > 75) {
+    if (parsedRaw < MIN_PLAUSIBLE_AGE || parsedRaw > MAX_PLAUSIBLE_AGE) {
       return {
         idade: parsedRaw,
         origem: 'declarada',
         invalida: true,
         divergente: false,
         paraRevisao: true,
-        motivoRevisao: `Idade declarada (${parsedRaw} anos) é implausível (menor que 16 ou maior que 75 anos).`,
+        motivoRevisao: `Idade declarada (${parsedRaw} anos) é implausível (menor que ${MIN_PLAUSIBLE_AGE} ou maior que ${MAX_PLAUSIBLE_AGE} anos).`,
       }
     }
     return {
@@ -346,12 +349,99 @@ export function validateAndResolveCandidateAge(
 }
 
 /**
- * Normaliza e resolve a idade do candidato (garante faixa plausível 16-75)
+ * Normaliza e resolve a idade do candidato (retorna null se implausível ou nulo)
  */
+/**
+ * Extrai data de nascimento SOMENTE quando precedida de contexto explícito de nascimento
+ * (ex: 'Data de Nascimento:', 'Nascimento:', 'nascido em/a 15/03/1990', 'nascida em...').
+ * Rejeita qualquer data solta de cabeçalho, rodapé ou data de atualização do currículo.
+ */
+export function extractBirthDateWithContext(text: string | null | undefined): string | null {
+  if (!text || typeof text !== 'string') return null
+  const clean = text.trim()
+  if (!clean) return null
+
+  const normalized = clean.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+
+  const numericContextRegex =
+    /(?:(?:data\s+de\s+)?nasc(?:imento|encial|ido|ida)?|d\.?\s*n\.?)\b[^0-9\n\r]{0,35}?(?:em|a)?\s*[:-]?\s*([0-3]?\d[/\-.][0-1]?\d[/\-.](?:19|20)\d{2}|(?:19|20)\d{2}[/\-.][0-1]?\d[/\-.][0-3]?\d)\b/i
+
+  const numMatch = normalized.match(numericContextRegex)
+  if (numMatch && numMatch[1]) {
+    const parsed = extractBirthDateFromString(numMatch[1])
+    if (parsed) return parsed
+  }
+
+  const textualContextRegex =
+    /(?:(?:data\s+de\s+)?nasc(?:imento|encial|ido|ida)?|d\.?\s*n\.?)\b[^0-9\n\r]{0,35}?(?:em|a)?\s*[:-]?\s*([0-3]?\d\s+de\s+[a-z]+\s+de\s+(?:19|20)\d{2})\b/i
+
+  const textMatch = normalized.match(textualContextRegex)
+  if (textMatch && textMatch[1]) {
+    const parsed = extractBirthDateFromString(textMatch[1])
+    if (parsed) return parsed
+  }
+
+  return null
+}
+
+/**
+ * Validação de sanidade biológica/legal da data de nascimento:
+ * - Rejeita datas no futuro
+ * - Rejeita idade < 14 anos
+ * - Rejeita idade > 90 anos
+ */
+export function isPlausibleBirthDate(
+  dateStr: string | null | undefined,
+  referenceDate = new Date(),
+): { valida: boolean; idade: number | null; motivo?: string } {
+  if (!dateStr || typeof dateStr !== 'string' || !dateStr.trim()) {
+    return { valida: false, idade: null, motivo: 'Data de nascimento não informada' }
+  }
+
+  const age = calculateAgeFromBirthDate(dateStr, referenceDate)
+  if (age === null) {
+    return { valida: false, idade: null, motivo: `Data de nascimento inválida: "${dateStr}"` }
+  }
+
+  const parsedDate = extractBirthDateFromString(dateStr)
+  if (parsedDate) {
+    const [d, m, y] = parsedDate.split('/').map((v) => parseInt(v, 10))
+    const dt = new Date(y, m - 1, d)
+    if (dt.getTime() > referenceDate.getTime()) {
+      return {
+        valida: false,
+        idade: null,
+        motivo: `Data de nascimento no futuro: ${dateStr}`,
+      }
+    }
+  }
+
+  if (age < 14) {
+    return {
+      valida: false,
+      idade: age,
+      motivo: `Idade calculada (${age} anos) abaixo do limite plausível (< 14 anos)`,
+    }
+  }
+
+  if (age > 90) {
+    return {
+      valida: false,
+      idade: age,
+      motivo: `Idade calculada (${age} anos) acima do limite plausível (> 90 anos)`,
+    }
+  }
+
+  return { valida: true, idade: age }
+}
+
 export function resolveCandidateAge(
   rawIdade: any,
   dataNascimento: string | null | undefined,
 ): number | null {
   const res = validateAndResolveCandidateAge(rawIdade, dataNascimento)
+  if (res.invalida) {
+    return null
+  }
   return res.idade
 }

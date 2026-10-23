@@ -8,6 +8,8 @@ import {
   sanitizeAndValidateName,
   sanitizeAndValidateEmail,
   resolveCandidateAge,
+  extractBirthDateWithContext,
+  isPlausibleBirthDate,
 } from '../_shared/validation.ts'
 import { findExistingCandidate } from '../_shared/candidates.ts'
 import { extractCep, isTruncatedOrIncompleteAddress } from '../_shared/proximity.ts'
@@ -650,13 +652,37 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
 
         const { extractedData, rawText } = extractionResult
 
-        // Tenta também pré-processar regex de data de nascimento no texto extraído se ainda não foi identificada
+        // Tenta extrair data de nascimento no texto extraído APENAS com contexto explícito
         if (!extractedData.data_nascimento && rawText) {
-          const birthDateRegex =
-            /(?:nasc(?:ido|imento|ida)?(?:\s+em)?[:\s]+)?\b([0-3]?\d[\/\-\.][0-1]?\d[\/\-\.](?:19|20)\d{2})\b/i
-          const matchDate = rawText.match(birthDateRegex)
-          if (matchDate && matchDate[1]) {
-            extractedData.data_nascimento = matchDate[1]
+          const contextBirthDate = extractBirthDateWithContext(rawText)
+          if (contextBirthDate) {
+            extractedData.data_nascimento = contextBirthDate
+          }
+        }
+
+        // Validação de sanidade biológica/legal da data de nascimento
+        if (extractedData.data_nascimento) {
+          const plausibility = isPlausibleBirthDate(extractedData.data_nascimento)
+          if (!plausibility.valida) {
+            console.warn(
+              `[sync-outlook-cvs] Data de nascimento implausível rejeitada: "${extractedData.data_nascimento}". Motivo: ${plausibility.motivo}`,
+            )
+            extractedData.data_nascimento = null
+            extractedData.idade = null
+            extractedData.precisa_revisao = true
+            extractedData.motivo_revisao_idade = plausibility.motivo
+          } else {
+            extractedData.idade = plausibility.idade
+          }
+        } else {
+          const resolvedAge = resolveCandidateAge(extractedData.idade, null)
+          if (resolvedAge !== null) {
+            extractedData.idade = resolvedAge
+          } else if (extractedData.idade !== null && extractedData.idade !== undefined) {
+            extractedData.idade = null
+            extractedData.precisa_revisao = true
+            extractedData.motivo_revisao_idade =
+              'Idade declarada fora dos limites plausíveis (14-90 anos)'
           }
         }
 
@@ -675,14 +701,7 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
           if (!extractedData.endereco.includes(extractedData.cep)) {
             extractedData.endereco = `${extractedData.endereco}, ${extractedData.cep}`
           }
-        }
-
-        // Recalcular e sobrescrever idade caso haja data de nascimento
-        const resolvedAge = resolveCandidateAge(extractedData.idade, extractedData.data_nascimento)
-        if (resolvedAge !== null) {
-          extractedData.idade = resolvedAge
-        }
-        // Se o nome vier vazio/null, rodar OCR automaticamente antes de salvar com o fallback genérico
+        } // Se o nome vier vazio/null, rodar OCR automaticamente antes de salvar com o fallback genérico
         let cleanCandidateName = sanitizeAndValidateName(extractedData.nome)
         if (!cleanCandidateName && ext !== 'docx' && fileBytes.length > 0) {
           try {
@@ -2003,10 +2022,31 @@ Deno.serve(async (req: Request) => {
           const { extractedData, rawText } = extractionResult
 
           if (!extractedData.data_nascimento && rawText) {
-            const birthDateRegex =
-              /(?:nasc(?:ido|imento|ida)?(?:\s+em)?[:\s]+)?\b([0-3]?\d[\/\-\.][0-1]?\d[\/\-\.](?:19|20)\d{2})\b/i
-            const matchDate = rawText.match(birthDateRegex)
-            if (matchDate && matchDate[1]) extractedData.data_nascimento = matchDate[1]
+            const contextBirthDate = extractBirthDateWithContext(rawText)
+            if (contextBirthDate) extractedData.data_nascimento = contextBirthDate
+          }
+
+          // Validação de sanidade biológica/legal da data de nascimento
+          if (extractedData.data_nascimento) {
+            const plausibility = isPlausibleBirthDate(extractedData.data_nascimento)
+            if (!plausibility.valida) {
+              extractedData.data_nascimento = null
+              extractedData.idade = null
+              extractedData.precisa_revisao = true
+              extractedData.motivo_revisao_idade = plausibility.motivo
+            } else {
+              extractedData.idade = plausibility.idade
+            }
+          } else {
+            const resolvedAge = resolveCandidateAge(extractedData.idade, null)
+            if (resolvedAge !== null) {
+              extractedData.idade = resolvedAge
+            } else if (extractedData.idade !== null && extractedData.idade !== undefined) {
+              extractedData.idade = null
+              extractedData.precisa_revisao = true
+              extractedData.motivo_revisao_idade =
+                'Idade declarada fora dos limites plausíveis (14-90 anos)'
+            }
           }
 
           if (!extractedData.cep && rawText) {
@@ -2022,13 +2062,6 @@ Deno.serve(async (req: Request) => {
               extractedData.endereco = `${extractedData.endereco}, ${extractedData.cep}`
             }
           }
-
-          const resolvedAge = resolveCandidateAge(
-            extractedData.idade,
-            extractedData.data_nascimento,
-          )
-          if (resolvedAge !== null) extractedData.idade = resolvedAge
-
           let cleanCandidateName = sanitizeAndValidateName(extractedData.nome)
           if (!cleanCandidateName && ext !== 'docx' && fileBytes.length > 0) {
             try {
