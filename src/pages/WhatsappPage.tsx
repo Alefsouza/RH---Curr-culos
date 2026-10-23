@@ -419,16 +419,36 @@ export default function WhatsappPage() {
                       key={c.id}
                       className={cn(
                         'px-3 py-2 sm:px-3.5 sm:py-2.5 cursor-pointer hover:bg-slate-50 transition-colors border-l-2 border-transparent',
-                        selectedCandidate?.id === c.id && 'bg-blue-50/70 border-l-[#075e54]',
+                        c.ativo_kanban === false &&
+                          'bg-slate-50/80 hover:bg-slate-100/80 opacity-80',
+                        selectedCandidate?.id === c.id &&
+                          'bg-blue-50/70 border-l-[#075e54] opacity-100',
                       )}
                       onClick={() => setSelectedCandidate(c)}
                     >
                       <div className="flex justify-between items-baseline mb-0.5 gap-1.5">
-                        <span className="font-medium text-xs sm:text-[13px] text-slate-900 truncate flex items-center gap-1 leading-tight">
+                        <span
+                          className={cn(
+                            'font-medium text-xs sm:text-[13px] truncate flex items-center gap-1 leading-tight',
+                            c.ativo_kanban === false ? 'text-slate-600' : 'text-slate-900',
+                          )}
+                        >
                           {c.isUnlinked && (
                             <AlertCircle className="w-3 h-3 text-amber-500 shrink-0" />
                           )}
                           <span className="truncate">{c.nome}</span>
+                          {c.ativo_kanban === false && (
+                            <span
+                              title={
+                                c.motivo_inativo
+                                  ? `Inativo: ${c.motivo_inativo}`
+                                  : 'Candidato Inativo'
+                              }
+                              className="text-[9px] bg-slate-200 text-slate-700 px-1 py-0.2 rounded shrink-0 font-normal border border-slate-300"
+                            >
+                              Inativo
+                            </span>
+                          )}
                           {c.whatsapp_status === 'nao_registrado' && (
                             <span
                               title="Número sem WhatsApp"
@@ -507,7 +527,15 @@ export default function WhatsappPage() {
                           )}
                           <span className="truncate">{selectedCandidate.nome}</span>
                         </h2>
-                        <div className="hidden sm:flex shrink-0">
+                        <div className="hidden sm:flex shrink-0 items-center gap-1.5">
+                          {selectedCandidate.ativo_kanban === false && (
+                            <Badge
+                              variant="outline"
+                              className="bg-white/20 hover:bg-white/25 text-white border-white/30 text-[11px] px-2 py-0.5 h-5 rounded font-medium"
+                            >
+                              Inativo
+                            </Badge>
+                          )}
                           {selectedCandidate.lastResponse?.toLowerCase() === 'sim' ? (
                             <Badge className="bg-green-100 hover:bg-green-100 text-green-800 border-none text-[11px] px-2 py-0.5 h-5 rounded font-medium flex items-center gap-1">
                               <CheckCircle className="w-3 h-3" /> Sim
@@ -531,6 +559,14 @@ export default function WhatsappPage() {
                         <p className="text-[10px] sm:text-xs text-white/80 truncate">
                           {selectedCandidate.telefone}
                         </p>
+                        {selectedCandidate.ativo_kanban === false && (
+                          <Badge
+                            variant="outline"
+                            className="sm:hidden text-[9px] h-4 px-1 py-0 bg-white/20 text-white border-white/30"
+                          >
+                            Inativo
+                          </Badge>
+                        )}
                         {selectedCandidate.whatsapp_status === 'nao_registrado' && (
                           <Badge variant="destructive" className="text-[10px] h-4 px-1 py-0">
                             Sem WhatsApp
@@ -563,6 +599,16 @@ export default function WhatsappPage() {
                           )}
                         </div>
                       </div>
+                      {selectedCandidate.ativo_kanban === false &&
+                        selectedCandidate.motivo_inativo && (
+                          <p
+                            className="text-[10px] text-amber-200/90 truncate mt-0.5"
+                            title={selectedCandidate.motivo_inativo}
+                          >
+                            <span className="font-semibold text-white/90">Motivo inativação:</span>{' '}
+                            {selectedCandidate.motivo_inativo}
+                          </p>
+                        )}
                     </div>
                     <Button
                       variant="ghost"
@@ -574,6 +620,29 @@ export default function WhatsappPage() {
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
+
+                  {/* Alerta de candidato inativo com motivo */}
+                  {selectedCandidate.ativo_kanban === false && (
+                    <div className="bg-slate-100 border-b border-slate-200 px-3 py-2 text-xs text-slate-700 flex items-center justify-between gap-2 shrink-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <AlertCircle className="w-4 h-4 text-slate-500 shrink-0" />
+                        <span className="truncate sm:whitespace-normal">
+                          <strong>Candidato inativo no Kanban.</strong>
+                          {selectedCandidate.motivo_inativo
+                            ? ` Motivo: ${selectedCandidate.motivo_inativo}`
+                            : ''}
+                        </span>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 text-[11px] px-2 border-slate-300 hover:bg-slate-200 shrink-0"
+                        onClick={() => navigate(`/candidates/${selectedCandidate.id}`)}
+                      >
+                        Ver cadastro
+                      </Button>
+                    </div>
+                  )}
 
                   {/* Alerta de aviso se todas as mensagens enviadas falharam */}
                   {(selectedCandidate.whatsapp_status === 'nao_registrado' ||

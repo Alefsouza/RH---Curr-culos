@@ -10,6 +10,8 @@ export interface WhatsappCandidate {
   lastResponse: 'sim' | 'nao' | null
   isUnlinked: boolean
   etapaId: string | null
+  ativo_kanban: boolean
+  motivo_inativo?: string | null
   conversations: Array<{
     id: string
     texto: string
@@ -27,39 +29,100 @@ export async function getWhatsappDashboardData() {
   } = await supabase.auth.getSession()
   if (!session?.user) throw new Error('Não autenticado')
 
-  // 1. Busca todos os candidatos do sistema com sua etapa definida e status no Kanban
-  // Ancoramos a busca de WhatsApp nos candidatos que estão no Kanban ou vinculados
-  const { data: candsData, error: candsError } = await supabase
-    .from('candidatos')
-    .select('id, nome, telefone, etapa_id, ativo_kanban, vaga_id, ultima_resposta_whatsapp')
-    .is('duplicado_de', null)
-    .is('deleted_at', null)
-    .not('etapa_id', 'is', null)
-    .neq('ativo_kanban', false)
+  // 1. Busca candidatos ativos no Kanban E IDs de candidatos que possuem mensagens no WhatsApp
+  // Todos os candidatos com histórico de conversa devem aparecer, mesmo com ativo_kanban = false
+  const [activeCandsResult, msgCandIdsResult] = await Promise.all([
+    supabase
+      .from('candidatos')
+      .select(
+        'id, nome, telefone, etapa_id, ativo_kanban, motivo_inativo, vaga_id, ultima_resposta_whatsapp',
+      )
+      .is('duplicado_de', null)
+      .is('deleted_at', null)
+      .not('etapa_id', 'is', null)
+      .neq('ativo_kanban', false),
+    supabase.from('mensagens_whatsapp').select('candidato_id').not('candidato_id', 'is', null),
+  ])
 
-  if (candsError) throw candsError
+  if (activeCandsResult.error) throw activeCandsResult.error
+  if (msgCandIdsResult.error) throw msgCandIdsResult.error
 
-  const candidatoEtapaMap: Record<string, string | null> = {}
+  const candidateIdSet = new Set<string>()
   const candidatoInfoMap: Record<
     string,
-    { nome: string; telefone: string; etapaId: string | null; ultimaResposta: string | null }
+    {
+      nome: string
+      telefone: string
+      etapaId: string | null
+      ultimaResposta: string | null
+      ativo_kanban: boolean
+      motivo_inativo: string | null
+    }
   > = {}
-  const candidateIds: string[] = []
+  const candidatoEtapaMap: Record<string, string | null> = {}
 
-  if (candsData) {
-    candsData.forEach((c) => {
-      candidatoEtapaMap[c.id] = c.etapa_id
-      candidatoInfoMap[c.id] = {
-        nome: c.nome,
-        telefone: c.telefone || '',
-        etapaId: c.etapa_id,
-        ultimaResposta: c.ultima_resposta_whatsapp || null,
-      }
-      candidateIds.push(c.id)
-    })
+  activeCandsResult.data?.forEach((c) => {
+    candidateIdSet.add(c.id)
+    candidatoEtapaMap[c.id] = c.etapa_id
+    candidatoInfoMap[c.id] = {
+      nome: c.nome,
+      telefone: c.telefone || '',
+      etapaId: c.etapa_id,
+      ultimaResposta: c.ultima_resposta_whatsapp || null,
+      ativo_kanban: c.ativo_kanban ?? true,
+      motivo_inativo: c.motivo_inativo || null,
+    }
+  })
+
+  // Identifica IDs de mensagens que pertencem a candidatos inativos ou ainda não carregados
+  const extraCandIds = Array.from(
+    new Set(
+      (msgCandIdsResult.data || [])
+        .map((m) => m.candidato_id)
+        .filter((id): id is string => Boolean(id) && !candidateIdSet.has(id)),
+    ),
+  )
+
+  if (extraCandIds.length > 0) {
+    const BATCH_LOAD_SIZE = 100
+    const extraPromises: PromiseLike<any>[] = []
+    for (let i = 0; i < extraCandIds.length; i += BATCH_LOAD_SIZE) {
+      const batch = extraCandIds.slice(i, i + BATCH_LOAD_SIZE)
+      extraPromises.push(
+        Promise.resolve(
+          supabase
+            .from('candidatos')
+            .select(
+              'id, nome, telefone, etapa_id, ativo_kanban, motivo_inativo, vaga_id, ultima_resposta_whatsapp',
+            )
+            .in('id', batch)
+            .is('duplicado_de', null)
+            .is('deleted_at', null),
+        ),
+      )
+    }
+
+    const extraResults = await Promise.all(extraPromises)
+    for (const res of extraResults) {
+      if (res.error) throw res.error
+      res.data?.forEach((c: any) => {
+        candidateIdSet.add(c.id)
+        candidatoEtapaMap[c.id] = c.etapa_id
+        candidatoInfoMap[c.id] = {
+          nome: c.nome,
+          telefone: c.telefone || '',
+          etapaId: c.etapa_id,
+          ultimaResposta: c.ultima_resposta_whatsapp || null,
+          ativo_kanban: c.ativo_kanban ?? true,
+          motivo_inativo: c.motivo_inativo || null,
+        }
+      })
+    }
   }
 
-  // Se não houver candidatos ativos no Kanban, retorna dashboard vazio
+  const candidateIds = Array.from(candidateIdSet)
+
+  // Se não houver candidatos com mensagens ou ativos no Kanban, retorna dashboard vazio
   if (candidateIds.length === 0) {
     return {
       stats: { sent: 0, failed: 0, yes: 0, no: 0 },
@@ -277,6 +340,8 @@ export async function getWhatsappDashboardData() {
         })(),
         isUnlinked: !c.candidato_id,
         etapaId: (c.candidatos as any)?.etapa_id || candInfo?.etapaId || null,
+        ativo_kanban: candInfo?.ativo_kanban ?? true,
+        motivo_inativo: candInfo?.motivo_inativo || null,
         conversations: [],
       })
     }
