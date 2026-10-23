@@ -40,8 +40,11 @@ export async function triggerLeonardoReanalysis() {
 }
 
 export async function triggerIgorReanalysis(forceReextract = true) {
-  const { data, error } = await supabase.functions.invoke('batch-reanalyze-all', {
-    body: { reanalyzeIgor: true, force_reextract: forceReextract },
+  const { data, error } = await supabase.functions.invoke('reanalisar-candidato', {
+    body: {
+      candidate_id: '46ab0280-e34b-4d78-b333-1d42d0581415',
+      force_reextract: forceReextract,
+    },
   })
   if (error) throw error
   return data

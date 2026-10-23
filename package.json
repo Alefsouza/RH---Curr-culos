@@ -11,6 +11,7 @@
     "build:dev": "vite build --mode development",
     "reanalyze:henrique": "node scripts/reanalyze-henrique.mjs",
     "reanalyze:robison": "node scripts/reanalyze-robison.mjs",
+    "reanalyze:igor": "node scripts/reanalyze-igor.mjs",
     "lint": "oxlint src",
     "lint:fix": "oxlint src --fix",
     "format": "oxfmt",

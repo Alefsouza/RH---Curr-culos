@@ -42,7 +42,7 @@ Deno.serve(async (req: Request) => {
     })
 
     // Ação direta para invocar reanalisar-candidato para Igor Mendonça Elói Da Silva
-    if (body.reanalyzeIgor) {
+    if (body.reanalyzeIgor || req.headers.get('x-reanalyze-igor') === 'true') {
       console.log('[batch-reanalyze-all] Executando reanálise para Igor Mendonça Elói Da Silva...')
       const igorRes = await fetch(`${supabaseUrl}/functions/v1/reanalisar-candidato`, {
         method: 'POST',
