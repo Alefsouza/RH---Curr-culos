@@ -603,7 +603,7 @@ Deno.serve(async (req: Request) => {
     //     — nunca a primeira por palavra-chave;
     // (3) se não encaixar em nenhuma, NÃO é aprovado em nenhuma — entra como 'Aguardando vaga adequada'
     //     com o cargo pretendido registrado, nunca aprovado por folga;
-    // (4) se não estiver perto de nenhuma garagem, descartar de cara com motivo 'fora do raio de todas as vagas'.
+    // (4) se não estiver perto de nenhuma garagem, descartar de cara com motivo 'Fora do raio de todas as garagens'.
     // =========================================================================
     if (!candidatoObjetivo || isGenericObjective(candidatoObjetivo)) {
       console.log(
@@ -630,17 +630,17 @@ Deno.serve(async (req: Request) => {
       const funcaoInferida =
         inferredRoleData.roles.length > 0 ? inferredRoleData.roles.join('/') : null
 
-      // Regra 4: Descartar de cara se fora do raio de todas as vagas
+      // Regra 4: Descartar de cara se fora do raio de todas as garagens
       if (genericResult.foraDeTodasAsGaragens) {
         console.log(
-          `[identify-vaga-from-cv] Candidato genérico descartado: fora do raio de todas as garagens ativas.`,
+          `[identify-vaga-from-cv] Candidato genérico descartado: fora do raio de todas as garagens ativas. Motivo: Fora do raio de todas as garagens.`,
         )
         return new Response(
           JSON.stringify({
             vaga_id: null,
             confianca: 'baixa',
             descartado: true,
-            motivo_descarte: 'fora do raio de todas as vagas',
+            motivo_descarte: 'Fora do raio de todas as garagens',
             funcao_inferida: funcaoInferida,
             justificativa: genericResult.justificativa,
             todas_avaliacoes: genericResult.rankedEvaluations.map((e) => ({

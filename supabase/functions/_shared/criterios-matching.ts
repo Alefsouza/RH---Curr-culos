@@ -956,13 +956,13 @@ export async function evaluateGenericCandidateAgainstAllVagas(
   const algumaDentroDoRaio = evaluations.some((e) => e.dentroDoRaio)
 
   if (hasGeoloc && !algumaDentroDoRaio && evaluations.length > 0) {
-    // REGRA 4: se não estiver perto de nenhuma garagem, descartar de cara com motivo 'fora do raio de todas as vagas'
+    // REGRA 4: se não estiver perto de nenhuma garagem, descartar de cara com motivo 'Fora do raio de todas as garagens'
     return {
       chosenVaga: null,
       rankedEvaluations: evaluations,
       candidateCoords,
       foraDeTodasAsGaragens: true,
-      motivoDescarte: 'fora do raio de todas as vagas',
+      motivoDescarte: 'Fora do raio de todas as garagens',
       justificativa: `Candidato mora fora do raio de atendimento de todas as garagens ativas do sistema (${candidatoEndereco || 'endereço cadastrado'}).`,
       aguardandoVaga: false,
     }

@@ -904,7 +904,8 @@ ${ocrText.substring(0, 15000)}`
               vaga_id: null,
               etapa_id: null,
               ativo_kanban: false,
-              motivo_inativo: 'fora do raio de todas as vagas',
+              motivo_inativo:
+                identifyRes.data?.motivo_descarte || 'Fora do raio de todas as garagens',
               proximidade: 'fora_raio',
             })
             .eq('id', candidatoId)
@@ -1226,7 +1227,7 @@ Deno.serve(async (req: Request) => {
           }
         } else if (matchResult.foraDoRaioDeTodasAsGaragens) {
           newAtivoKanban = false
-          newMotivoInativo = 'fora do raio de todas as vagas'
+          newMotivoInativo = 'Fora do raio de todas as garagens'
 
           await supabase.from('analises').insert({
             candidato_id: cand.id,
@@ -1235,7 +1236,7 @@ Deno.serve(async (req: Request) => {
             score: 0,
             resumo: 'Candidato fora do raio de todas as garagens ativas.',
             detalhes: {
-              motivo: 'fora do raio de todas as vagas',
+              motivo: 'Fora do raio de todas as garagens',
               fora_do_raio: true,
               fonte: 'auditoria_reanalise_direta',
               reanalisado_em: new Date().toISOString(),
@@ -1498,7 +1499,7 @@ Deno.serve(async (req: Request) => {
             }
           } else if (matchResult.foraDoRaioDeTodasAsGaragens) {
             newAtivoKanban = false
-            newMotivoInativo = 'fora do raio de todas as vagas'
+            newMotivoInativo = 'Fora do raio de todas as garagens'
             statusResult = 'descartado_fora_do_raio'
 
             await supabase.from('analises').insert({
@@ -1508,7 +1509,7 @@ Deno.serve(async (req: Request) => {
               score: 0,
               resumo: 'Candidato fora do raio de todas as garagens ativas.',
               detalhes: {
-                motivo: 'fora do raio de todas as vagas',
+                motivo: 'Fora do raio de todas as garagens',
                 fora_do_raio: true,
                 fonte: 'auditoria_reanalise_lote',
                 reanalisado_em: new Date().toISOString(),

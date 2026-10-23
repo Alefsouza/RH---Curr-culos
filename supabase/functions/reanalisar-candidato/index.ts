@@ -864,13 +864,16 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
 
       // Trata descarte direto por raio (Regra 4)
       if (identifyData.descartado) {
+        const motivoDescarteFinal =
+          identifyData.motivo_descarte || 'Fora do raio de todas as garagens'
+
         await supabase
           .from('candidatos')
           .update({
             vaga_id: null,
             etapa_id: null,
             ativo_kanban: false,
-            motivo_inativo: 'fora do raio de todas as vagas',
+            motivo_inativo: motivoDescarteFinal,
             proximidade: 'fora_raio',
           })
           .eq('id', candidato.id)
@@ -879,7 +882,7 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
           JSON.stringify({
             success: true,
             descartado: true,
-            motivo: identifyData.motivo_descarte || 'fora do raio de todas as vagas',
+            motivo: motivoDescarteFinal,
             justificativa: identifyData.justificativa,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },

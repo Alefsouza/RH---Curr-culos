@@ -787,7 +787,8 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
               vaga_id: null,
               etapa_id: null,
               ativo_kanban: false,
-              motivo_inativo: 'fora do raio de todas as vagas',
+              motivo_inativo:
+                identifyRes.data?.motivo_descarte || 'Fora do raio de todas as garagens',
               proximidade: 'fora_raio',
             })
             .eq('id', candidatoId)
