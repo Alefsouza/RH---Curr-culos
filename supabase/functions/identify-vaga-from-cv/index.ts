@@ -16,6 +16,7 @@ import { checkBusOrTruckDriverExperience, isAppOrLightVehicleDriver } from '../_
 import {
   isGenericObjective,
   evaluateGenericCandidateAgainstAllVagas,
+  inferCandidateRoleFromExperience,
 } from '../_shared/criterios-matching.ts'
 
 // Normalização de texto: minúsculas, sem acentos, sem pontuação, espaços simples
@@ -564,6 +565,19 @@ Deno.serve(async (req: Request) => {
         googleApiKey,
       )
 
+      // Inferir função a partir da experiência profissional
+      const expsForInference =
+        evalData?.experiencia_profissional ||
+        evalData?.experiencias ||
+        evalData?.historico_profissional ||
+        (Array.isArray(evalData) ? evalData : [])
+      const inferredRoleData = inferCandidateRoleFromExperience({
+        ...evalData,
+        experiencia_profissional: expsForInference,
+      })
+      const funcaoInferida =
+        inferredRoleData.roles.length > 0 ? inferredRoleData.roles.join('/') : null
+
       // Regra 4: Descartar de cara se fora do raio de todas as vagas
       if (genericResult.foraDeTodasAsGaragens) {
         console.log(
@@ -575,6 +589,7 @@ Deno.serve(async (req: Request) => {
             confianca: 'baixa',
             descartado: true,
             motivo_descarte: 'fora do raio de todas as vagas',
+            funcao_inferida: funcaoInferida,
             justificativa: genericResult.justificativa,
             todas_avaliacoes: genericResult.rankedEvaluations.map((e) => ({
               vaga_id: e.vaga.id,
@@ -599,6 +614,7 @@ Deno.serve(async (req: Request) => {
           JSON.stringify({
             vaga_id: genericResult.chosenVaga.id,
             confianca: 'alta',
+            funcao_inferida: funcaoInferida,
             justificativa: genericResult.justificativa,
             todas_avaliacoes: genericResult.rankedEvaluations.map((e) => ({
               vaga_id: e.vaga.id,
@@ -624,6 +640,7 @@ Deno.serve(async (req: Request) => {
           confianca: 'nenhuma',
           aguardando_vaga: true,
           cargo_pretendido: candidatoObjetivo || 'A disposição da empresa',
+          funcao_inferida: funcaoInferida,
           justificativa: genericResult.justificativa,
           todas_avaliacoes: genericResult.rankedEvaluations.map((e) => ({
             vaga_id: e.vaga.id,

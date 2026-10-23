@@ -852,12 +852,73 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
           })
           .eq('id', candidato.id)
 
+        // Gravar análise com vaga_id null antes do return
+        const funcaoInferida = identifyData.funcao_inferida || null
+        const motivoAguardando = funcaoInferida
+          ? `função inferida pela experiência: ${funcaoInferida} — perfil aderente a vaga de COC/monitoramento; aguardando vaga compatível`
+          : identifyData.justificativa ||
+            'Candidato com objetivo genérico aguardando vaga compatível.'
+
+        const analiseAguardandoPayload = {
+          candidato_id: candidato.id,
+          vaga_id: null,
+          resultado: 'nao_qualificado',
+          detalhes: {
+            motivo: motivoAguardando,
+            summary: motivoAguardando,
+            justificativa: identifyData.justificativa,
+            funcaoInferida: funcaoInferida,
+            confianca: identifyData.confianca || 'nenhuma',
+            score: 0,
+            matched_criteria: [],
+            unmatched_criteria: [
+              {
+                nome: 'Vaga compatível',
+                motivo: motivoAguardando,
+              },
+            ],
+            todas_avaliacoes: identifyData.todas_avaliacoes || [],
+          },
+          user_id: effectiveUserId || candidato.user_id,
+        }
+
+        const { data: existingNullAnalise } = await supabase
+          .from('analises')
+          .select('id')
+          .eq('candidato_id', candidato.id)
+          .is('vaga_id', null)
+          .maybeSingle()
+
+        let savedAnaliseAguardando: any = null
+        if (existingNullAnalise) {
+          const { data: updAnalise } = await supabase
+            .from('analises')
+            .update({
+              resultado: 'nao_qualificado',
+              detalhes: analiseAguardandoPayload.detalhes,
+              criado_em: new Date().toISOString(),
+            })
+            .eq('id', existingNullAnalise.id)
+            .select()
+            .single()
+          savedAnaliseAguardando = updAnalise
+        } else {
+          const { data: insAnalise } = await supabase
+            .from('analises')
+            .insert({ ...analiseAguardandoPayload, criado_em: new Date().toISOString() })
+            .select()
+            .single()
+          savedAnaliseAguardando = insAnalise
+        }
+
         return new Response(
           JSON.stringify({
             success: true,
             aguardando_vaga: true,
             motivo: 'aguardando vaga adequada',
             justificativa: identifyData.justificativa,
+            funcao_inferida: funcaoInferida,
+            analise: savedAnaliseAguardando,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         )
@@ -991,10 +1052,15 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
         typeof currentDadosExtraidos.objetivo === 'string' &&
         currentDadosExtraidos.objetivo.trim().length > 0
 
-      const motivoSemVaga =
-        hasObjetivo && currentDadosExtraidos.objetivo
-          ? `Não há vaga compatível para o cargo "${currentDadosExtraidos.objetivo}". ${justificativaIdentificacao}`
-          : `Não há vaga compatível com o perfil profissional do candidato no momento. ${justificativaIdentificacao}`
+      const funcaoInferida = identifyData.funcao_inferida || null
+      let motivoSemVaga: string
+      if (funcaoInferida) {
+        motivoSemVaga = `função inferida pela experiência: ${funcaoInferida} — perfil aderente a vaga de COC/monitoramento; aguardando vaga compatível`
+      } else if (hasObjetivo && currentDadosExtraidos.objetivo) {
+        motivoSemVaga = `Não há vaga compatível para o cargo "${currentDadosExtraidos.objetivo}". ${justificativaIdentificacao}`
+      } else {
+        motivoSemVaga = `Não há vaga compatível com o perfil profissional do candidato no momento. ${justificativaIdentificacao}`
+      }
 
       const analiseSemVagaPayload = {
         candidato_id: candidato.id,
@@ -1004,6 +1070,7 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
           motivo: motivoSemVaga,
           summary: motivoSemVaga,
           justificativa: justificativaIdentificacao,
+          funcaoInferida: funcaoInferida,
           confianca: identifyData.confianca || 'nenhuma',
           score: 0,
           matched_criteria: [],
@@ -1013,6 +1080,7 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
               motivo: motivoSemVaga,
             },
           ],
+          todas_avaliacoes: identifyData.todas_avaliacoes || [],
         },
         user_id: effectiveUserId || candidato.user_id,
       }
