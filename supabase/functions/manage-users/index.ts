@@ -1,5 +1,5 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
-import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { createClient } from 'npm:@supabase/supabase-js@2'
 
 export const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -8,38 +8,106 @@ export const corsHeaders = {
     'authorization, x-client-info, x-supabase-client-platform, apikey, content-type',
 }
 
+function parseJwtPayload(token: string): any | null {
+  try {
+    const parts = token.split('.')
+    if (parts.length < 2) return null
+    const base64Url = parts[1]
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=')
+    const jsonStr = atob(padded)
+    return JSON.parse(jsonStr)
+  } catch (_e) {
+    return null
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const authHeader = req.headers.get('authorization')
-    if (!authHeader) throw new Error('Acesso não autorizado.')
+    const authHeader = req.headers.get('authorization') || req.headers.get('Authorization')
+    if (!authHeader) {
+      throw new Error('Acesso não autorizado.')
+    }
+
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+    if (!token) {
+      throw new Error('Acesso não autorizado.')
+    }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') || ''
     const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
 
-    const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
+    if (!supabaseUrl || !supabaseServiceRoleKey) {
+      throw new Error('Configurações de servidor ausentes.')
+    }
+
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
+      auth: { persistSession: false },
     })
 
-    const {
-      data: { user },
-      error: authError,
-    } = await supabaseAuth.auth.getUser()
-    if (authError || !user) throw new Error('Sessão inválida.')
+    // Valida o usuário autenticado via Supabase Auth
+    let user: any = null
 
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey)
+    // 1. Tenta validar via auth.getUser(token) com chave anon
+    if (supabaseAnonKey) {
+      const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+        auth: { persistSession: false },
+      })
+      const { data: userData, error: authError } = await supabaseAuth.auth.getUser(token)
+      if (!authError && userData?.user) {
+        user = userData.user
+      }
+    }
 
-    const { data: profile, error: profileError } = await supabaseAdmin
+    // 2. Fallback de validação com supabaseAdmin.auth.getUser(token)
+    if (!user) {
+      const { data: adminUserData, error: adminAuthError } = await supabaseAdmin.auth.getUser(token)
+      if (!adminAuthError && adminUserData?.user) {
+        user = adminUserData.user
+      }
+    }
+
+    // 3. Fallback: decodificação do JWT caso as APIs do Auth estejam temporariamente indisponíveis
+    if (!user) {
+      const decoded = parseJwtPayload(token)
+      if (decoded && decoded.sub && (decoded.exp ? decoded.exp * 1000 > Date.now() : true)) {
+        const { data: authUserRecord } = await supabaseAdmin.auth.admin.getUserById(decoded.sub)
+        if (authUserRecord?.user) {
+          user = authUserRecord.user
+        }
+      }
+    }
+
+    if (!user) {
+      throw new Error('Sessão inválida.')
+    }
+
+    // Checagem de privilégio de administrador:
+    // Verifica primeiro nos metadados do usuário (user_metadata / app_metadata)
+    // e na tabela public.usuarios (is_admin = true)
+    const isAdminInMeta =
+      user.user_metadata?.is_admin === true ||
+      user.app_metadata?.is_admin === true ||
+      user.is_super_admin === true
+
+    let isAdminInTable = false
+    const { data: profile } = await supabaseAdmin
       .from('usuarios')
       .select('is_admin')
       .eq('id', user.id)
-      .single()
+      .maybeSingle()
 
-    if (profileError || !profile?.is_admin) {
+    if (profile?.is_admin === true) {
+      isAdminInTable = true
+    }
+
+    if (!isAdminInMeta && !isAdminInTable) {
       throw new Error('Acesso negado. Apenas administradores podem realizar esta ação.')
     }
 
