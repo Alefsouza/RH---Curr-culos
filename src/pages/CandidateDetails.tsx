@@ -282,7 +282,14 @@ export default function CandidateDetails() {
 
   const handleDelete = async () => {
     try {
-      const { error } = await supabase.from('candidatos').delete().eq('id', candidate.id)
+      const { error } = await supabase
+        .from('candidatos')
+        .update({
+          deleted_at: new Date().toISOString(),
+          ativo_kanban: false,
+          motivo_inativo: 'Excluído',
+        } as any)
+        .eq('id', candidate.id)
       if (error) throw error
       toast.success('Candidato excluído com sucesso')
       navigate('/')

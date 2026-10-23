@@ -65,7 +65,8 @@ export default function DashboardPage() {
           supabase
             .from('candidatos')
             .select('id, nome, vaga_id, etapa_id, criado_em, duplicado_de')
-            .is('duplicado_de', null),
+            .is('duplicado_de', null)
+            .is('deleted_at', null),
           supabase.from('etapas').select('id, nome, cor, ordem').order('ordem'),
           supabase.from('vagas').select('id, titulo, ativa'),
           supabase

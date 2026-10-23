@@ -489,18 +489,12 @@ Deno.serve(async (req: Request) => {
                 }
               }
 
-              if (acao === 'remover') {
-                const { error: delErr } = await supabase
-                  .from('candidatos')
-                  .delete()
-                  .eq('id', candId)
-                if (delErr) {
-                  console.error('Erro ao deletar candidato', delErr)
-                } else {
-                  console.log(`Candidato ${candId} removido com sucesso via resposta Não`)
-                }
-                // Limpa o payload para não tentar atualizar um candidato que acabou de ser deletado
-                Object.keys(updatePayload).forEach((key) => delete updatePayload[key])
+              if (acao === 'remover' || acao === 'inativar') {
+                // REGRA CRÍTICA: NUNCA deletar fisicamente o candidato por resposta no WhatsApp.
+                // Apenas inativamos do Kanban e registramos o motivo, mantendo histórico e integridade referencial.
+                updatePayload.ativo_kanban = false
+                updatePayload.motivo_inativo = 'Recusou convite / Respondeu Não via WhatsApp'
+                console.log(`Candidato ${candId} marcado como inativo no Kanban via resposta Não`)
               } else if (acao === 'mover') {
                 if (etapaDestino) {
                   updatePayload.etapa_id = etapaDestino

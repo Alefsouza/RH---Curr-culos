@@ -39,6 +39,7 @@ export default function Layout() {
           analises ( resultado )
         `)
         .is('duplicado_de', null)
+        .is('deleted_at', null)
         .gte('criado_em', fiveMinsAgo)
         .order('criado_em', { ascending: false })
 

@@ -225,6 +225,7 @@ export function KanbanColumn({
         .from('candidatos')
         .select('*', { count: 'exact', head: true })
         .is('duplicado_de', null)
+        .is('deleted_at', null)
         .eq('etapa_id', stage.id)
       if (error) throw error
 

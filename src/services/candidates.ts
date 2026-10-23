@@ -130,6 +130,7 @@ export async function getCandidatesList(
       { count: 'exact' },
     )
     .is('duplicado_de', null)
+    .is('deleted_at', null)
 
   if (trimmedSearch) {
     // Busca textual por nome ou email via ilike
@@ -455,7 +456,15 @@ export async function unarchiveCandidate(candidateId: string) {
 }
 
 export async function deleteCandidate(id: string) {
-  const { error } = await supabase.from('candidatos').delete().eq('id', id)
+  // Soft delete: marca deleted_at e inativa no Kanban para preservar mensagens e histórico
+  const { error } = await supabase
+    .from('candidatos')
+    .update({
+      deleted_at: new Date().toISOString(),
+      ativo_kanban: false,
+      motivo_inativo: 'Excluído',
+    } as any)
+    .eq('id', id)
   if (error) throw error
 }
 
@@ -511,7 +520,15 @@ export async function bulkArchiveCandidates(ids: string[]) {
 }
 
 export async function bulkDeleteCandidates(ids: string[]) {
-  const { error } = await supabase.from('candidatos').delete().in('id', ids)
+  // Soft delete em massa: marca deleted_at e inativa no Kanban
+  const { error } = await supabase
+    .from('candidatos')
+    .update({
+      deleted_at: new Date().toISOString(),
+      ativo_kanban: false,
+      motivo_inativo: 'Excluído',
+    } as any)
+    .in('id', ids)
   if (error) throw error
 }
 

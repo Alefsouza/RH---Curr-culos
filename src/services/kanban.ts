@@ -37,6 +37,7 @@ export async function fetchCandidates() {
       analises (vaga_id, resultado, detalhes, criado_em)
     `)
     .is('duplicado_de', null)
+    .is('deleted_at', null)
     .neq('ativo_kanban', false)
     .order('criado_em', { ascending: false })
   if (error) throw error
@@ -212,8 +213,15 @@ export async function removeFromKanban(candidateId: string, vagaId?: string | nu
 }
 
 export async function deleteCandidate(candidateId: string) {
-  // Mantido para compatibilidade, mas a ação do Kanban agora utiliza removeFromKanban
-  const { error } = await supabase.from('candidatos').delete().eq('id', candidateId)
+  // Soft delete: nunca deleta fisicamente do banco de dados para não perder histórico ou mensagens
+  const { error } = await supabase
+    .from('candidatos')
+    .update({
+      deleted_at: new Date().toISOString(),
+      ativo_kanban: false,
+      motivo_inativo: 'Excluído',
+    } as any)
+    .eq('id', candidateId)
   if (error) throw error
 }
 
