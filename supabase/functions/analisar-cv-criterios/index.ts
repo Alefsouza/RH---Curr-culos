@@ -24,6 +24,7 @@ import {
 import {
   calculateNeighborhoodProximity,
   buildNeighborhoodQuery,
+  sanitizeAndRecheckCoordinates,
 } from '../_shared/geocode-neighborhood.ts'
 import {
   checkBusOrTruckDriverExperience,
@@ -232,6 +233,7 @@ Deno.serve(async (req: Request) => {
         }
 
         let minC: number | null = null
+        let metodoGeolocalizacaoUsado = 'distance_matrix_direto'
 
         // 1. Tentar Distance Matrix primária se endereço tiver rua/número ou se não for truncado
         // Mesmo se for truncado/bairro, tentamos Distance Matrix com endereço enriquecido
@@ -247,6 +249,60 @@ Deno.serve(async (req: Request) => {
                 minC = dist
               }
             }
+          }
+        }
+
+        // REGRA (3) SANIDADE DE DISTÂNCIA:
+        // Se a distância for maior que 15 km ou nula, re-checar a geocodificação
+        // (Geocoding API com endereço completo + ViaCEP + bairro) antes de aprovar/reprovar.
+        // Distância inflada por CEP mal geocodificado NÃO pode qualificar nem induzir a erro.
+        if (minC === null || minC > 15) {
+          try {
+            let garageCoords: Coordinates | null = null
+            const lowerTitulo = vaga.titulo ? vaga.titulo.toLowerCase() : ''
+            if (lowerTitulo.includes('cursino')) {
+              garageCoords = REFERENCE_LOCATIONS.cursino.approxCoords
+            } else if (lowerTitulo.includes('leste') || lowerTitulo.includes('sapopemba')) {
+              garageCoords = REFERENCE_LOCATIONS.sapopemba.approxCoords
+            }
+
+            if (!garageCoords && localizacoesVaga.length > 0) {
+              for (const locStr of localizacoesVaga) {
+                garageCoords = getReferenceCoordsForText(locStr)
+                if (garageCoords) break
+                if (googleApiKey) {
+                  garageCoords = await geocodeAddress(locStr, googleApiKey)
+                  if (garageCoords) break
+                }
+              }
+            }
+
+            if (garageCoords) {
+              const sanity = await sanitizeAndRecheckCoordinates(
+                enderecoCV,
+                garageCoords,
+                minC,
+                googleApiKey,
+                JSON.stringify(extracted),
+              )
+
+              if (sanity.distanciaKm !== null) {
+                if (minC === null || sanity.distanciaKm < minC) {
+                  console.log(
+                    `[analisar-cv-criterios] Sanidade de distância ajustou de ${minC?.toFixed(1) || 'null'} km para ${sanity.distanciaKm.toFixed(1)} km (método: ${sanity.metodoGeolocalizacao})`,
+                  )
+                  minC = sanity.distanciaKm
+                  metodoGeolocalizacaoUsado = sanity.metodoGeolocalizacao
+                  validadoPorBairroAproximado = true
+                  bairroGeocodificadoOrigem = sanity.metodoGeolocalizacao
+                }
+              }
+            }
+          } catch (sanErr: any) {
+            console.warn(
+              '[analisar-cv-criterios] Erro ao aplicar sanidade de distância:',
+              sanErr?.message,
+            )
           }
         }
 
@@ -1239,6 +1295,8 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
       resultJson.detalhes.motivo = motivoFinal
       if (distanciaCalculada) {
         resultJson.detalhes.distancia_km = Number(menorDistanciaKm.toFixed(1))
+        resultJson.detalhes.metodo_geolocalizacao =
+          bairroGeocodificadoOrigem || metodoGeolocalizacaoUsado || 'geocodificacao'
         if (validadoPorBairroAproximado) {
           resultJson.detalhes.validado_por_bairro = true
           resultJson.detalhes.modo_distancia = 'geocodificacao_bairro'

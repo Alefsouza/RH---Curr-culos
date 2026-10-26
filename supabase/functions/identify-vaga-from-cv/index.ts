@@ -11,8 +11,12 @@ import {
   isTruncatedOrIncompleteAddress,
   REFERENCE_LOCATIONS,
   Coordinates,
+  KNOWN_CEP_COORDS,
 } from '../_shared/proximity.ts'
-import { geocodeNeighborhoodOrIncompleteAddress } from '../_shared/geocode-neighborhood.ts'
+import {
+  geocodeNeighborhoodOrIncompleteAddress,
+  sanitizeAndRecheckCoordinates,
+} from '../_shared/geocode-neighborhood.ts'
 import {
   resolveCandidateAge,
   extractBirthDateWithContext,
@@ -331,9 +335,16 @@ async function pickBestVagaByProximity(
   menorDistanciaKm: number | null
   dentroDoRaio: boolean
   raioMaximoKm: number | null
+  metodoGeolocalizacao?: string
 }> {
   if (vagasList.length === 0) {
-    return { vaga: null, menorDistanciaKm: null, dentroDoRaio: false, raioMaximoKm: null }
+    return {
+      vaga: null,
+      menorDistanciaKm: null,
+      dentroDoRaio: false,
+      raioMaximoKm: null,
+      metodoGeolocalizacao: 'sem_vagas',
+    }
   }
 
   const getVagaRaio = (vaga: any): number | null => {
@@ -343,48 +354,60 @@ async function pickBestVagaByProximity(
     return null
   }
 
-  if (vagasList.length === 1) {
-    const singleVaga = vagasList[0]
-    const singleRaio = getVagaRaio(singleVaga)
-    return {
-      vaga: singleVaga,
-      menorDistanciaKm: null,
-      dentroDoRaio: true, // sem dados de cálculo, preserva
-      raioMaximoKm: singleRaio,
-    }
-  }
-
-  // REGRA DE NEGÓCIO MANDATÓRIA (Item 4 da especificação e Item 2 do ajuste de proximidade):
+  // REGRA DE NEGÓCIO MANDATÓRIA:
   // A verificação de proximidade requer geolocalização ou fallback regional seguro.
   // Se não temos endereço do candidato, NÃO atribuir vaga por palpite/acaso.
   if (!candidateAddressStr) {
+    if (vagasList.length === 1) {
+      const singleVaga = vagasList[0]
+      const singleRaio = getVagaRaio(singleVaga)
+      return {
+        vaga: singleVaga,
+        menorDistanciaKm: null,
+        dentroDoRaio: true,
+        raioMaximoKm: singleRaio,
+        metodoGeolocalizacao: 'endereco_ausente_vaga_unica',
+      }
+    }
     return {
       vaga: null,
       menorDistanciaKm: null,
       dentroDoRaio: false,
       raioMaximoKm: null,
+      metodoGeolocalizacao: 'endereco_ausente',
     }
   }
 
   try {
     let candidateCoords: Coordinates | null = null
+    let metodoGeolocalizacao = 'desconhecido'
 
-    // Se endereço for só de bairro / incompleto, tentar geocodificação de bairro especializada primeiro
-    if (isTruncatedOrIncompleteAddress(candidateAddressStr)) {
+    const cep = extractCep(candidateAddressStr)
+    if (cep && KNOWN_CEP_COORDS[cep]) {
+      candidateCoords = KNOWN_CEP_COORDS[cep]
+      metodoGeolocalizacao = 'cep_conhecido'
+    }
+
+    // Se endereço for só de bairro / incompleto, tentar geocodificação de bairro especializada
+    if (!candidateCoords && isTruncatedOrIncompleteAddress(candidateAddressStr)) {
       const geoBairro = await geocodeNeighborhoodOrIncompleteAddress(
         candidateAddressStr,
         googleApiKey,
       )
       if (geoBairro.coords) {
         candidateCoords = geoBairro.coords
+        metodoGeolocalizacao = geoBairro.origem || 'geocoding_bairro'
         console.log(
-          `[identify-vaga] Bairro geocodificado com sucesso para candidato: "${candidateAddressStr}" (origem: ${geoBairro.origem})`,
+          `[identify-vaga] Bairro geocodificado com sucesso para candidato: "${candidateAddressStr}" (origem: ${metodoGeolocalizacao})`,
         )
       }
     }
 
     if (!candidateCoords && googleApiKey) {
       candidateCoords = await geocodeAddress(candidateAddressStr, googleApiKey)
+      if (candidateCoords) {
+        metodoGeolocalizacao = 'geocoding_endereco_completo'
+      }
     }
 
     if (!candidateCoords) {
@@ -393,6 +416,9 @@ async function pickBestVagaByProximity(
       )
       // Fallback por palavras-chave no texto do endereço do candidato
       candidateCoords = getReferenceCoordsForText(candidateAddressStr)
+      if (candidateCoords) {
+        metodoGeolocalizacao = 'referencia_textual_bairro'
+      }
     }
 
     if (!candidateCoords) {
@@ -404,6 +430,7 @@ async function pickBestVagaByProximity(
         menorDistanciaKm: null,
         dentroDoRaio: false,
         raioMaximoKm: null,
+        metodoGeolocalizacao: 'falha_geocodificacao',
       }
     }
 
@@ -463,7 +490,29 @@ async function pickBestVagaByProximity(
       }
 
       if (coords) {
-        const dist = calculateHaversineDistance(candidateCoords, coords)
+        let dist = calculateHaversineDistance(candidateCoords, coords)
+
+        // SANIDADE (Item 3 do pedido):
+        // Se a distância for > 15 km ou divergir, rechecar geocodificação daquele endereço
+        if (dist > 15) {
+          const sanity = await sanitizeAndRecheckCoordinates(
+            candidateAddressStr,
+            coords,
+            dist,
+            googleApiKey,
+          )
+          if (sanity.distanciaKm !== null && sanity.distanciaKm < dist) {
+            console.log(
+              `[identify-vaga] Sanidade ajustou distância para "${vaga.titulo}": de ${dist.toFixed(1)} km para ${sanity.distanciaKm.toFixed(1)} km (método: ${sanity.metodoGeolocalizacao})`,
+            )
+            dist = sanity.distanciaKm
+            metodoGeolocalizacao = sanity.metodoGeolocalizacao
+            if (sanity.coords) {
+              candidateCoords = sanity.coords
+            }
+          }
+        }
+
         if (bestDist === null || dist < bestDist) {
           bestDist = dist
           bestVaga = vaga
@@ -475,9 +524,10 @@ async function pickBestVagaByProximity(
     const inside = bestDist === null || raioBest === null || bestDist <= raioBest
     return {
       vaga: bestVaga,
-      menorDistanciaKm: bestDist,
+      menorDistanciaKm: bestDist !== null ? Number(bestDist.toFixed(2)) : null,
       dentroDoRaio: inside,
       raioMaximoKm: raioBest,
+      metodoGeolocalizacao,
     }
   } catch (geoErr: any) {
     console.error('[identify-vaga] Erro ao calcular proximidade:', geoErr?.message)
@@ -486,6 +536,7 @@ async function pickBestVagaByProximity(
       menorDistanciaKm: null,
       dentroDoRaio: false,
       raioMaximoKm: null,
+      metodoGeolocalizacao: 'erro',
     }
   }
 }
@@ -933,10 +984,39 @@ Deno.serve(async (req: Request) => {
           }
         }
 
-        // Filtra as vagas empatadas com a maior pontuação de match
-        const topMatchedVagas = matchedVagas
-          .filter((item) => item.matchScore === maxScore)
-          .map((item) => item.vaga)
+        // REGRA SISTÊMICA (1): SEMPRE avaliar TODAS as vagas da família do cargo do candidato
+        // e ficar com a de MELHOR encaixe (distância real menor primeiro) — nunca alocar direto em uma só sem comparar!
+        // Extrai a família do cargo (ex: 'abastecedor', 'motorista', 'cobrador', etc.)
+        let familyKeywords = [
+          'abastecedor',
+          'motorista',
+          'cobrador',
+          'mecanico',
+          'eletricista',
+          'manutencao',
+          'fiscal',
+          'auxiliar de limpeza',
+          'lavador',
+        ]
+        let detectedFamily = familyKeywords.find((k) => normObjetivo.includes(k))
+
+        let topMatchedVagas: any[] = []
+        if (detectedFamily) {
+          // Se identificamos a família no objetivo, pega TODAS as vagas ativas dessa família
+          topMatchedVagas = vagas.filter((v) =>
+            normalizeString(v.titulo || '').includes(detectedFamily!),
+          )
+          console.log(
+            `[identify-vaga-from-cv] Família detectada: "${detectedFamily}". Encontradas ${topMatchedVagas.length} vagas da mesma família para comparação.`,
+          )
+        }
+
+        if (topMatchedVagas.length === 0) {
+          // Fallback para as vagas empatadas com a maior pontuação de match
+          topMatchedVagas = matchedVagas
+            .filter((item) => item.matchScore === maxScore)
+            .map((item) => item.vaga)
+        }
 
         if (topMatchedVagas.length > 0 && maxScore > 0) {
           const {
@@ -944,6 +1024,7 @@ Deno.serve(async (req: Request) => {
             menorDistanciaKm,
             dentroDoRaio,
             raioMaximoKm,
+            metodoGeolocalizacao,
           } = await pickBestVagaByProximity(candidatoEndereco, topMatchedVagas, googleApiKey)
 
           // Se a proximidade não pôde determinar uma vaga segura (ex: falha de geolocalização e sem candidatoCoords)
@@ -966,9 +1047,9 @@ Deno.serve(async (req: Request) => {
           let proxText = ''
           if (topMatchedVagas.length > 1) {
             if (menorDistanciaKm !== null) {
-              proxText = ` Desempate por proximidade entre as opções (${topMatchedVagas.map((v) => v.titulo).join(', ')}): escolhida a vaga mais próxima (${menorDistanciaKm.toFixed(1)} km) do endereço "${candidatoEndereco}".`
+              proxText = ` Comparação de todas as vagas da família (${topMatchedVagas.map((v) => v.titulo).join(', ')}): escolhida a vaga de melhor encaixe (${bestMatchVaga.titulo}) a ${menorDistanciaKm.toFixed(1)} km do endereço "${candidatoEndereco}" (método: ${metodoGeolocalizacao || 'geolocalizacao'}).`
             } else if (candidatoEndereco) {
-              proxText = ` Vagas com mesmo cargo disponíveis (${topMatchedVagas.map((v) => v.titulo).join(', ')}); selecionada a unidade com base no cadastro.`
+              proxText = ` Vagas da mesma família avaliadas (${topMatchedVagas.map((v) => v.titulo).join(', ')}); selecionada a unidade com base no cadastro.`
             }
           }
 
@@ -983,7 +1064,8 @@ Deno.serve(async (req: Request) => {
                 confianca: 'baixa',
                 distancia_km: menorDistanciaKm,
                 raio_maximo_km: raioMaximoKm,
-                justificativa: `Candidato tem perfil para "${candidatoObjetivo}", mas mora a ${menorDistanciaKm.toFixed(1)} km, excedendo o raio limite de ${raioMaximoKm} km da garagem mais próxima (${bestMatchVaga.titulo}).`,
+                metodo_geolocalizacao: metodoGeolocalizacao || 'geocodificacao',
+                justificativa: `Candidato tem perfil para "${candidatoObjetivo}", mas mora a ${menorDistanciaKm.toFixed(1)} km, excedendo o raio limite de ${raioMaximoKm} km de todas as garagens da família (${topMatchedVagas.map((v) => v.titulo).join(', ')}).`,
                 aguardando_vaga: true,
               }),
               { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
@@ -991,13 +1073,15 @@ Deno.serve(async (req: Request) => {
           }
 
           console.log(
-            `[identify-vaga-from-cv] Match direto por objetivo "${candidatoObjetivo}" com vaga "${bestMatchVaga.titulo}" (ID: ${bestMatchVaga.id})`,
+            `[identify-vaga-from-cv] Match direto por objetivo "${candidatoObjetivo}" com vaga "${bestMatchVaga.titulo}" (ID: ${bestMatchVaga.id}, dist=${menorDistanciaKm} km)`,
           )
           return new Response(
             JSON.stringify({
               vaga_id: bestMatchVaga.id,
               confianca: 'alta',
-              justificativa: `Vaga identificada com alta prioridade devido à correspondência direta entre o objetivo do candidato ("${candidatoObjetivo}") e a vaga ("${bestMatchVaga.titulo}").${proxText}`,
+              distancia_km: menorDistanciaKm,
+              metodo_geolocalizacao: metodoGeolocalizacao || 'geocodificacao',
+              justificativa: `Vaga identificada comparando todas as vagas da família "${detectedFamily || candidatoObjetivo}". Selecionada "${bestMatchVaga.titulo}".${proxText}`,
             }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
           )
@@ -1193,9 +1277,12 @@ Deno.serve(async (req: Request) => {
             menorDistanciaKm,
             dentroDoRaio,
             raioMaximoKm,
+            metodoGeolocalizacao,
           } = await pickBestVagaByProximity(candidatoEndereco, sameFamilyVagas, googleApiKey)
 
           if (closerVaga) {
+            result.distancia_km = menorDistanciaKm
+            result.metodo_geolocalizacao = metodoGeolocalizacao || 'geocodificacao'
             if (!dentroDoRaio && menorDistanciaKm !== null) {
               console.log(
                 `[identify-vaga-from-cv] Família compatível identificada, mas nenhuma garagem dentro do raio (${menorDistanciaKm.toFixed(1)} km > ${raioMaximoKm} km).`,
@@ -1205,10 +1292,10 @@ Deno.serve(async (req: Request) => {
               result.justificativa = `Candidato compatível com a função (${selectedVaga.titulo}), mas distância até a garagem mais próxima (${closerVaga.titulo}, ${menorDistanciaKm.toFixed(1)} km) excede o raio de ${raioMaximoKm} km.`
             } else if (closerVaga.id !== result.vaga_id) {
               console.log(
-                `[identify-vaga-from-cv] Ajustando vaga da mesma família por proximidade: de "${selectedVaga.titulo}" para "${closerVaga.titulo}".`,
+                `[identify-vaga-from-cv] Ajustando vaga da mesma família por proximidade: de "${selectedVaga.titulo}" para "${closerVaga.titulo}" (${menorDistanciaKm} km, método: ${metodoGeolocalizacao}).`,
               )
               result.vaga_id = closerVaga.id
-              result.justificativa = `${result.justificativa || ''} Garagem ajustada para "${closerVaga.titulo}" por estar mais próxima do endereço.`
+              result.justificativa = `${result.justificativa || ''} Garagem ajustada para "${closerVaga.titulo}" por estar mais próxima do endereço (${menorDistanciaKm?.toFixed(1)} km, método: ${metodoGeolocalizacao}).`
             }
           }
         }

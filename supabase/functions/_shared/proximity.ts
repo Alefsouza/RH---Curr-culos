@@ -140,6 +140,10 @@ export const KNOWN_CEP_COORDS: Record<string, Coordinates> = {
   // Anthony Guimarães (Rua Cônego José Maria Fernandes, 320, Sapopemba - CEP 03983-020 aprox)
   '03983-020': { lat: -23.607, lng: -46.514 },
   '03983020': { lat: -23.607, lng: -46.514 },
+
+  // Gustavo Machado Lopes (Av. dos Ourives, 1001, Parque Bristol, Cursino - CEP 04194-260)
+  '04194-260': { lat: -23.649, lng: -46.602 },
+  '04194260': { lat: -23.649, lng: -46.602 },
 }
 
 // Fórmula de Haversine para cálculo de distância em km entre dois pontos geográficos
@@ -428,6 +432,10 @@ export function getReferenceCoordsForText(text: string): Coordinates | null {
     norm.includes('zona sul') ||
     /\bzs\b/.test(norm) ||
     /\b(zona\s+sul|sp\s+sul|sao\s+paulo\s+sul)\b/.test(norm) ||
+    norm.includes('parque bristol') ||
+    norm.includes('pq bristol') ||
+    norm.includes('pq. bristol') ||
+    norm.includes('ourives') ||
     norm.includes('maria estela') ||
     norm.includes('henri lebasque') ||
     norm.includes('vila das merces') ||
