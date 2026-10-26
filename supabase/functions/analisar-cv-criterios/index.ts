@@ -16,11 +16,15 @@ import {
   geocodeAddress,
   getReferenceCoordsForText,
   isTruncatedOrIncompleteAddress,
-  sanitizeAddressString,
-  REFERENCE_LOCATIONS,
   KNOWN_CEP_COORDS,
+  REFERENCE_LOCATIONS,
+  sanitizeAddressString,
   Coordinates,
 } from '../_shared/proximity.ts'
+import {
+  calculateNeighborhoodProximity,
+  buildNeighborhoodQuery,
+} from '../_shared/geocode-neighborhood.ts'
 import {
   checkBusOrTruckDriverExperience,
   isAppOrLightVehicleDriver,
@@ -158,6 +162,8 @@ Deno.serve(async (req: Request) => {
     let menorDistanciaKm: number = 0
     let qualificadoPorLocalizacao = true
     let distanciaCalculada = false
+    let validadoPorBairroAproximado = false
+    let bairroGeocodificadoOrigem: string | null = null
 
     if (localizacoesVaga.length > 0 && raioKm > 0) {
       if (!enderecoCV) {
@@ -226,9 +232,16 @@ Deno.serve(async (req: Request) => {
         }
 
         let minC: number | null = null
+
+        // 1. Tentar Distance Matrix primária se endereço tiver rua/número ou se não for truncado
+        // Mesmo se for truncado/bairro, tentamos Distance Matrix com endereço enriquecido
         if (googleApiKey) {
+          const originToTest = isTruncatedOrIncompleteAddress(enderecoCV)
+            ? buildNeighborhoodQuery(enderecoCV)
+            : enderecoCV
+
           for (const locVaga of localizacoesVaga) {
-            const dist = await callGoogleMapsWithRetry(enderecoCV, locVaga)
+            const dist = await callGoogleMapsWithRetry(originToTest, locVaga)
             if (dist !== null) {
               if (minC === null || dist < minC) {
                 minC = dist
@@ -237,33 +250,71 @@ Deno.serve(async (req: Request) => {
           }
         }
 
-        // Se Distance Matrix falhou (ex: endereço mal formatado ou limite de quota), tentar fallback por geocodificação ou palavras-chave de região
+        // 2. Se Distance Matrix falhou OU o endereço for só de bairro/incompleto:
+        // REGRA MANDATÓRIA DO RH: Endereço do CV com só o nome do bairro (sem rua/número,
+        // ex. "Jardim Vila Carrão, São Paulo - SP") DEVE ser validado por distância contra a(s) garagem(s)
+        // da vaga — não precisa ser endereço exato; distância aproximada do bairro basta.
+        // NUNCA travar em "revisar" só por ser bairro.
+        if (minC === null || isTruncatedOrIncompleteAddress(enderecoCV)) {
+          try {
+            const neighborhoodCalc = await calculateNeighborhoodProximity(
+              enderecoCV,
+              localizacoesVaga,
+              vaga.titulo || '',
+              googleApiKey,
+              JSON.stringify(extracted),
+            )
+
+            if (neighborhoodCalc.menorDistanciaKm !== null) {
+              // Se Distance Matrix não tinha retornado, usamos a distância por geocodificação do bairro
+              if (minC === null || isTruncatedOrIncompleteAddress(enderecoCV)) {
+                minC = neighborhoodCalc.menorDistanciaKm
+                validadoPorBairroAproximado = true
+                bairroGeocodificadoOrigem = neighborhoodCalc.origem || 'geocodificacao_bairro'
+                console.log(
+                  `[analisar-cv-criterios] Distância validada por bairro aproximado ("${enderecoCV}" -> ~${minC.toFixed(2)} km, origem=${bairroGeocodificadoOrigem})`,
+                )
+              }
+            }
+          } catch (nhErr: any) {
+            console.warn(
+              '[analisar-cv-criterios] Falha no cálculo de proximidade por bairro:',
+              nhErr?.message,
+            )
+          }
+        }
+
+        // 3. Fallback adicional genérico por coordenadas/referência textual caso ainda minC seja null
         if (minC === null) {
           try {
             let candidateCoords: Coordinates | null = null
 
-            // 1. Tentar mapa de CEPs conhecidos
+            // Mapa de CEPs conhecidos
             const detectedCepForCoords =
               extractCep(enderecoCV) ||
               extractCep(extracted.cep) ||
               extractCep(JSON.stringify(extracted))
             if (detectedCepForCoords && KNOWN_CEP_COORDS[detectedCepForCoords]) {
               candidateCoords = KNOWN_CEP_COORDS[detectedCepForCoords]
+              validadoPorBairroAproximado = true
             }
 
-            // 2. Geocoding API
+            // Geocoding API genérica
             if (!candidateCoords && googleApiKey) {
               candidateCoords = await geocodeAddress(
                 enderecoCV,
                 googleApiKey,
                 JSON.stringify(extracted),
               )
+              if (candidateCoords) validadoPorBairroAproximado = true
             }
 
-            // 3. Fallback de referência textual
+            // Fallback de referência textual
             if (!candidateCoords) {
               candidateCoords = getReferenceCoordsForText(enderecoCV)
+              if (candidateCoords) validadoPorBairroAproximado = true
             }
+
             if (candidateCoords) {
               for (const locVaga of localizacoesVaga) {
                 let vagaCoords: Coordinates | null = null
@@ -517,12 +568,13 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
       } else if (distanciaCalculada && !qualificadoPorLocalizacao) {
         // SALVAGUARDA DE DISTÂNCIA IMPLAUSÍVEL:
         // Distância > 150 km em regiões metropolitanas frequentemente decorre de ambiguidade de geocodificação
-        // (ex.: "Jardim - SP" resolvido para o município de Jardim em vez do bairro Jardim na capital).
-        // NUNCA reprovar automaticamente quando a distância for implausível (> 150 km) ou o endereço for truncado/ambíguo:
-        // classificar como "revisar" para análise humana, impedindo a eliminação indevida do candidato.
-        if (menorDistanciaKm > 150 || isTruncatedOrIncompleteAddress(enderecoCV)) {
+        // (ex.: "Jardim - SP" resolvido para o município de Jardim - MS em vez do bairro Jardim na capital).
+        // REGRA DO RH: Endereço só de bairro já geocodificado de forma consistente NÃO deve travar em "revisar"
+        // apenas por ser bairro; mas se a distância for implausível (> 150 km) ou tiver extrema ambiguidade
+        // sem número de CEP e fora da Grande SP, encaminhar para revisão humana.
+        if (menorDistanciaKm > 150) {
           statusFinal = 'revisar'
-          motivoFinal = `Necessário revisar localização humana: distância calculada (${menorDistanciaKm.toFixed(2)} km) excede 150 km ou o endereço extraído ("${enderecoCV}") pode conter ambiguidade de bairro/cidade. Encaminhado para validação humana sem reprovação automática.`
+          motivoFinal = `Necessário revisar localização humana: distância calculada (${menorDistanciaKm.toFixed(2)} km) excede 150 km ou o endereço extraído ("${enderecoCV}") pode conter ambiguidade geográfica. Encaminhado para validação humana sem reprovação automática.`
           if (resultJson.detalhes) {
             resultJson.detalhes.score = Math.max(resultJson.detalhes.score || 0, 70)
             if (Array.isArray(resultJson.detalhes.unmatched_criteria)) {
@@ -541,12 +593,15 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
           }
         } else {
           statusFinal = 'nao_qualificado'
+          const bairroObs = validadoPorBairroAproximado
+            ? ' (validada por geocodificação aproximada do bairro)'
+            : ''
           if (
             !motivoFinal.toLowerCase().includes('localização') &&
             !motivoFinal.toLowerCase().includes('distância') &&
             !motivoFinal.toLowerCase().includes('raio')
           ) {
-            motivoFinal = `Reprovado por localização: Distância calculada de ${menorDistanciaKm.toFixed(2)} km ultrapassa o limite aceitável de ${raioKm} km. ${motivoFinal}`
+            motivoFinal = `Reprovado por localização: Distância calculada de ${menorDistanciaKm.toFixed(2)} km ultrapassa o limite aceitável de ${raioKm} km${bairroObs}. ${motivoFinal}`
           }
         }
       } else if (distanciaCalculada && qualificadoPorLocalizacao) {
@@ -572,9 +627,12 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
             return n.includes('localiz') || n.includes('dist') || n.includes('regi')
           })
           if (!hasLocMatched) {
+            const modoTexto = validadoPorBairroAproximado
+              ? ' (validada por geocodificação aproximada do bairro)'
+              : ''
             resultJson.detalhes.matched_criteria.push({
               nome: 'Localização',
-              evidencia: `Candidato reside a ${menorDistanciaKm.toFixed(2)} km da garagem, dentro do raio aceitável de ${raioKm} km.`,
+              evidencia: `Candidato reside a ${menorDistanciaKm.toFixed(2)} km da garagem, dentro do raio aceitável de ${raioKm} km${modoTexto}.`,
             })
           }
         }
@@ -593,7 +651,10 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
             : []
           if (remainingUnmatched.length === 0) {
             statusFinal = 'qualificado'
-            motivoFinal = `Qualificado: Candidato reside a ${menorDistanciaKm.toFixed(2)} km da garagem (raio aceitável de ${raioKm} km) e atende aos requisitos da vaga.`
+            const modoTexto = validadoPorBairroAproximado
+              ? ' (distância validada por geocodificação aproximada do bairro)'
+              : ''
+            motivoFinal = `Qualificado: Candidato reside a ${menorDistanciaKm.toFixed(2)} km da garagem (raio aceitável de ${raioKm} km)${modoTexto} e atende aos requisitos da vaga.`
             if (resultJson.detalhes) {
               resultJson.detalhes.score = Math.max(resultJson.detalhes.score || 0, 85)
             }
@@ -604,6 +665,31 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
               .map((u: any) => u.motivo || u.nome)
               .join('; ')
             motivoFinal = remainingNonLoc || 'Candidato não atende a critério da vaga.'
+          }
+        } else if (statusFinal === 'revisar' && validadoPorBairroAproximado) {
+          // REGRA MANDATÓRIA: NUNCA travar em "revisar" apenas por ser bairro!
+          // Se estava em "revisar" por causa de endereço incompleto/bairro ou aviso de localização,
+          // e não há outros impedimentos críticos (ex: dúvida real de habilitação), qualificar se preencher requisitos.
+          const remainingUnmatched = Array.isArray(resultJson.detalhes?.unmatched_criteria)
+            ? resultJson.detalhes.unmatched_criteria
+            : []
+          const motivoLower = (motivoFinal || '').toLowerCase()
+          const isTravaExclusivaEndereco =
+            motivoLower.includes('distância não verificada') ||
+            motivoLower.includes('distancia nao verificada') ||
+            motivoLower.includes('localização humana') ||
+            motivoLower.includes('localizacao humana') ||
+            motivoLower.includes('endereço extraído') ||
+            motivoLower.includes('ambiguidade')
+
+          if (isTravaExclusivaEndereco && remainingUnmatched.length === 0) {
+            statusFinal = 'qualificado'
+            motivoFinal = `Qualificado: Candidato reside a ${menorDistanciaKm.toFixed(2)} km da garagem (raio aceitável de ${raioKm} km, validado por geocodificação aproximada do bairro "${enderecoCV}") e atende aos critérios da vaga.`
+            if (resultJson.detalhes) {
+              resultJson.detalhes.score = Math.max(resultJson.detalhes.score || 0, 85)
+              resultJson.detalhes.distancia_nao_verificada = false
+              delete resultJson.detalhes.aviso_localizacao
+            }
           }
         }
       }
@@ -1153,6 +1239,10 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
       resultJson.detalhes.motivo = motivoFinal
       if (distanciaCalculada) {
         resultJson.detalhes.distancia_km = Number(menorDistanciaKm.toFixed(1))
+        if (validadoPorBairroAproximado) {
+          resultJson.detalhes.validado_por_bairro = true
+          resultJson.detalhes.modo_distancia = 'geocodificacao_bairro'
+        }
       }
     }
 

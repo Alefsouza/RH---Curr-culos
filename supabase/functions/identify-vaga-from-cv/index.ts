@@ -10,7 +10,9 @@ import {
   getReferenceCoordsForText,
   isTruncatedOrIncompleteAddress,
   REFERENCE_LOCATIONS,
+  Coordinates,
 } from '../_shared/proximity.ts'
+import { geocodeNeighborhoodOrIncompleteAddress } from '../_shared/geocode-neighborhood.ts'
 import {
   resolveCandidateAge,
   extractBirthDateWithContext,
@@ -367,7 +369,21 @@ async function pickBestVagaByProximity(
   try {
     let candidateCoords: Coordinates | null = null
 
-    if (googleApiKey) {
+    // Se endereço for só de bairro / incompleto, tentar geocodificação de bairro especializada primeiro
+    if (isTruncatedOrIncompleteAddress(candidateAddressStr)) {
+      const geoBairro = await geocodeNeighborhoodOrIncompleteAddress(
+        candidateAddressStr,
+        googleApiKey,
+      )
+      if (geoBairro.coords) {
+        candidateCoords = geoBairro.coords
+        console.log(
+          `[identify-vaga] Bairro geocodificado com sucesso para candidato: "${candidateAddressStr}" (origem: ${geoBairro.origem})`,
+        )
+      }
+    }
+
+    if (!candidateCoords && googleApiKey) {
       candidateCoords = await geocodeAddress(candidateAddressStr, googleApiKey)
     }
 

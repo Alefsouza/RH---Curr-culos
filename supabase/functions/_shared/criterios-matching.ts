@@ -16,9 +16,11 @@ import {
   formatAddressString,
   geocodeAddress,
   getReferenceCoordsForText,
+  isTruncatedOrIncompleteAddress,
   REFERENCE_LOCATIONS,
   Coordinates,
 } from './proximity.ts'
+import { geocodeNeighborhoodOrIncompleteAddress } from './geocode-neighborhood.ts'
 
 export interface InferredCandidateRole {
   roles: string[]
@@ -938,11 +940,26 @@ export async function evaluateGenericCandidateAgainstAllVagas(
   const candidatoEndereco = formatAddressString(cvData?.endereco, cvData)
   let candidateCoords: Coordinates | null = null
 
-  if (candidatoEndereco && googleApiKey) {
-    candidateCoords = await geocodeAddress(candidatoEndereco, googleApiKey)
-  }
-  if (!candidateCoords && candidatoEndereco) {
-    candidateCoords = getReferenceCoordsForText(candidatoEndereco)
+  // Geocodificação com suporte a bairro puro/endereço incompleto
+  if (candidatoEndereco) {
+    if (isTruncatedOrIncompleteAddress(candidatoEndereco)) {
+      const geoBairro = await geocodeNeighborhoodOrIncompleteAddress(
+        candidatoEndereco,
+        googleApiKey,
+        JSON.stringify(cvData || {}),
+      )
+      if (geoBairro.coords) {
+        candidateCoords = geoBairro.coords
+      }
+    }
+
+    if (!candidateCoords && googleApiKey) {
+      candidateCoords = await geocodeAddress(candidatoEndereco, googleApiKey)
+    }
+
+    if (!candidateCoords) {
+      candidateCoords = getReferenceCoordsForText(candidatoEndereco)
+    }
   }
 
   // Avalia contra todas as vagas ativas
