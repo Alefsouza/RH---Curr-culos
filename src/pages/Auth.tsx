@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { useAuth } from '@/hooks/use-auth'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { Navigate } from 'react-router-dom'
-import { Mail, Lock, Eye, EyeOff, AlertCircle, KeyRound } from 'lucide-react'
+import { Eye, EyeOff, KeyRound, Loader2, Lock, Mail } from 'lucide-react'
+
+const BG_IMAGE_URL =
+  'https://wrnhfpncasqifaisvyaf.supabase.co/storage/v1/object/public/assets/6.jpeg'
+const LOGO_URL =
+  'https://wrnhfpncasqifaisvyaf.supabase.co/storage/v1/object/public/assets/logo_branco_transparente_nitido-80a6a-BIUCr1YD.png'
 
 export default function AuthPage() {
   const [email, setEmail] = useState('financeiro@viasudeste.com')
@@ -26,12 +28,17 @@ export default function AuthPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true)
     setAuthError(null)
 
-    const { error } = await signIn(email, password)
+    if (!email.trim() || !password) {
+      setAuthError('Informe e-mail e senha para entrar.')
+      return
+    }
+
+    setLoading(true)
+    const { error } = await signIn(email.trim(), password)
     if (error) {
-      setAuthError(error.message)
+      setAuthError('Credenciais inválidas. Verifique seu e-mail e senha.')
       toast({ variant: 'destructive', title: 'Erro no login', description: error.message })
     } else {
       toast({ title: 'Bem-vindo de volta!' })
@@ -58,166 +65,211 @@ export default function AuthPage() {
   }
 
   return (
-    <div className="auth-page relative min-h-screen flex items-center justify-center p-4 overflow-hidden bg-slate-950">
-      {/* Background Image covering full area */}
+    <div className="relative flex min-h-screen w-full flex-col items-center justify-center overflow-hidden bg-slate-950 p-4 selection:bg-emerald-500 selection:text-white">
+      {/* Background Image com Cover */}
       <div
-        className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-        style={{
-          backgroundImage: `url('https://wrnhfpncasqifaisvyaf.supabase.co/storage/v1/object/public/assets/6.jpeg')`,
-        }}
+        className="absolute inset-0 scale-105 transform bg-cover bg-center bg-no-repeat transition-transform duration-1000"
+        style={{ backgroundImage: `url("${BG_IMAGE_URL}")` }}
       />
-      {/* Dark overlay for contrast and readability */}
-      <div className="absolute inset-0 bg-slate-950/65 backdrop-blur-[2px]" />
-      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-slate-950/40" />
 
-      <div className="relative z-10 w-full max-w-md animate-fade-in-up">
-        {/* Logo Section */}
-        <div className="flex justify-center mb-6">
+      {/* Overlay escuro com leve gradiente para imersão cinematográfica */}
+      <div className="absolute inset-0 bg-gradient-to-b from-black/75 via-black/60 to-black/85 backdrop-blur-[2px]" />
+
+      {/* Container Principal */}
+      <div className="animate-fade-in-up relative z-10 flex w-full max-w-[440px] flex-col items-center">
+        {/* Logo Via Sudeste em contêiner estilizado (glass box arredondado) */}
+        <div className="mb-6 flex items-center justify-center rounded-2xl border border-white/15 bg-white/[0.08] px-8 py-4 shadow-2xl shadow-black/40 ring-1 ring-white/10 backdrop-blur-xl transition-all duration-300 hover:border-white/25">
           <img
-            src="https://wrnhfpncasqifaisvyaf.supabase.co/storage/v1/object/public/assets/logo_branco_transparente_nitido-80a6a-BIUCr1YD.png"
-            alt="Logo Via Sudeste"
-            crossOrigin="anonymous"
-            referrerPolicy="no-referrer"
-            className="h-16 md:h-20 w-auto object-contain drop-shadow-lg"
+            src={LOGO_URL}
+            alt="Via Sudeste Transportes S/A"
+            className="h-16 w-auto select-none object-contain drop-shadow-md"
+            loading="eager"
           />
         </div>
 
-        {/* Card */}
-        <div className="glass-card rounded-2xl border border-white/20 bg-white/10 backdrop-blur-xl p-8 md:p-10">
-          <div className="mb-6 text-center">
-            <h2 className="text-xl font-bold text-white uppercase tracking-wide">
-              Gestão de Currículos
-            </h2>
-            <p className="text-sm text-white/60 mt-2">
+        {/* Card de Login Glassmorphism */}
+        <div className="w-full rounded-2xl border border-white/15 bg-slate-900/40 p-7 shadow-[0_20px_50px_rgba(0,0,0,0.6)] ring-1 ring-white/10 backdrop-blur-xl sm:p-8">
+          {/* Cabeçalho do Card */}
+          <div className="text-center">
+            <h1 className="font-sans text-xl font-extrabold uppercase tracking-wider text-white drop-shadow-sm sm:text-2xl">
+              GESTÃO DE CURRÍCULOS
+            </h1>
+            <p className="mt-1.5 text-xs font-normal text-slate-200/80 sm:text-sm">
               Insira suas credenciais para acessar sua conta
             </p>
           </div>
 
           {authError && (
-            <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-400/30 bg-red-500/15 px-4 py-3 backdrop-blur-sm animate-fade-in">
-              <AlertCircle className="h-4 w-4 text-red-300 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-red-100">{authError}</p>
+            <div className="mt-4 animate-fade-in rounded-lg border border-red-500/30 bg-red-500/15 p-2.5 text-center text-xs font-medium text-red-200">
+              {authError}
             </div>
           )}
 
           {!showResetForm ? (
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email" className="text-white/80 text-sm font-medium">
-                  Email
-                </Label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[hsl(149_100%_45%)] pointer-events-none" />
-                  <Input
+            <form onSubmit={handleSubmit} className="mt-7 space-y-4" noValidate>
+              {/* Campo E-mail */}
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="email"
+                  className="block text-xs font-semibold uppercase tracking-wider text-slate-200"
+                >
+                  E-mail <span className="text-red-400">*</span>
+                </label>
+                <div className="relative flex items-center">
+                  <div className="pointer-events-none absolute left-3.5 flex items-center justify-center text-slate-500">
+                    <Mail className="h-4 w-4" />
+                  </div>
+                  <input
                     id="email"
                     type="email"
-                    placeholder="seu@email.com"
+                    autoComplete="email"
+                    placeholder="ti@viasudeste.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    required
-                    className="glass-input h-11 pl-10"
+                    className={`h-11 w-full rounded-lg border bg-white/95 pl-10 pr-4 text-sm font-medium text-slate-900 shadow-inner outline-none transition-all duration-200 placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-500/70 ${
+                      authError ? 'border-red-400 bg-red-50/90 text-red-900' : 'border-white/20'
+                    }`}
                   />
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="password" className="text-white/80 text-sm font-medium">
-                  Senha
-                </Label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[hsl(149_100%_45%)] pointer-events-none" />
-                  <Input
+              {/* Campo Senha */}
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="password"
+                  className="block text-xs font-semibold uppercase tracking-wider text-slate-200"
+                >
+                  Senha <span className="text-red-400">*</span>
+                </label>
+                <div className="relative flex items-center">
+                  <div className="pointer-events-none absolute left-3.5 flex items-center justify-center text-slate-500">
+                    <Lock className="h-4 w-4" />
+                  </div>
+                  <input
                     id="password"
                     type={showPassword ? 'text' : 'password'}
-                    placeholder="••••••••"
+                    autoComplete="current-password"
+                    placeholder="••••••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    required
-                    className="glass-input h-11 pl-10 pr-10"
+                    className={`h-11 w-full rounded-lg border bg-white/95 pl-10 pr-11 text-sm font-medium text-slate-900 shadow-inner outline-none transition-all duration-200 placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-500/70 ${
+                      authError ? 'border-red-400 bg-red-50/90 text-red-900' : 'border-white/20'
+                    }`}
                   />
                   <button
                     type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/80 transition-colors duration-200 focus:outline-none"
-                    aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    tabIndex={-1}
+                    className="absolute right-3 flex items-center justify-center rounded p-1 text-slate-500 transition-colors hover:text-slate-800 focus:outline-none"
+                    aria-label={showPassword ? 'Ocultar senha' : 'Exibir senha'}
                   >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4 text-emerald-700" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
                   </button>
                 </div>
               </div>
 
-              <div className="flex justify-end"></div>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowResetForm(true)}
+                  className="text-xs font-medium text-emerald-300 transition-colors hover:text-emerald-200"
+                >
+                  Esqueci a senha
+                </button>
+              </div>
 
-              <Button
-                type="submit"
-                className="w-full h-11 bg-[hsl(149_100%_33%)] hover:bg-[hsl(149_100%_28%)] text-white font-semibold shadow-lg transition-all duration-200 hover:shadow-xl mt-2"
-                disabled={loading}
-              >
-                {loading ? (
-                  <span className="flex items-center gap-2">
-                    <span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Aguarde...
-                  </span>
-                ) : (
-                  'Entrar'
-                )}
-              </Button>
+              {/* Botão de Entrar (Verde Corporativo) */}
+              <div className="pt-1">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="relative flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#22633d] text-sm font-semibold tracking-wide text-white shadow-lg shadow-black/30 ring-1 ring-white/10 transition-all duration-200 hover:bg-[#1b5232] hover:shadow-emerald-900/30 active:scale-[0.99] active:bg-[#164329] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin text-white" />
+                      <span>Entrando…</span>
+                    </>
+                  ) : (
+                    <span>Entrar</span>
+                  )}
+                </button>
+              </div>
             </form>
           ) : (
-            <form onSubmit={handleResetPassword} className="space-y-4">
-              <div className="flex items-center gap-2 mb-2 text-white/80">
-                <KeyRound className="h-4 w-4 text-[hsl(149_100%_45%)]" />
-                <span className="text-sm font-medium">Recuperar Senha</span>
+            <form onSubmit={handleResetPassword} className="mt-7 space-y-4">
+              <div className="mb-2 flex items-center gap-2 text-slate-200">
+                <KeyRound className="h-4 w-4 text-emerald-400" />
+                <span className="text-sm font-semibold">Recuperar senha</span>
               </div>
-              <p className="text-xs text-white/50 mb-2">
+              <p className="text-xs text-slate-300/70">
                 Informe seu e-mail e enviaremos um link para redefinir sua senha.
               </p>
-              <div className="space-y-2">
-                <Label htmlFor="reset-email" className="text-white/80 text-sm font-medium">
-                  Email
-                </Label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[hsl(149_100%_45%)] pointer-events-none" />
-                  <Input
+
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="reset-email"
+                  className="block text-xs font-semibold uppercase tracking-wider text-slate-200"
+                >
+                  E-mail <span className="text-red-400">*</span>
+                </label>
+                <div className="relative flex items-center">
+                  <div className="pointer-events-none absolute left-3.5 flex items-center justify-center text-slate-500">
+                    <Mail className="h-4 w-4" />
+                  </div>
+                  <input
                     id="reset-email"
                     type="email"
-                    placeholder="seu@email.com"
+                    placeholder="ti@viasudeste.com"
                     value={resetEmail}
                     onChange={(e) => setResetEmail(e.target.value)}
                     required
-                    className="glass-input h-11 pl-10"
+                    className="h-11 w-full rounded-lg border border-white/20 bg-white/95 pl-10 pr-4 text-sm font-medium text-slate-900 shadow-inner outline-none transition-all duration-200 placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-500/70"
                   />
                 </div>
               </div>
-              <Button
+
+              <button
                 type="submit"
-                className="w-full h-11 bg-[hsl(149_100%_33%)] hover:bg-[hsl(149_100%_28%)] text-white font-semibold shadow-lg transition-all duration-200 hover:shadow-xl"
                 disabled={resetLoading}
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#22633d] text-sm font-semibold text-white shadow-lg shadow-black/30 ring-1 ring-white/10 transition-all duration-200 hover:bg-[#1b5232] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {resetLoading ? (
-                  <span className="flex items-center gap-2">
-                    <span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Enviando...
-                  </span>
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin text-white" />
+                    <span>Enviando…</span>
+                  </>
                 ) : (
-                  'Enviar link de recuperação'
+                  <span>Enviar link de recuperação</span>
                 )}
-              </Button>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setShowResetForm(false)}
-                className="w-full text-xs text-white/50 hover:text-white/80 transition-colors duration-200"
+                className="w-full text-xs text-slate-300/70 transition-colors hover:text-white"
               >
                 Voltar para o login
               </button>
             </form>
           )}
 
-          {!showResetForm && <div className="mt-6 text-center"></div>}
+          {/* Rodapé do Card */}
+          <div className="mt-6 text-center">
+            <p className="text-xs text-slate-300/80">
+              Acesso restrito ao sistema interno{' '}
+              <span className="font-semibold text-white">Via Sudeste</span>
+            </p>
+          </div>
         </div>
 
-        <p className="mt-6 text-center text-xs text-white/40">
-          © {new Date().getFullYear()} Via Sudeste — Todos os direitos reservados
+        {/* Informações de copyright/versão discretas no fundo */}
+        <p className="mt-6 text-center text-[11px] text-white/50">
+          © {new Date().getFullYear()} Via Sudeste Transportes S/A. Todos os direitos reservados.
         </p>
       </div>
     </div>
