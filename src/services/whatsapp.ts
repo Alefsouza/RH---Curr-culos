@@ -4,13 +4,13 @@ export interface WhatsappCandidate {
   id: string
   nome: string
   telefone: string
-  whatsapp_status?: string | null
+  whatsapp_status: string | null
   lastMessage: string
   lastMessageTime: string
   lastResponse: 'sim' | 'nao' | null
   isUnlinked: boolean
   etapaId: string | null
-  ativo_kanban: boolean
+  ativo_kanban?: boolean
   motivo_inativo?: string | null
   conversations: Array<{
     id: string
@@ -18,9 +18,10 @@ export interface WhatsappCandidate {
     direcao: 'enviada' | 'recebida'
     criado_em: string
     status: string | null
-    respostaAssociada: string | null
+    respostaAssociada?: string | null
     erro_detalhe?: string | null
     numero_whatsapp?: string | null
+    fallback_usado?: boolean | null
   }>
 }
 export async function getWhatsappDashboardData() {
@@ -142,7 +143,7 @@ export async function getWhatsappDashboardData() {
         supabase
           .from('mensagens_whatsapp')
           .select(
-            'id, candidato_id, conteudo, direcao, status, criado_em, uazapi_message_id, external_id, numero_whatsapp, template_id, tipo, erro_detalhe, candidatos(nome, telefone, user_id, ultima_resposta_whatsapp, etapa_id, whatsapp_status)',
+            'id, candidato_id, conteudo, direcao, status, criado_em, uazapi_message_id, external_id, numero_whatsapp, fallback_usado, template_id, tipo, erro_detalhe, candidatos(nome, telefone, user_id, ultima_resposta_whatsapp, etapa_id, whatsapp_status)',
           )
           .in('candidato_id', batch)
           .not('conteudo', 'is', null)
@@ -387,6 +388,7 @@ export async function getWhatsappDashboardData() {
       respostaAssociada: resposta,
       erro_detalhe: c.erro_detalhe || null,
       numero_whatsapp: c.numero_whatsapp || null,
+      fallback_usado: (c as any).fallback_usado || null,
     })
     cand.lastMessage = c.conteudo
     cand.lastMessageTime = c.criado_em

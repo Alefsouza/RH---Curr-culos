@@ -191,12 +191,13 @@ Deno.serve(async (req: Request) => {
       perguntaTexto = perguntaTexto.replace(/{nome_vaga}/gi, tituloVaga || 'a vaga')
     }
 
-    // 4. Preparar números (split comma-separated)
+    // 4. Preparar números mantendo a ordem estrita do CV (deduplicados)
     const telefonesStrList = telefoneRaw
-      .split(',')
+      .split(/[,;\n/]+/)
       .map((t: string) => t.trim())
       .filter(Boolean)
     const validPhones: string[] = []
+    const seenPhones = new Set<string>()
 
     for (const t of telefonesStrList) {
       let cleanPhone = t.replace(/\D/g, '')
@@ -204,7 +205,10 @@ Deno.serve(async (req: Request) => {
         cleanPhone = '55' + cleanPhone
       }
       if (cleanPhone.length >= 12 && cleanPhone.length <= 15) {
-        validPhones.push(cleanPhone)
+        if (!seenPhones.has(cleanPhone)) {
+          seenPhones.add(cleanPhone)
+          validPhones.push(cleanPhone)
+        }
       }
     }
 
@@ -390,17 +394,22 @@ Deno.serve(async (req: Request) => {
       throw new Error(cleanReason)
     }
 
-    // 6. Iterar sobre cada número e enviar individualmente
+    // 6. Envio com Fallback em Cascata:
+    // Regra: quando o candidato tem 2 ou mais números, NÃO enviar para ambos.
+    // Envia apenas para o PRIMEIRO. Se o primeiro FALHAR (erro gateway, não-whatsapp, inválido),
+    // tenta o SEGUNDO. Registra no registro qual número foi usado e se houve fallback.
     const attemptResults: Array<{
       phone: string
       success: boolean
       error?: string
+      tentativa: number
+      fallback: boolean
+      skipped_due_to_previous_success?: boolean
     }> = []
     const errors: string[] = []
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
 
     // Texto base gerado para esta mensagem (usado tanto no envio quanto na comparação de idempotência)
-    // Para chatbot interativo, o texto principal é o título (se houver) + pergunta
     const generatedContent = isChatbot
       ? (tituloTexto ? `*${tituloTexto}*\n\n` : '') + perguntaTexto
       : mensagemTexto
@@ -418,18 +427,39 @@ Deno.serve(async (req: Request) => {
 
     const currentNormalized = normalizeForComparison(generatedContent)
 
-    for (const phone of validPhones) {
+    let sendSucceededOnCandidate = false
+    let successfulNumberUsed: string | null = null
+    let fallbackHappened = false
+
+    for (let index = 0; index < validPhones.length; index++) {
+      const phone = validPhones[index]
+      const attemptNumber = index + 1
+      const isFallbackAttempt = index > 0
+
+      // Se um número anterior já teve sucesso no envio, NÃO envia para os números subsequentes!
+      if (sendSucceededOnCandidate) {
+        console.log(
+          `[enviar-whatsapp] Sucesso já obtido no número anterior (${successfulNumberUsed}). Pulando número ${phone} para evitar envio duplicado.`,
+        )
+        attemptResults.push({
+          phone,
+          success: false,
+          tentativa: attemptNumber,
+          fallback: isFallbackAttempt,
+          skipped_due_to_previous_success: true,
+        })
+        continue
+      }
+
       let isSuccess = false
       let errorMessage: string | null = null
       let externalId: string | null = null
       let responseData: any = null
 
-      // Idempotency: verificar a última mensagem enviada com sucesso na última hora
-      // Se o conteúdo for IDÊNTICO ao gerado atualmente -> pular por idempotência
-      // Se o conteúdo for DIFERENTE (ex.: RH corrigiu template, data ou salário) -> permitir novo envio
+      // Idempotency: verificar a última mensagem enviada com sucesso na última hora para este número ou candidato
       const { data: recentMsgs } = await supabase
         .from('mensagens_whatsapp')
-        .select('id, status, conteudo, criado_em')
+        .select('id, status, conteudo, criado_em, numero_whatsapp')
         .eq('candidato_id', candidato.id)
         .eq('numero_whatsapp', phone)
         .eq('etapa_id', etapa_id)
@@ -444,16 +474,24 @@ Deno.serve(async (req: Request) => {
 
       if (lastSentMsg) {
         const lastNormalized = normalizeForComparison(lastSentMsg.conteudo)
-        // Comparação estrita e tolerante a fallback com opções no rodapé
         const isIdentical =
           lastNormalized === currentNormalized ||
           (isChatbot && lastNormalized.startsWith(currentNormalized))
 
         if (isIdentical) {
           console.log(
-            `[enviar-whatsapp] Mensagem com conteúdo idêntico já enviada para ${phone} na última hora (idempotência). Pulando.`,
+            `[enviar-whatsapp] Mensagem com conteúdo idêntico já enviada para ${phone} na última hora (idempotência). Pulando tentativa e mantendo sucesso registrado.`,
           )
-          continue
+          sendSucceededOnCandidate = true
+          successfulNumberUsed = phone
+          fallbackHappened = isFallbackAttempt
+          attemptResults.push({
+            phone,
+            success: true,
+            tentativa: attemptNumber,
+            fallback: isFallbackAttempt,
+          })
+          break
         } else {
           console.log(
             `[enviar-whatsapp] Conteúdo atualizado detectado para ${phone}. Permitindo reenvio legítimo.`,
@@ -461,10 +499,13 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      // Se a pré-verificação já indicou que o número não está no WhatsApp, podemos marcar direto ou tentar envio
+      // Pré-verificação se número está no WhatsApp
       const preCheck = verificationResults[phone]
       if (preCheck && preCheck.isInWhatsapp === false) {
         errorMessage = preCheck.error || `O número ${phone} não está registrado no WhatsApp`
+        console.warn(
+          `[enviar-whatsapp] Pré-check: ${phone} não está no WhatsApp (${errorMessage}).`,
+        )
       } else {
         try {
           responseData = await sendWhatsAppWithRetry(phone, mensagemTexto)
@@ -486,16 +527,21 @@ Deno.serve(async (req: Request) => {
       }
 
       let finalStatus = 'falha'
-      let fallbackUsed = false
+      let uiFallbackUsed = false
       if (isSuccess) {
         const usedType = responseData?._usedPayloadType
         if (usedType === 'fallback') {
           finalStatus = 'enviada (fallback)'
-          fallbackUsed = true
+          uiFallbackUsed = true
         } else if (usedType === 'interativa') {
           finalStatus = 'enviada (interativa)'
         } else {
           finalStatus = 'enviada'
+        }
+        sendSucceededOnCandidate = true
+        successfulNumberUsed = phone
+        if (isFallbackAttempt) {
+          fallbackHappened = true
         }
       } else {
         const displayErr = formatUazapiErrorForDisplay(errorMessage || 'Falha no envio')
@@ -506,17 +552,29 @@ Deno.serve(async (req: Request) => {
         phone,
         success: isSuccess,
         error: errorMessage || undefined,
+        tentativa: attemptNumber,
+        fallback: isFallbackAttempt,
       })
 
       const convText =
-        isChatbot && fallbackUsed
+        isChatbot && uiFallbackUsed
           ? (tituloTexto ? `*${tituloTexto}*\n\n` : '') +
             `${perguntaTexto}\n\n${template.footer_text || 'Escolha uma das opções abaixo'}\n- ${btnSimText}\n- ${btnNaoText}`
           : isChatbot
             ? (tituloTexto ? `*${tituloTexto}*\n\n` : '') + `${perguntaTexto}`
             : mensagemTexto
 
-      // Individual logging per number com erro real gravado em erro_detalhe
+      const detalhesEnvio = {
+        tentativa: attemptNumber,
+        total_numeros: validPhones.length,
+        numero_utilizado: phone,
+        fallback_usado: isFallbackAttempt,
+        primeiro_numero: validPhones[0] || null,
+        segundo_numero: validPhones[1] || null,
+        erro_primeiro_numero: isFallbackAttempt ? attemptResults[0]?.error || null : null,
+      }
+
+      // Registro no banco com colunas dedicadas de rastreamento de fallback
       const { error: insertError } = await supabase.from('mensagens_whatsapp').insert({
         candidato_id: candidato.id,
         etapa_id: etapa_id,
@@ -531,17 +589,36 @@ Deno.serve(async (req: Request) => {
         direcao: 'enviada',
         tipo: isChatbot ? 'interativa' : 'texto',
         erro_detalhe: !isSuccess ? errorMessage : null,
+        fallback_usado: isFallbackAttempt,
+        numero_tentativa: attemptNumber,
+        detalhes_envio: detalhesEnvio,
       } as any)
 
       if (insertError) {
         console.error('Erro ao registrar a mensagem no banco de dados:', insertError.message)
       }
+
+      // Se o envio teve sucesso, interrompe a cascata para NÃO duplicar para o segundo número
+      if (isSuccess) {
+        console.log(
+          `[enviar-whatsapp] Envio bem-sucedido no número ${phone} (tentativa ${attemptNumber}, fallback=${isFallbackAttempt}). Não será enviado para os próximos números.`,
+        )
+        break
+      } else {
+        console.warn(
+          `[enviar-whatsapp] Falha no número ${phone} (tentativa ${attemptNumber}). Motivo: ${errorMessage}. ` +
+            (index + 1 < validPhones.length
+              ? `Tentando próximo número em cascata (fallback)...`
+              : `Todos os números tentados falharam.`),
+        )
+      }
     }
 
     const successfulAttempts = attemptResults.filter((r) => r.success)
-    const failedAttempts = attemptResults.filter((r) => !r.success)
-    const totalPhones = attemptResults.length
-    const allFailed = totalPhones > 0 && failedAttempts.length === totalPhones
+    const failedAttempts = attemptResults.filter(
+      (r) => !r.success && !r.skipped_due_to_previous_success,
+    )
+    const allFailed = !sendSucceededOnCandidate && failedAttempts.length > 0
 
     if (allFailed) {
       const primeiroErroFormatado = failedAttempts[0]?.error
@@ -557,22 +634,8 @@ Deno.serve(async (req: Request) => {
           detalhe: errors.join(' | '),
           motivo_real: primeiroErroFormatado,
           attempts: attemptResults,
-        }),
-        {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        },
-      )
-    }
-
-    if (failedAttempts.length > 0) {
-      return new Response(
-        JSON.stringify({
-          warning: true,
-          all_failed: false,
-          message: `Mensagem enviada com sucesso para ${successfulAttempts.length} número(s), mas falhou em ${failedAttempts.length}.`,
-          detalhe: errors.join(' | '),
-          attempts: attemptResults,
+          fallback_usado: fallbackHappened,
+          total_numeros: validPhones.length,
         }),
         {
           status: 200,
@@ -584,7 +647,12 @@ Deno.serve(async (req: Request) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: 'Mensagens enviadas com sucesso',
+        message: fallbackHappened
+          ? `Mensagem enviada com sucesso para o segundo número (${successfulNumberUsed}) via fallback após falha no primeiro.`
+          : `Mensagem enviada com sucesso para ${successfulNumberUsed || 'o candidato'}.`,
+        numero_utilizado: successfulNumberUsed,
+        fallback_usado: fallbackHappened,
+        total_numeros: validPhones.length,
         attempts: attemptResults,
       }),
       {

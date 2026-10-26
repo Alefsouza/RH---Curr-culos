@@ -386,7 +386,13 @@ export default function CandidateDetails() {
         fetchCandidateData()
         return
       }
-      toast.success('Mensagem reenviada com sucesso!')
+      if (data?.fallback_usado) {
+        toast.success(
+          `Mensagem enviada com sucesso para o 2º número (${data.numero_utilizado}) via fallback.`,
+        )
+      } else {
+        toast.success('Mensagem reenviada com sucesso!')
+      }
       fetchCandidateData()
     } catch (e: any) {
       toast.error(e.message || 'Erro ao reenviar mensagem WhatsApp')
@@ -1110,6 +1116,14 @@ export default function CandidateDetails() {
                             <span className="text-xs text-slate-400 font-normal">
                               ({m.numero_whatsapp})
                             </span>
+                          )}
+                          {m.fallback_usado && (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] h-5 px-1.5 font-normal bg-blue-50 text-blue-700 border-blue-200"
+                            >
+                              2º número (fallback)
+                            </Badge>
                           )}
                         </h4>
                         {m.status === 'falha' && m.erro_detalhe && (

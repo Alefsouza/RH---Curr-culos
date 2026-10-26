@@ -716,6 +716,14 @@ export default function WhatsappPage() {
                                       <AlertCircle className="w-2.5 h-2.5 text-amber-600" /> Falha
                                     </span>
                                   )}
+                                  {msg.fallback_usado && (
+                                    <span
+                                      title="Mensagem enviada para o 2º número após fallback"
+                                      className="flex items-center gap-1 text-[9px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-medium border border-blue-200"
+                                    >
+                                      2º número
+                                    </span>
+                                  )}
                                   <span className="text-[10px] text-slate-500 font-medium leading-none whitespace-nowrap mt-[1px]">
                                     {format(new Date(msg.criado_em), 'HH:mm')}
                                   </span>

@@ -166,9 +166,35 @@ Deno.serve(async (req: Request) => {
       messageId?: string | null
       error?: string
       cleanError?: string
+      tentativa: number
+      fallback: boolean
+      skipped_due_to_previous_success?: boolean
     }> = []
 
-    for (const phone of validPhones) {
+    let sendSucceeded = false
+    let successfulPhoneUsed: string | null = null
+    let fallbackHappened = false
+
+    for (let index = 0; index < validPhones.length; index++) {
+      const phone = validPhones[index]
+      const attemptNumber = index + 1
+      const isFallbackAttempt = index > 0
+
+      // Se já obteve sucesso em um número anterior, não envia para os próximos para evitar duplicação
+      if (sendSucceeded) {
+        console.log(
+          `[enviar-mensagem-direta] Sucesso obtido no número anterior (${successfulPhoneUsed}). Pulando ${phone} para evitar envio duplicado.`,
+        )
+        results.push({
+          phone,
+          success: false,
+          tentativa: attemptNumber,
+          fallback: isFallbackAttempt,
+          skipped_due_to_previous_success: true,
+        })
+        continue
+      }
+
       let externalId: string | null = null
       let sendSuccess = false
       let sendError: string | null = null
@@ -221,7 +247,25 @@ Deno.serve(async (req: Request) => {
         }
       }
 
+      if (sendSuccess) {
+        sendSucceeded = true
+        successfulPhoneUsed = phone
+        if (isFallbackAttempt) {
+          fallbackHappened = true
+        }
+      }
+
       const displayError = sendError ? formatUazapiErrorForDisplay(sendError) : undefined
+
+      const detalhesEnvio = {
+        tentativa: attemptNumber,
+        total_numeros: validPhones.length,
+        numero_utilizado: phone,
+        fallback_usado: isFallbackAttempt,
+        primeiro_numero: validPhones[0] || null,
+        segundo_numero: validPhones[1] || null,
+        erro_primeiro_numero: isFallbackAttempt ? results[0]?.error || null : null,
+      }
 
       const { data: insertData, error: insertError } = await supabase
         .from('mensagens_whatsapp')
@@ -237,7 +281,10 @@ Deno.serve(async (req: Request) => {
           status: sendSuccess ? 'enviada' : 'falha',
           tipo: 'texto',
           erro_detalhe: !sendSuccess ? sendError : null,
-        })
+          fallback_usado: isFallbackAttempt,
+          numero_tentativa: attemptNumber,
+          detalhes_envio: detalhesEnvio,
+        } as any)
         .select('id')
         .single()
 
@@ -251,7 +298,24 @@ Deno.serve(async (req: Request) => {
         messageId: insertData?.id || externalId,
         error: sendError || (insertError ? insertError.message : undefined),
         cleanError: displayError,
+        tentativa: attemptNumber,
+        fallback: isFallbackAttempt,
       })
+
+      // Se teve sucesso, para a iteração (NÃO tenta os números seguintes)
+      if (sendSuccess) {
+        console.log(
+          `[enviar-mensagem-direta] Envio com sucesso para ${phone} (tentativa ${attemptNumber}, fallback=${isFallbackAttempt}). Parando cascata.`,
+        )
+        break
+      } else {
+        console.warn(
+          `[enviar-mensagem-direta] Falha no envio para ${phone} (tentativa ${attemptNumber}). Motivo: ${sendError}. ` +
+            (index + 1 < validPhones.length
+              ? `Tentando próximo número (fallback em cascata)...`
+              : `Todos os números tentados falharam.`),
+        )
+      }
     }
 
     const anySuccess = results.some((r) => r.success)
@@ -296,6 +360,9 @@ Deno.serve(async (req: Request) => {
       JSON.stringify({
         success: true,
         messageId: firstSuccessful?.messageId,
+        numero_utilizado: successfulPhoneUsed,
+        fallback_usado: fallbackHappened,
+        total_numeros: validPhones.length,
         results,
         phones: validPhones,
       }),

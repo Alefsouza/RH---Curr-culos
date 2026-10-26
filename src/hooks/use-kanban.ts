@@ -212,8 +212,16 @@ export function useKanban() {
                   className: 'bg-yellow-500 text-white border-yellow-600',
                 })
               } else if (data?.success) {
+                const desc = data?.fallback_usado
+                  ? `Enviado para o 2º número (${data.numero_utilizado}) após falha no primeiro.`
+                  : data?.numero_utilizado
+                    ? `Enviado para ${data.numero_utilizado}`
+                    : undefined
                 toast({
-                  title: `Mensagem enviada para ${candidate?.name || 'o candidato'}`,
+                  title: data?.fallback_usado
+                    ? `Mensagem enviada via fallback para ${candidate?.name || 'o candidato'}`
+                    : `Mensagem enviada para ${candidate?.name || 'o candidato'}`,
+                  description: desc,
                   className: 'bg-green-500 text-white border-green-600',
                 })
               }
