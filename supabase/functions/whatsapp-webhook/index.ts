@@ -479,29 +479,44 @@ Deno.serve(async (req: Request) => {
                   acao = templateData.botao_sim_acao || 'manter'
                   etapaDestino = templateData.etapa_destino_id
                 } else if (respostaClassificada === 'nao') {
-                  acao = templateData.botao_nao_acao || 'remover'
+                  // Regra do RH: resposta 'nao' NUNCA deve inativar/remover o candidato do Kanban.
+                  // Se o template tiver 'mover' com etapa_destino, move a etapa (continua no Kanban).
+                  // Qualquer outra ação ('remover', 'inativar', 'manter', fallback) mantém o candidato no Kanban.
+                  acao = templateData.botao_nao_acao === 'mover' ? 'mover' : 'manter'
                   etapaDestino = templateData.etapa_destino_id
                 }
               } else {
-                // Default fallback se não tiver template configurado
-                if (respostaClassificada === 'nao') {
-                  acao = 'remover'
-                }
+                // Default fallback sem template: mantém no Kanban
+                acao = 'manter'
               }
 
-              if (acao === 'remover' || acao === 'inativar') {
-                // REGRA CRÍTICA: NUNCA deletar fisicamente o candidato por resposta no WhatsApp.
-                // Apenas inativamos do Kanban e registramos o motivo, mantendo histórico e integridade referencial.
-                updatePayload.ativo_kanban = false
-                updatePayload.motivo_inativo = 'Recusou convite / Respondeu Não via WhatsApp'
-                console.log(`Candidato ${candId} marcado como inativo no Kanban via resposta Não`)
-              } else if (acao === 'mover') {
-                if (etapaDestino) {
+              if (respostaClassificada === 'sim') {
+                if (acao === 'remover' || acao === 'inativar') {
+                  updatePayload.ativo_kanban = false
+                  updatePayload.motivo_inativo = 'Inativado via automação WhatsApp'
+                  console.log(`Candidato ${candId} marcado como inativo no Kanban via resposta Sim`)
+                } else if (acao === 'mover') {
+                  if (etapaDestino) {
+                    updatePayload.etapa_id = etapaDestino
+                    console.log(`Candidato ${candId} será movido para a etapa ${etapaDestino}`)
+                  } else {
+                    console.warn(
+                      `Ação "mover" configurada mas sem etapa_destino_id no template ${templateData?.id}`,
+                    )
+                  }
+                }
+              } else if (respostaClassificada === 'nao') {
+                // REGRA DO RH: resposta 'nao' NUNCA deve setar ativo_kanban=false nem motivo_inativo.
+                // O 'Não' fica apenas registrado (ultima_resposta_whatsapp, ultima_resposta_em, respostas_whatsapp, conversas_whatsapp)
+                // para o RH decidir o que fazer. Se configurado 'mover' com etapa_destino, apenas move a etapa.
+                if (acao === 'mover' && etapaDestino) {
                   updatePayload.etapa_id = etapaDestino
-                  console.log(`Candidato ${candId} será movido para a etapa ${etapaDestino}`)
+                  console.log(
+                    `Candidato ${candId} manteve-se ativo no Kanban e foi movido para etapa ${etapaDestino} após resposta Não`,
+                  )
                 } else {
-                  console.warn(
-                    `Ação "mover" configurada mas sem etapa_destino_id no template ${templateData?.id}`,
+                  console.log(
+                    `Candidato ${candId} manteve-se no Kanban com resposta Não registrada`,
                   )
                 }
               }
