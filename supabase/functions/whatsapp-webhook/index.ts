@@ -528,14 +528,9 @@ Deno.serve(async (req: Request) => {
                       texto: 'Não tem interesse na vaga',
                     })
                     if (obsErr) {
-                      console.error(
-                        `Erro ao gravar observação de resposta Não para ${candId}:`,
-                        obsErr,
-                      )
+                      console.error(`Erro ao gravar observação de resposta Não para ${candId}:`, obsErr)
                     } else {
-                      console.log(
-                        `Observação "Não tem interesse na vaga" registrada para candidato ${candId}`,
-                      )
+                      console.log(`Observação "Não tem interesse na vaga" registrada para candidato ${candId}`)
                     }
                   } catch (obsEx) {
                     console.error(`Exceção ao inserir observação para ${candId}:`, obsEx)
