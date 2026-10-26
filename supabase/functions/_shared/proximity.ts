@@ -406,7 +406,15 @@ export function getReferenceCoordsForText(text: string): Coordinates | null {
     norm.includes('arico') ||
     norm.includes('cidade tiradentes') ||
     norm.includes('guaianases') ||
-    norm.includes('artur alvim')
+    norm.includes('artur alvim') ||
+    norm.includes('carrao') ||
+    norm.includes('vila carrao') ||
+    norm.includes('jardim carrao') ||
+    norm.includes('jd carrao') ||
+    norm.includes('jd. carrao') ||
+    norm.includes('jardim vila carrao') ||
+    norm.includes('jd vila carrao') ||
+    norm.includes('jd. vila carrao')
   ) {
     return REFERENCE_LOCATIONS.sapopemba.approxCoords
   }

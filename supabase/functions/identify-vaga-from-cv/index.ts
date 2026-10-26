@@ -352,23 +352,28 @@ async function pickBestVagaByProximity(
     }
   }
 
-  // REGRA DE NEGÓCIO MANDATÓRIA (Item 4 da especificação):
-  // A verificação de endereço só vale quando houver geolocalização real.
-  // Se não temos endereço do candidato ou apiKey do Google, indicar distância_nao_verificada (menorDistanciaKm = null, geolocalizado = false).
-  if (!candidateAddressStr || !googleApiKey) {
+  // REGRA DE NEGÓCIO MANDATÓRIA (Item 4 da especificação e Item 2 do ajuste de proximidade):
+  // A verificação de proximidade requer geolocalização ou fallback regional seguro.
+  // Se não temos endereço do candidato, NÃO atribuir vaga por palpite/acaso.
+  if (!candidateAddressStr) {
     return {
-      vaga: vagasList[0],
+      vaga: null,
       menorDistanciaKm: null,
-      dentroDoRaio: false, // Não afirmar que está dentro do raio sem geolocalização
-      raioMaximoKm: getVagaRaio(vagasList[0]),
+      dentroDoRaio: false,
+      raioMaximoKm: null,
     }
   }
 
   try {
-    let candidateCoords = await geocodeAddress(candidateAddressStr, googleApiKey)
+    let candidateCoords: Coordinates | null = null
+
+    if (googleApiKey) {
+      candidateCoords = await geocodeAddress(candidateAddressStr, googleApiKey)
+    }
+
     if (!candidateCoords) {
       console.warn(
-        `[identify-vaga] Não foi possível geocodificar endereço do candidato: "${candidateAddressStr}". Tentando fallback por palavras-chave de região...`,
+        `[identify-vaga] Geocodificação direta indisponível ou falhou para: "${candidateAddressStr}". Tentando fallback por palavras-chave de região...`,
       )
       // Fallback por palavras-chave no texto do endereço do candidato
       candidateCoords = getReferenceCoordsForText(candidateAddressStr)
@@ -376,9 +381,14 @@ async function pickBestVagaByProximity(
 
     if (!candidateCoords) {
       console.warn(
-        `[identify-vaga] Geocodificação e fallback falharam para: "${candidateAddressStr}". Usando primeira vaga.`,
+        `[identify-vaga] Geocodificação e fallback regional falharam para: "${candidateAddressStr}". NÃO atribuir vaga por palpite. Deixando candidato sem vaga para posterior análise de critérios/aguardando vaga adequada.`,
       )
-      return { vaga: vagasList[0], menorDistanciaKm: null }
+      return {
+        vaga: null,
+        menorDistanciaKm: null,
+        dentroDoRaio: false,
+        raioMaximoKm: null,
+      }
     }
 
     // Cache de coordenadas das localizações das vagas para evitar geocodificação duplicada
@@ -456,10 +466,10 @@ async function pickBestVagaByProximity(
   } catch (geoErr: any) {
     console.error('[identify-vaga] Erro ao calcular proximidade:', geoErr?.message)
     return {
-      vaga: vagasList[0],
+      vaga: null,
       menorDistanciaKm: null,
-      dentroDoRaio: true,
-      raioMaximoKm: getVagaRaio(vagasList[0]),
+      dentroDoRaio: false,
+      raioMaximoKm: null,
     }
   }
 }
@@ -782,6 +792,19 @@ Deno.serve(async (req: Request) => {
           googleApiKey,
         )
 
+        if (!chosenMotoristaVaga) {
+          return new Response(
+            JSON.stringify({
+              vaga_id: null,
+              confianca: 'baixa',
+              aguardando_vaga: true,
+              cargo_pretendido: candidatoObjetivo,
+              justificativa: `Objetivo do candidato é específico de Motorista ("${candidatoObjetivo}"), mas a localização não pôde ser determinada com segurança para indicar a garagem mais próxima. Aguardando vaga adequada.`,
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          )
+        }
+
         let proxText = ''
         if (menorDistanciaKm !== null) {
           proxText = ` Selecionada a garagem mais próxima do endereço do candidato (${candidatoEndereco || 'N/I'}), a aproximadamente ${menorDistanciaKm.toFixed(1)} km.`
@@ -907,6 +930,23 @@ Deno.serve(async (req: Request) => {
             raioMaximoKm,
           } = await pickBestVagaByProximity(candidatoEndereco, topMatchedVagas, googleApiKey)
 
+          // Se a proximidade não pôde determinar uma vaga segura (ex: falha de geolocalização e sem candidatoCoords)
+          if (!bestMatchVaga) {
+            console.warn(
+              `[identify-vaga-from-cv] Match direto por objetivo "${candidatoObjetivo}", porém proximidade não pôde ser determinada com segurança para o endereço "${candidatoEndereco}". Não atribuir por palpite.`,
+            )
+            return new Response(
+              JSON.stringify({
+                vaga_id: null,
+                confianca: 'baixa',
+                aguardando_vaga: true,
+                cargo_pretendido: candidatoObjetivo,
+                justificativa: `Candidato tem perfil para "${candidatoObjetivo}", mas a localização ("${candidatoEndereco || 'Não informada'}") não pôde ser verificada por proximidade entre as unidades disponíveis (${topMatchedVagas.map((v) => v.titulo).join(', ')}). Aguardando análise de critérios/revisão humana.`,
+              }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+            )
+          }
+
           let proxText = ''
           if (topMatchedVagas.length > 1) {
             if (menorDistanciaKm !== null) {
@@ -917,7 +957,7 @@ Deno.serve(async (req: Request) => {
           }
 
           // Validar se está dentro do raio aceitável da vaga
-          if (!dentroDoRaio && menorDistanciaKm !== null && bestMatchVaga) {
+          if (!dentroDoRaio && menorDistanciaKm !== null) {
             console.log(
               `[identify-vaga-from-cv] Candidato tem match direto para ${bestMatchVaga.titulo}, mas distância (${menorDistanciaKm.toFixed(1)} km) excede o raio (${raioMaximoKm} km).`,
             )
@@ -1185,11 +1225,18 @@ Deno.serve(async (req: Request) => {
               motoristaVagas,
               googleApiKey,
             )
-            result.vaga_id = motoristaVaga.id
-            result.confianca = 'alta'
-            result.justificativa = isMotoristaObjective
-              ? `Candidato possui objetivo de Motorista ("${candidatoObjetivo}"). Pela regra de negócio, permanece estritamente vinculado à vaga de Motorista ("${motoristaVaga.titulo}") para avaliação/revisão humana caso necessário, sem realocação para Cobrador.`
-              : `Candidato possui histórico como Motorista / critérios incompatíveis com Cobrador (idade ${candidateAge || 'N/I'}). Pela regra de negócio, foi direcionado à vaga de Motorista da garagem mais próxima ("${motoristaVaga.titulo}").`
+            if (motoristaVaga) {
+              result.vaga_id = motoristaVaga.id
+              result.confianca = 'alta'
+              result.justificativa = isMotoristaObjective
+                ? `Candidato possui objetivo de Motorista ("${candidatoObjetivo}"). Pela regra de negócio, permanece estritamente vinculado à vaga de Motorista ("${motoristaVaga.titulo}") para avaliação/revisão humana caso necessário, sem realocação para Cobrador.`
+                : `Candidato possui histórico como Motorista / critérios incompatíveis com Cobrador (idade ${candidateAge || 'N/I'}). Pela regra de negócio, foi direcionado à vaga de Motorista da garagem mais próxima ("${motoristaVaga.titulo}").`
+            } else {
+              result.vaga_id = null
+              result.confianca = 'nenhuma'
+              result.aguardando_vaga = true
+              result.justificativa = `Candidato com perfil de Motorista, mas não foi possível definir a unidade mais próxima por proximidade.`
+            }
           }
         }
       } else if (normTargetTitle.includes('motorista')) {
@@ -1268,7 +1315,10 @@ Deno.serve(async (req: Request) => {
           } else {
             result.vaga_id = null
             result.confianca = 'nenhuma'
-            result.justificativa = `Candidato possui objetivo de Motorista, mas mora a ${menorDistanciaKm?.toFixed(1)} km, excedendo o raio limite (${raioMaximoKm} km) de todas as garagens.`
+            result.aguardando_vaga = true
+            result.justificativa = motoristaVaga
+              ? `Candidato possui objetivo de Motorista, mas mora a ${menorDistanciaKm?.toFixed(1)} km, excedendo o raio limite (${raioMaximoKm} km) de todas as garagens.`
+              : `Candidato possui objetivo de Motorista, mas a localização não pôde ser determinada para vincular com segurança a uma garagem. Aguardando vaga adequada.`
           }
         }
       }

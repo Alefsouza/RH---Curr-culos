@@ -57,6 +57,16 @@ export async function triggerCobradoresProximidadeReanalysis() {
   return data
 }
 
+export async function triggerJoaoRafaelReanalysis() {
+  const { data, error } = await supabase.functions.invoke('sync-outlook-cvs', {
+    body: {
+      reanalyzeJoaoRafael: true,
+    },
+  })
+  if (error) throw error
+  return data
+}
+
 export async function triggerAuditAndReclassifyGenerics(
   candidateIds?: string[],
   options?: { batchLimit?: number; batchOffset?: number },

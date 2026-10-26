@@ -1326,6 +1326,26 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    if (body?.reanalyzeJoaoRafael) {
+      console.log('[sync-outlook-cvs] Ação especial: reanalisar João Rafael dos Santos...')
+      const reanRes = await fetch(`${supabaseUrl}/functions/v1/reanalisar-candidato`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({
+          candidate_id: '548de618-e358-4436-9cb4-c408fe8708b4',
+          force_reextract: false,
+        }),
+      })
+      const reanJson = await reanRes.json()
+      return new Response(JSON.stringify({ joaoResult: reanJson, ok: reanRes.ok }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     if (body?.callTargetFunction && typeof body?.callTargetFunction === 'string') {
       const targetFuncName = body.callTargetFunction
       const targetBody = body.callTargetBody || {}

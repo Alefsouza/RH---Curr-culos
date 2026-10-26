@@ -148,6 +148,26 @@ Deno.serve(async (req: Request) => {
       )
     }
 
+    // Ação direta para invocar reanálise para João Rafael dos Santos (v0.0.670)
+    if (body.reanalyzeJoaoRafael) {
+      console.log('[batch-reanalyze-all] Executando reanálise para João Rafael dos Santos...')
+      const joaoRes = await fetch(`${supabaseUrl}/functions/v1/reanalisar-candidato`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({
+          candidate_id: '548de618-e358-4436-9cb4-c408fe8708b4',
+          force_reextract: false,
+        }),
+      })
+      const joaoJson = await joaoRes.json()
+      return new Response(JSON.stringify({ joaoJson, ok: joaoRes.ok, status: joaoRes.status }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     // Ação direta para invocar reanalisar-candidato para Robisom com force_reextract
     if (body.reanalyzeRobisom) {
       console.log('[batch-reanalyze-all] Executando reanálise forçada para Robisom...')
@@ -169,6 +189,25 @@ Deno.serve(async (req: Request) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         },
       )
+    }
+
+    // Ação direta para disparar o sync-outlook-cvs com reanálise de João Rafael
+    if (body.runJoaoRafaelSyncTrigger) {
+      console.log('Disparando sync-outlook-cvs com reanalyzeJoaoRafael...')
+      const syncRes = await fetch(`${supabaseUrl}/functions/v1/sync-outlook-cvs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({
+          reanalyzeJoaoRafael: true,
+        }),
+      })
+      const syncData = await syncRes.json()
+      return new Response(JSON.stringify({ syncData }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
     // Trigger auxiliar para rodar o backfill de proximidade se solicitado
