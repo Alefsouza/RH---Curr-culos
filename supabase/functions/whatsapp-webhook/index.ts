@@ -479,15 +479,15 @@ Deno.serve(async (req: Request) => {
                   acao = templateData.botao_sim_acao || 'manter'
                   etapaDestino = templateData.etapa_destino_id
                 } else if (respostaClassificada === 'nao') {
-                  // Regra do RH: resposta 'nao' NUNCA deve inativar/remover o candidato do Kanban.
-                  // Se o template tiver 'mover' com etapa_destino, move a etapa (continua no Kanban).
-                  // Qualquer outra ação ('remover', 'inativar', 'manter', fallback) mantém o candidato no Kanban.
-                  acao = templateData.botao_nao_acao === 'mover' ? 'mover' : 'manter'
+                  // Se o template tiver 'mover' com etapa_destino, segue a movimentação configurada (permanece no Kanban).
+                  // Caso contrário (padrão quando o template não define ação de mover), aplica a NOVA REGRA:
+                  // retira do Kanban e arquiva (ativo_kanban=false, motivo_inativo='Arquivado')
+                  acao = templateData.botao_nao_acao === 'mover' ? 'mover' : 'arquivar'
                   etapaDestino = templateData.etapa_destino_id
                 }
               } else {
-                // Default fallback sem template: mantém no Kanban
-                acao = 'manter'
+                // Default fallback sem template para resposta 'nao': retira do Kanban e arquiva
+                acao = respostaClassificada === 'nao' ? 'arquivar' : 'manter'
               }
 
               if (respostaClassificada === 'sim') {
@@ -506,17 +506,43 @@ Deno.serve(async (req: Request) => {
                   }
                 }
               } else if (respostaClassificada === 'nao') {
-                // REGRA DO RH: resposta 'nao' NUNCA deve setar ativo_kanban=false nem motivo_inativo.
-                // O 'Não' fica apenas registrado (ultima_resposta_whatsapp, ultima_resposta_em, respostas_whatsapp, conversas_whatsapp)
-                // para o RH decidir o que fazer. Se configurado 'mover' com etapa_destino, apenas move a etapa.
                 if (acao === 'mover' && etapaDestino) {
                   updatePayload.etapa_id = etapaDestino
                   console.log(
                     `Candidato ${candId} manteve-se ativo no Kanban e foi movido para etapa ${etapaDestino} após resposta Não`,
                   )
                 } else {
+                  // NOVA REGRA DO RH no webhook WhatsApp:
+                  // (a) Gravar observação no Histórico do candidato com o texto "Não tem interesse na vaga"
+                  // (b) Retirar do Kanban (ativo_kanban=false)
+                  // (c) Mover/marcar o candidato para status/etapa "Arquivado" (motivo_inativo='Arquivado'),
+                  //     preservando SEMPRE a vaga vinculada e todos os dados do candidato.
+                  // NUNCA exclusão física nem soft delete (deleted_at).
+                  updatePayload.ativo_kanban = false
+                  updatePayload.motivo_inativo = 'Arquivado'
+
+                  try {
+                    const { error: obsErr } = await supabase.from('candidato_observacoes').insert({
+                      candidato_id: candId,
+                      usuario_id: finalUserId || null,
+                      texto: 'Não tem interesse na vaga',
+                    })
+                    if (obsErr) {
+                      console.error(
+                        `Erro ao gravar observação de resposta Não para ${candId}:`,
+                        obsErr,
+                      )
+                    } else {
+                      console.log(
+                        `Observação "Não tem interesse na vaga" registrada para candidato ${candId}`,
+                      )
+                    }
+                  } catch (obsEx) {
+                    console.error(`Exceção ao inserir observação para ${candId}:`, obsEx)
+                  }
+
                   console.log(
-                    `Candidato ${candId} manteve-se no Kanban com resposta Não registrada`,
+                    `Candidato ${candId} retirado do Kanban e arquivado após resposta Não`,
                   )
                 }
               }
