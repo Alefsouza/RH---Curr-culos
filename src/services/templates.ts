@@ -1,11 +1,17 @@
 import { supabase } from '@/lib/supabase/client'
 
-export async function getEtapasComTemplates() {
+export async function getEtapasComTemplates(vagaId?: string | null) {
   const { data: userData } = await supabase.auth.getUser()
   if (!userData.user) throw new Error('Não autenticado')
 
   const etapasQuery = supabase.from('etapas').select('*').order('ordem')
-  const templatesQuery = supabase.from('templates_mensagens').select('*')
+  let templatesQuery = supabase.from('templates_mensagens').select('*')
+
+  if (vagaId) {
+    templatesQuery = (templatesQuery as any).eq('vaga_id', vagaId)
+  } else {
+    templatesQuery = (templatesQuery as any).is('vaga_id', null)
+  }
 
   const { data: etapas, error: etapasError } = await etapasQuery
   if (etapasError) throw etapasError
@@ -19,31 +25,39 @@ export async function getEtapasComTemplates() {
   }))
 }
 
-export async function saveTemplate(etapaId: string, templateData: any) {
+export async function saveTemplate(etapaId: string, templateData: any, vagaId?: string | null) {
   const { data: userData } = await supabase.auth.getUser()
   if (!userData.user) throw new Error('Não autenticado')
 
-  const { data: existing } = await supabase
-    .from('templates_mensagens')
-    .select('id')
-    .eq('etapa_id', etapaId)
-    .maybeSingle()
+  let checkQuery = supabase.from('templates_mensagens').select('id').eq('etapa_id', etapaId) as any
+
+  if (vagaId) {
+    checkQuery = checkQuery.eq('vaga_id', vagaId)
+  } else {
+    checkQuery = checkQuery.is('vaga_id', null)
+  }
+
+  const { data: existing, error: checkError } = await checkQuery.maybeSingle()
+  if (checkError) throw checkError
+
+  const payload = {
+    ...templateData,
+    vaga_id: vagaId || null,
+  }
 
   if (existing) {
-    const { data, error } = await supabase
-      .from('templates_mensagens')
-      .update(templateData)
+    const { data, error } = await (supabase.from('templates_mensagens') as any)
+      .update(payload)
       .eq('id', existing.id)
       .select()
       .single()
     if (error) throw error
     return data
   } else {
-    const { data, error } = await supabase
-      .from('templates_mensagens')
+    const { data, error } = await (supabase.from('templates_mensagens') as any)
       .insert({
         etapa_id: etapaId,
-        ...templateData,
+        ...payload,
         user_id: userData.user.id,
       })
       .select()

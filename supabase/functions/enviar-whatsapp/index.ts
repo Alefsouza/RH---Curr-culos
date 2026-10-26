@@ -130,13 +130,47 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    // 2. Buscando template da etapa
-    // Templates também são compartilhados entre usuários autenticados.
-    const { data: template, error: templateError } = await supabase
-      .from('templates_mensagens')
-      .select('*')
-      .eq('etapa_id', etapa_id)
-      .maybeSingle()
+    // 2. Buscando template da etapa e da vaga (com fallback para template global da etapa)
+    // Se a vaga do candidato tiver um template específico para esta etapa, usa ele.
+    // Caso contrário, busca o template geral/padrão daquela etapa (vaga_id IS NULL).
+    let template: any = null
+    let templateError: any = null
+
+    if (candidato.vaga_id) {
+      const { data: vagaTemplate, error: vagaTplErr } = await supabase
+        .from('templates_mensagens')
+        .select('*')
+        .eq('etapa_id', etapa_id)
+        .eq('vaga_id', candidato.vaga_id)
+        .maybeSingle()
+
+      if (vagaTplErr) {
+        console.warn('[enviar-whatsapp] Erro ao buscar template específico da vaga:', vagaTplErr)
+      }
+
+      const isVagaChatbot =
+        vagaTemplate?.tipo === 'chatbot_interativo' || vagaTemplate?.tipo === 'chatbot'
+      const hasVagaValidContent = isVagaChatbot
+        ? Boolean(vagaTemplate?.pergunta_texto?.trim())
+        : Boolean(vagaTemplate?.texto?.trim())
+
+      if (vagaTemplate && hasVagaValidContent) {
+        template = vagaTemplate
+      }
+    }
+
+    if (!template) {
+      // Fallback para template padrão da etapa (sem vaga_id ou vaga_id IS NULL)
+      const { data: defaultTemplate, error: defTplErr } = await supabase
+        .from('templates_mensagens')
+        .select('*')
+        .eq('etapa_id', etapa_id)
+        .is('vaga_id', null)
+        .maybeSingle()
+
+      templateError = defTplErr
+      template = defaultTemplate
+    }
 
     const isChatbotTemplate =
       template?.tipo === 'chatbot_interativo' || template?.tipo === 'chatbot'
