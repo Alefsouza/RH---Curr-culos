@@ -10,8 +10,8 @@ const LOGO_URL =
   'https://wrnhfpncasqifaisvyaf.supabase.co/storage/v1/object/public/assets/logo_branco_transparente_nitido-80a6a-BIUCr1YD.png'
 
 export default function AuthPage() {
-  const [email, setEmail] = useState('financeiro@viasudeste.com')
-  const [password, setPassword] = useState('Skip@Pass123')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [resetLoading, setResetLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
