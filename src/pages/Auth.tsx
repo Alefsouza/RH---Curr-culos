@@ -92,7 +92,7 @@ export default function AuthPage() {
           {/* Cabeçalho do Card */}
           <div className="text-center">
             <h1 className="font-sans text-xl font-extrabold uppercase tracking-wider text-white drop-shadow-sm sm:text-2xl">
-              GESTÃO DE CURRÍCULOS
+              PAINEL DE RECRUTAMENTO
             </h1>
             <p className="mt-1.5 text-xs font-normal text-slate-200/80 sm:text-sm">
               Insira suas credenciais para acessar sua conta
