@@ -169,6 +169,9 @@ Deno.serve(async (req: Request) => {
     // detalhes (metodo_geolocalizacao) fora do bloco onde antes era declarado,
     // o que gerava "metodoGeolocalizacaoUsado is not defined" em toda reanálise.
     let metodoGeolocalizacaoUsado: string | null = null
+    // v0.0.695: nota da correção de grafia de bairro usada SÓ para geocodificar
+    // (ex.: "bairro interpretado como Jardim São Savério"); registrada no detalhe da análise.
+    let bairroInterpretadoNota: string | null = null
 
     if (localizacoesVaga.length > 0 && raioKm > 0) {
       if (!enderecoCV) {
@@ -299,6 +302,9 @@ Deno.serve(async (req: Request) => {
                   metodoGeolocalizacaoUsado = sanity.metodoGeolocalizacao
                   validadoPorBairroAproximado = true
                   bairroGeocodificadoOrigem = sanity.metodoGeolocalizacao
+                  if (sanity.correcaoGrafia) {
+                    bairroInterpretadoNota = sanity.correcaoGrafia
+                  }
                 }
               }
             }
@@ -331,6 +337,9 @@ Deno.serve(async (req: Request) => {
                 minC = neighborhoodCalc.menorDistanciaKm
                 validadoPorBairroAproximado = true
                 bairroGeocodificadoOrigem = neighborhoodCalc.origem || 'geocodificacao_bairro'
+                if (neighborhoodCalc.correcaoGrafia) {
+                  bairroInterpretadoNota = neighborhoodCalc.correcaoGrafia
+                }
                 console.log(
                   `[analisar-cv-criterios] Distância validada por bairro aproximado ("${enderecoCV}" -> ~${minC.toFixed(2)} km, origem=${bairroGeocodificadoOrigem})`,
                 )
@@ -1304,6 +1313,12 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
         if (validadoPorBairroAproximado) {
           resultJson.detalhes.validado_por_bairro = true
           resultJson.detalhes.modo_distancia = 'geocodificacao_bairro'
+        }
+        if (bairroInterpretadoNota) {
+          // Registro da interpretação de grafia usada SÓ na geocodificação:
+          // o endereço cadastrado do candidato permanece inalterado.
+          resultJson.detalhes.bairro_interpretado = bairroInterpretadoNota
+          resultJson.detalhes.metodo_geolocalizacao = `${resultJson.detalhes.metodo_geolocalizacao}+grafia_corrigida`
         }
       }
     }

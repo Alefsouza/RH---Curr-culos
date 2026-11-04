@@ -25,6 +25,7 @@ export interface NeighborhoodGeocodeResult {
   bairroConsultado: string | null
   distanciaKm: number | null
   validadoPorBairro: boolean
+  correcaoGrafia?: string | null
 }
 
 /**
@@ -64,6 +65,46 @@ export function buildNeighborhoodQuery(addressOrBairro: string): string {
   return clean
 }
 
+// =============================================================================
+// CORREÇÃO DETERMINÍSTICA DE GRAFIA DE BAIRRO (só para tentar geocodificar).
+// O endereço cadastrado do candidato NUNCA é alterado — geramos apenas variantes
+// de consulta para a Geocoding API quando o endereço original não geocodifica.
+// Caso real: "Jardim São Savário" (não geocodifica) -> bairro real "Jardim São
+// Savério" (região de Sapopemba, SP).
+// =============================================================================
+const BAIRRO_SPELLING_FIXES: Array<{ pattern: RegExp; replacement: string; nota: string }> = [
+  { pattern: /sav[áa]rio/gi, replacement: 'Savério', nota: 'Jardim São Savério' },
+]
+
+/**
+ * Gera variantes determinísticas de grafia de um endereço para tentativa de
+ * geocodificação: (1) o endereço como está; (2) versão sem acentos (se difere);
+ * (3+) correções de grafia conhecidas de bairros (se difere).
+ * Retorna sempre a variante ORIGINAL primeiro — a correção é último recurso.
+ */
+export function generateAddressSpellingVariants(
+  address: string,
+): Array<{ query: string; correcaoBairro: string | null }> {
+  const variants: Array<{ query: string; correcaoBairro: string | null }> = [
+    { query: address, correcaoBairro: null },
+  ]
+  const folded = (address || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  if (folded.trim().toLowerCase() !== (address || '').trim().toLowerCase() && folded.trim()) {
+    variants.push({ query: folded, correcaoBairro: null })
+  }
+  for (const fix of BAIRRO_SPELLING_FIXES) {
+    fix.pattern.lastIndex = 0
+    if (fix.pattern.test(address || '')) {
+      fix.pattern.lastIndex = 0
+      const corrected = (address || '').replace(fix.pattern, fix.replacement)
+      if (corrected.trim().toLowerCase() !== (address || '').trim().toLowerCase()) {
+        variants.push({ query: corrected, correcaoBairro: fix.nota })
+      }
+    }
+  }
+  return variants
+}
+
 /**
  * Tenta resolver as coordenadas aproximadas de um endereço baseado em bairro (com ou sem CEP).
  * Ordem de prioridade:
@@ -80,6 +121,7 @@ export async function geocodeNeighborhoodOrIncompleteAddress(
   coords: Coordinates | null
   origem: NeighborhoodGeocodeResult['origem']
   queryUsada: string | null
+  correcaoGrafia?: string | null
 }> {
   if (!rawAddress && !fallbackContextText) {
     return { coords: null, origem: null, queryUsada: null }
@@ -139,37 +181,51 @@ export async function geocodeNeighborhoodOrIncompleteAddress(
     }
   }
 
-  // 3. Geocodificar o bairro com contexto ("bairro, São Paulo - SP, Brasil") via Geocoding API
+  // 3. Geocodificar o bairro com contexto ("bairro, São Paulo - SP, Brasil") via Geocoding API.
+  // v0.0.695: se o endereço não geocodificar de primeira, tentar variações de
+  // GRAFIA determinísticas do bairro (ex.: "Savário" -> "Savério"). A variante
+  // usada fica registrada em correcaoGrafia; o cadastro do candidato não muda.
   const neighborhoodQuery = buildNeighborhoodQuery(baseAddress)
   if (googleApiKey && neighborhoodQuery) {
-    try {
-      const url = new URL('https://maps.googleapis.com/maps/api/geocode/json')
-      url.searchParams.append('address', neighborhoodQuery)
-      url.searchParams.append('key', googleApiKey)
-      url.searchParams.append('language', 'pt-BR')
+    const spellingVariants = generateAddressSpellingVariants(neighborhoodQuery)
+    for (const variant of spellingVariants) {
+      try {
+        const url = new URL('https://maps.googleapis.com/maps/api/geocode/json')
+        url.searchParams.append('address', variant.query)
+        url.searchParams.append('key', googleApiKey)
+        url.searchParams.append('language', 'pt-BR')
 
-      const response = await fetch(url.toString())
-      if (response.ok) {
-        const data = await response.json()
-        if (data.status === 'OK' && data.results && data.results.length > 0) {
-          const loc = data.results[0].geometry.location
-          return {
-            coords: { lat: loc.lat, lng: loc.lng },
-            origem: 'geocoding_bairro',
-            queryUsada: neighborhoodQuery,
+        const response = await fetch(url.toString())
+        if (response.ok) {
+          const data = await response.json()
+          if (data.status === 'OK' && data.results && data.results.length > 0) {
+            const loc = data.results[0].geometry.location
+            if (variant.correcaoBairro) {
+              console.log(
+                `[geocode-neighborhood] Grafia corrigida para geocodificação: "${neighborhoodQuery}" -> "${variant.query}" (${variant.correcaoBairro}); endereço cadastrado preservado.`,
+              )
+            }
+            return {
+              coords: { lat: loc.lat, lng: loc.lng },
+              origem: 'geocoding_bairro',
+              queryUsada: variant.query,
+              correcaoGrafia: variant.correcaoBairro
+                ? `bairro interpretado como ${variant.correcaoBairro} (grafia original do CV "${baseAddress}" preservada no cadastro)`
+                : null,
+            }
+          } else {
+            console.warn(
+              `[geocode-neighborhood] Google Geocoding status ${data.status} para "${variant.query}":`,
+              data.error_message,
+            )
           }
-        } else {
-          console.warn(
-            `[geocode-neighborhood] Google Geocoding status ${data.status} para "${neighborhoodQuery}":`,
-            data.error_message,
-          )
         }
+      } catch (gErr: any) {
+        console.error(
+          `[geocode-neighborhood] Erro na Geocoding API para "${variant.query}":`,
+          gErr?.message,
+        )
       }
-    } catch (gErr: any) {
-      console.error(
-        `[geocode-neighborhood] Erro na Geocoding API para "${neighborhoodQuery}":`,
-        gErr?.message,
-      )
     }
   }
 
@@ -251,6 +307,7 @@ export async function calculateNeighborhoodProximity(
   origem: NeighborhoodGeocodeResult['origem']
   candidateCoords: Coordinates | null
   queryUsada: string | null
+  correcaoGrafia?: string | null
 }> {
   const geo = await geocodeNeighborhoodOrIncompleteAddress(
     candidateAddress,
@@ -265,6 +322,7 @@ export async function calculateNeighborhoodProximity(
       origem: null,
       candidateCoords: null,
       queryUsada: null,
+      correcaoGrafia: null,
     }
   }
 
@@ -289,6 +347,7 @@ export async function calculateNeighborhoodProximity(
     origem: geo.origem,
     candidateCoords: geo.coords,
     queryUsada: geo.queryUsada,
+    correcaoGrafia: geo.correcaoGrafia ?? null,
   }
 }
 
@@ -314,6 +373,7 @@ export async function sanitizeAndRecheckCoordinates(
   distanciaKm: number | null
   metodoGeolocalizacao: string
   divergenciaDetectada: boolean
+  correcaoGrafia?: string | null
 }> {
   const cep = extractCep(candidateAddressStr) || extractCep(fallbackText || '')
   let metodo = 'distance_matrix_direto'
@@ -417,40 +477,52 @@ export async function sanitizeAndRecheckCoordinates(
 
   // 3. Geocodificação focada no Bairro / Distrito
   // Se o endereço contiver bairro (ex: "Parque Bristol", "Vila Moraes", "Sapopemba")
+  // v0.0.695: tenta também variações de GRAFIA determinísticas do bairro.
   if (googleApiKey) {
     const neighborhoodQuery = buildNeighborhoodQuery(candidateAddressStr)
-    try {
-      const url = new URL('https://maps.googleapis.com/maps/api/geocode/json')
-      url.searchParams.append('address', neighborhoodQuery)
-      url.searchParams.append('key', googleApiKey)
-      url.searchParams.append('language', 'pt-BR')
+    const spellingVariants = generateAddressSpellingVariants(neighborhoodQuery)
+    for (const variant of spellingVariants) {
+      try {
+        const url = new URL('https://maps.googleapis.com/maps/api/geocode/json')
+        url.searchParams.append('address', variant.query)
+        url.searchParams.append('key', googleApiKey)
+        url.searchParams.append('language', 'pt-BR')
 
-      const resp = await fetch(url.toString())
-      if (resp.ok) {
-        const data = await resp.json()
-        if (data.status === 'OK' && data.results && data.results.length > 0) {
-          const loc = data.results[0].geometry.location
-          const bCoords = { lat: loc.lat, lng: loc.lng }
-          const bDist = calculateHaversineDistance(bCoords, garageCoords)
+        const resp = await fetch(url.toString())
+        if (resp.ok) {
+          const data = await resp.json()
+          if (data.status === 'OK' && data.results && data.results.length > 0) {
+            const loc = data.results[0].geometry.location
+            const bCoords = { lat: loc.lat, lng: loc.lng }
+            const bDist = calculateHaversineDistance(bCoords, garageCoords)
 
-          // Se a distância pelo bairro for significativamente menor do que a distância inflada (> 3km menor)
-          if (currentCalculatedDistanceKm === null || bDist < currentCalculatedDistanceKm) {
-            bestCoords = bCoords
-            bestDist = bDist
-            metodo = 'geocoding_bairro_sanidade'
-            divergencia =
-              currentCalculatedDistanceKm !== null && currentCalculatedDistanceKm - bDist > 3
-            return {
-              coords: bestCoords,
-              distanciaKm: Number(bestDist.toFixed(2)),
-              metodoGeolocalizacao: metodo,
-              divergenciaDetectada: divergencia,
+            // Se a distância pelo bairro for significativamente menor do que a distância inflada (> 3km menor)
+            if (currentCalculatedDistanceKm === null || bDist < currentCalculatedDistanceKm) {
+              bestCoords = bCoords
+              bestDist = bDist
+              metodo = variant.correcaoBairro
+                ? 'geocoding_bairro_sanidade_grafia_corrigida'
+                : 'geocoding_bairro_sanidade'
+              divergencia =
+                currentCalculatedDistanceKm !== null && currentCalculatedDistanceKm - bDist > 3
+              return {
+                coords: bestCoords,
+                distanciaKm: Number(bestDist.toFixed(2)),
+                metodoGeolocalizacao: metodo,
+                divergenciaDetectada: divergencia,
+                correcaoGrafia: variant.correcaoBairro
+                  ? `bairro interpretado como ${variant.correcaoBairro} (grafia original do CV "${candidateAddressStr}" preservada no cadastro)`
+                  : null,
+              }
             }
           }
         }
+      } catch (bErr: any) {
+        console.warn(
+          `[sanitizeAndRecheckCoordinates] Falha no geocoding do bairro ("${variant.query}"):`,
+          bErr?.message,
+        )
       }
-    } catch (bErr: any) {
-      console.warn(`[sanitizeAndRecheckCoordinates] Falha no geocoding do bairro:`, bErr?.message)
     }
   }
 

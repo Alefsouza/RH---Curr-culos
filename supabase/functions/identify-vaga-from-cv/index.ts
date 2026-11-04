@@ -396,7 +396,9 @@ async function pickBestVagaByProximity(
       )
       if (geoBairro.coords) {
         candidateCoords = geoBairro.coords
-        metodoGeolocalizacao = geoBairro.origem || 'geocoding_bairro'
+        metodoGeolocalizacao = geoBairro.correcaoGrafia
+          ? `${geoBairro.origem || 'geocoding_bairro'}_grafia_corrigida`
+          : geoBairro.origem || 'geocoding_bairro'
         console.log(
           `[identify-vaga] Bairro geocodificado com sucesso para candidato: "${candidateAddressStr}" (origem: ${metodoGeolocalizacao})`,
         )
