@@ -412,6 +412,28 @@ async function pickBestVagaByProximity(
       }
     }
 
+    // v0.0.698: fallback OBRIGATÓRIO de bairro. isTruncatedOrIncompleteAddress considera
+    // "Jardim ..." indicador de rua e NÃO classifica endereço só de bairro como truncado
+    // (ex.: "Jardim São Savário, São Paulo - SP"), o que impedia de chegar ao geocoder de
+    // bairro com correção de grafia. Se a geocodificação direta falhou, tentar SEMPRE o
+    // geocoder de bairro (com variações de grafia) antes de desistir — o cadastro do
+    // candidato NUNCA é alterado.
+    if (!candidateCoords && googleApiKey) {
+      const geoBairroFallback = await geocodeNeighborhoodOrIncompleteAddress(
+        candidateAddressStr,
+        googleApiKey,
+      )
+      if (geoBairroFallback.coords) {
+        candidateCoords = geoBairroFallback.coords
+        metodoGeolocalizacao = geoBairroFallback.correcaoGrafia
+          ? `${geoBairroFallback.origem || 'geocoding_bairro'}_grafia_corrigida`
+          : geoBairroFallback.origem || 'geocoding_bairro'
+        console.log(
+          `[identify-vaga] Bairro geocodificado via fallback para candidato: "${candidateAddressStr}" (origem: ${metodoGeolocalizacao})`,
+        )
+      }
+    }
+
     if (!candidateCoords) {
       console.warn(
         `[identify-vaga] Geocodificação direta indisponível ou falhou para: "${candidateAddressStr}". Tentando fallback por palavras-chave de região...`,
