@@ -165,6 +165,10 @@ Deno.serve(async (req: Request) => {
     let distanciaCalculada = false
     let validadoPorBairroAproximado = false
     let bairroGeocodificadoOrigem: string | null = null
+    // v0.0.688 fix: declarado no escopo da função — era referenciado na gravação de
+    // detalhes (metodo_geolocalizacao) fora do bloco onde antes era declarado,
+    // o que gerava "metodoGeolocalizacaoUsado is not defined" em toda reanálise.
+    let metodoGeolocalizacaoUsado: string | null = null
 
     if (localizacoesVaga.length > 0 && raioKm > 0) {
       if (!enderecoCV) {
@@ -233,7 +237,6 @@ Deno.serve(async (req: Request) => {
         }
 
         let minC: number | null = null
-        let metodoGeolocalizacaoUsado = 'distance_matrix_direto'
 
         // 1. Tentar Distance Matrix primária se endereço tiver rua/número ou se não for truncado
         // Mesmo se for truncado/bairro, tentamos Distance Matrix com endereço enriquecido
@@ -247,6 +250,7 @@ Deno.serve(async (req: Request) => {
             if (dist !== null) {
               if (minC === null || dist < minC) {
                 minC = dist
+                metodoGeolocalizacaoUsado = 'distance_matrix_direto'
               }
             }
           }
