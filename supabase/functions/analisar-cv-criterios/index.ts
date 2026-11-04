@@ -20,6 +20,7 @@ import {
   REFERENCE_LOCATIONS,
   sanitizeAddressString,
   Coordinates,
+  getSaverioInterpretationNote,
 } from '../_shared/proximity.ts'
 import {
   calculateNeighborhoodProximity,
@@ -381,7 +382,14 @@ Deno.serve(async (req: Request) => {
             // Fallback de referência textual
             if (!candidateCoords) {
               candidateCoords = getReferenceCoordsForText(enderecoCV)
-              if (candidateCoords) validadoPorBairroAproximado = true
+              if (candidateCoords) {
+                validadoPorBairroAproximado = true
+                const notaInterp = getSaverioInterpretationNote(enderecoCV)
+                if (notaInterp) {
+                  bairroInterpretadoNota = notaInterp
+                  bairroGeocodificadoOrigem = 'referencia_textual_bairro_grafia_corrigida'
+                }
+              }
             }
 
             if (candidateCoords) {

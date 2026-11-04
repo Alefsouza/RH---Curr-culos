@@ -11,6 +11,7 @@ import {
   sanitizeAddressString,
   REFERENCE_LOCATIONS,
   KNOWN_CEP_COORDS,
+  getSaverioInterpretationNote,
 } from './proximity.ts'
 
 export interface NeighborhoodGeocodeResult {
@@ -299,10 +300,16 @@ export async function geocodeNeighborhoodOrIncompleteAddress(
     (fallbackContextText ? getReferenceCoordsForText(fallbackContextText) : null)
 
   if (refCoords) {
+    // Se a resolução veio da interpretação do bairro Jardim São Savério (grafia
+    // do CV), registrar a nota da interpretação usada SÓ para geocodificar.
+    const notaInterpretacao =
+      getSaverioInterpretationNote(baseAddress) ||
+      (fallbackContextText ? getSaverioInterpretationNote(fallbackContextText) : null)
     return {
       coords: refCoords,
       origem: 'referencia_textual',
       queryUsada: baseAddress,
+      correcaoGrafia: notaInterpretacao,
     }
   }
 
@@ -607,6 +614,9 @@ export async function sanitizeAndRecheckCoordinates(
         distanciaKm: Number(bestDist.toFixed(2)),
         metodoGeolocalizacao: metodo,
         divergenciaDetectada: divergencia,
+        correcaoGrafia:
+          getSaverioInterpretationNote(candidateAddressStr) ||
+          (fallbackText ? getSaverioInterpretationNote(fallbackText) : null),
       }
     }
   }

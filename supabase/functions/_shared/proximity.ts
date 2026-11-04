@@ -146,6 +146,20 @@ export const KNOWN_CEP_COORDS: Record<string, Coordinates> = {
   '04194260': { lat: -23.649, lng: -46.602 },
 }
 
+// Nota de interpretação de grafia do bairro Jardim São Savério (Savário/Savario/
+// Saverio). Retorna o texto da observação quando o texto menciona o bairro — usado
+// para registrar na análise qual interpretação foi aplicada SÓ na geocodificação
+// (o endereço cadastrado do candidato permanece inalterado).
+export function getSaverioInterpretationNote(text: string | null | undefined): string | null {
+  if (!text || typeof text !== 'string') return null
+  const norm = text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+  if (!/\bs[ae]v[ae]ri[oa]s?\b/.test(norm)) return null
+  return 'bairro interpretado como Jardim São Savério (região da Av. dos Ourives / CEP 04194-260, distrito do Cursino) para geocodificação; grafia original do CV preservada no cadastro'
+}
+
 // Fórmula de Haversine para cálculo de distância em km entre dois pontos geográficos
 export function calculateHaversineDistance(coord1: Coordinates, coord2: Coordinates): number {
   const toRad = (value: number) => (value * Math.PI) / 180
@@ -388,6 +402,14 @@ export function getReferenceCoordsForText(text: string): Coordinates | null {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+
+  // Bairro "Jardim São Savério" (distrito do Cursino, região da Av. dos Ourives /
+  // CEP 04194-260, colado na Sapopemba). NÃO geocodifica como localidade em
+  // nenhum mapa, então resolvemos para a coordenada conhecida da região.
+  // Cobre grafias erradas do CV: "Savário", "Savario", "Saverio" (sem acento).
+  if (/\bs[ae]v[aáe]ri[oa]s?\b/.test(norm)) {
+    return { lat: -23.649, lng: -46.602 }
+  }
 
   // Região Sapopemba / Zona Leste
   if (

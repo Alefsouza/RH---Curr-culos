@@ -12,6 +12,7 @@ import {
   REFERENCE_LOCATIONS,
   Coordinates,
   KNOWN_CEP_COORDS,
+  getSaverioInterpretationNote,
 } from '../_shared/proximity.ts'
 import {
   geocodeNeighborhoodOrIncompleteAddress,
@@ -441,7 +442,9 @@ async function pickBestVagaByProximity(
       // Fallback por palavras-chave no texto do endereço do candidato
       candidateCoords = getReferenceCoordsForText(candidateAddressStr)
       if (candidateCoords) {
-        metodoGeolocalizacao = 'referencia_textual_bairro'
+        metodoGeolocalizacao = getSaverioInterpretationNote(candidateAddressStr)
+          ? 'referencia_textual_bairro_grafia_corrigida'
+          : 'referencia_textual_bairro'
       }
     }
 
