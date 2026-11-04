@@ -76,11 +76,65 @@ const BAIRRO_SPELLING_FIXES: Array<{ pattern: RegExp; replacement: string; nota:
   { pattern: /sav[áa]rio/gi, replacement: 'Savério', nota: 'Jardim São Savério' },
 ]
 
+// v0.0.696: variações determinísticas de ACENTUAÇÃO para a geocodificação.
+// Cobre trocas de acento errado em vogais do bairro (ex.: "Savário" -> "Savério",
+// "Savario" -> "Savério") sem depender só do dicionário. Palavras estruturais
+// comuns (São, Jardim, Vila, Parque...) são ignoradas para não gerar ruído.
+const VOWEL_ALTERNATES: Record<string, string[]> = {
+  á: ['a', 'é', 'e', 'ó', 'o'],
+  à: ['a', 'á', 'é'],
+  â: ['a', 'á', 'ã'],
+  ã: ['a', 'á', 'â'],
+  é: ['e', 'á', 'ê', 'í'],
+  ê: ['e', 'é'],
+  í: ['i', 'é', 'e'],
+  ó: ['o', 'ô', 'õ', 'é', 'e'],
+  ô: ['o', 'ó', 'õ'],
+  õ: ['o', 'ó', 'ô'],
+  ú: ['u', 'í', 'i', 'o'],
+  ü: ['u'],
+}
+
+const STRUCTURAL_WORDS =
+  /^(s[ãa]o|sao|jd|jardim|vl[ai]?|vila|pq|parque|pqo|st[ao]?|santo|santa|n[ãa]o|nao|d[aeo]|de|da|do|dos|das)$/i
+
+function generateAccentVariants(address: string, cap = 12): string[] {
+  const variants: string[] = []
+  const positions: number[] = []
+  for (let i = 0; i < address.length && positions.length < 2; i++) {
+    const ch = (address[i] || '').toLowerCase()
+    if (!VOWEL_ALTERNATES[ch]) continue
+    // Ignorar vogais dentro de palavras estruturais ("São", "Jardim", ...)
+    let wordStart = i
+    while (wordStart > 0 && /\S/.test(address[wordStart - 1] || '')) wordStart--
+    let wordEnd = i
+    while (wordEnd < address.length - 1 && /\S/.test(address[wordEnd + 1] || '')) wordEnd++
+    const word = address
+      .slice(wordStart, wordEnd + 1)
+      .replace(/[^\p{L}]/gu, '')
+      .toLowerCase()
+    if (STRUCTURAL_WORDS.test(word)) continue
+    positions.push(i)
+  }
+  for (const pos of positions) {
+    const ch = (address[pos] || '').toLowerCase()
+    for (const alt of VOWEL_ALTERNATES[ch] || []) {
+      const candidate = address.slice(0, pos) + alt + address.slice(pos + 1)
+      if (candidate.toLowerCase() !== address.toLowerCase() && !variants.includes(candidate)) {
+        variants.push(candidate)
+        if (variants.length >= cap) return variants
+      }
+    }
+  }
+  return variants
+}
+
 /**
  * Gera variantes determinísticas de grafia de um endereço para tentativa de
  * geocodificação: (1) o endereço como está; (2) versão sem acentos (se difere);
- * (3+) correções de grafia conhecidas de bairros (se difere).
- * Retorna sempre a variante ORIGINAL primeiro — a correção é último recurso.
+ * (3+) correções de grafia conhecidas de bairros e variações de acentuação
+ * (se diferem). Retorna sempre a variante ORIGINAL primeiro — a correção é
+ * último recurso.
  */
 export function generateAddressSpellingVariants(
   address: string,
@@ -100,6 +154,16 @@ export function generateAddressSpellingVariants(
       if (corrected.trim().toLowerCase() !== (address || '').trim().toLowerCase()) {
         variants.push({ query: corrected, correcaoBairro: fix.nota })
       }
+    }
+  }
+  // v0.0.696: variantes de acentuação (só quando nenhuma correção conhecida casou)
+  const temFixConhecido = BAIRRO_SPELLING_FIXES.some((fix) => {
+    fix.pattern.lastIndex = 0
+    return fix.pattern.test(address || '')
+  })
+  if (!temFixConhecido) {
+    for (const accVariant of generateAccentVariants(address)) {
+      variants.push({ query: accVariant, correcaoBairro: null })
     }
   }
   return variants
