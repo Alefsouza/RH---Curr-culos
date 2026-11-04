@@ -907,7 +907,7 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
             vaga_id: null,
             etapa_id: null,
             ativo_kanban: false,
-            motivo_inativo: motivoDescarteFinal,
+            motivo_inativo: 'aguardando vaga adequada',
             proximidade: 'fora_raio',
           })
           .eq('id', candidato.id)
@@ -926,6 +926,9 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
             confianca: identifyData.confianca || 'baixa',
             score: 0,
             matched_criteria: [],
+            distancia_km: identifyData.distancia_km ?? null,
+            raio_maximo_km: identifyData.raio_maximo_km ?? null,
+            metodo_geolocalizacao: identifyData.metodo_geolocalizacao ?? null,
             unmatched_criteria: [
               {
                 nome: 'Localização / Proximidade',
@@ -1009,6 +1012,9 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
             confianca: identifyData.confianca || 'nenhuma',
             score: 0,
             matched_criteria: [],
+            distancia_km: identifyData.distancia_km ?? null,
+            raio_maximo_km: identifyData.raio_maximo_km ?? null,
+            metodo_geolocalizacao: identifyData.metodo_geolocalizacao ?? null,
             unmatched_criteria: [
               {
                 nome: 'Vaga compatível',

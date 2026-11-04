@@ -524,6 +524,57 @@ export type Database = {
           },
         ]
       }
+      reanalise_raio_lote: {
+        Row: {
+          atualizado_em: string | null
+          candidato_id: string
+          disparado_em: string | null
+          dist_anterior: number | null
+          dist_nova: number | null
+          nome: string | null
+          raio_km: number | null
+          req_id: number | null
+          resultado: string | null
+          status: string
+          vaga_destino_id: string | null
+          vaga_destino_titulo: string | null
+          vaga_origem_id: string | null
+          vaga_origem_titulo: string | null
+        }
+        Insert: {
+          atualizado_em?: string | null
+          candidato_id: string
+          disparado_em?: string | null
+          dist_anterior?: number | null
+          dist_nova?: number | null
+          nome?: string | null
+          raio_km?: number | null
+          req_id?: number | null
+          resultado?: string | null
+          status?: string
+          vaga_destino_id?: string | null
+          vaga_destino_titulo?: string | null
+          vaga_origem_id?: string | null
+          vaga_origem_titulo?: string | null
+        }
+        Update: {
+          atualizado_em?: string | null
+          candidato_id?: string
+          disparado_em?: string | null
+          dist_anterior?: number | null
+          dist_nova?: number | null
+          nome?: string | null
+          raio_km?: number | null
+          req_id?: number | null
+          resultado?: string | null
+          status?: string
+          vaga_destino_id?: string | null
+          vaga_destino_titulo?: string | null
+          vaga_origem_id?: string | null
+          vaga_origem_titulo?: string | null
+        }
+        Relationships: []
+      }
       respostas_whatsapp: {
         Row: {
           candidato_id: string | null
