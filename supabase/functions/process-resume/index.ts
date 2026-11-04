@@ -833,6 +833,37 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
       }
     }
 
+    // INVARIANTE (v0.0.693): candidato rotulado 'aguardando vaga adequada' DEVE ter análise
+    // registrada em analises. Se nada foi avaliado (identificacao de vaga falhou antes),
+    // marca como erro para reprocessamento — nunca deixa 'aguardando' sem análise no banco.
+    try {
+      if (!targetVagaId) {
+        const { data: candAposIdent } = await supabase
+          .from('candidatos')
+          .select('motivo_inativo')
+          .eq('id', candidatoId)
+          .single()
+        if (candAposIdent?.motivo_inativo === 'aguardando vaga adequada') {
+          const { data: analiseExistente } = await supabase
+            .from('analises')
+            .select('id')
+            .eq('candidato_id', candidatoId)
+            .limit(1)
+          if (!analiseExistente || analiseExistente.length === 0) {
+            await supabase
+              .from('candidatos')
+              .update({ motivo_inativo: 'erro_reanalise' })
+              .eq('id', candidatoId)
+            console.warn(
+              `[process-resume] candidato ${candidatoId} rotulado 'aguardando' sem análise — marcado erro_reanalise para reprocessamento`,
+            )
+          }
+        }
+      }
+    } catch (invErr: any) {
+      console.warn('Falha no invariante analise/aguardando (process-resume):', invErr?.message)
+    }
+
     // 7. Analyze against job criteria — APENAS se houver vaga atribuída
     const analisesRealizadas = []
     if (targetVagaId) {

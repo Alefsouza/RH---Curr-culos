@@ -957,6 +957,32 @@ ${ocrText.substring(0, 15000)}`
           finalStatus = 'sem_vaga_compativel'
         }
 
+        // INVARIANTE: candidato rotulado 'aguardando vaga adequada' DEVE ter análise registrada.
+        // (v0.0.693) Se nada foi avaliado (ex.: identificacao de vaga falhou antes), marca como
+        // erro para reprocessamento — nunca deixa 'aguardando' sem análise no banco.
+        try {
+          if (finalStatus === 'sem_vaga_compativel' && !vagaId) {
+            const { data: semAnalise } = await supabase
+              .from('analises')
+              .select('id')
+              .eq('candidato_id', candidatoId)
+              .limit(1)
+            if (!semAnalise || semAnalise.length === 0) {
+              await supabase
+                .from('candidatos')
+                .update({ motivo_inativo: 'erro_reanalise' })
+                .eq('id', candidatoId)
+              finalStatus = 'erro'
+              errors.push({
+                messageId: msg.id,
+                error: `candidato ${candidatoId} rotulado aguardando sem análise — marcado erro_reanalise`,
+              })
+            }
+          }
+        } catch (invErr: any) {
+          console.warn('Falha no invariante analise/aguardando:', invErr?.message)
+        }
+
         // Registrar email_importacoes
         const importPayload = {
           ...importBase,

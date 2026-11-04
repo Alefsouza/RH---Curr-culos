@@ -890,6 +890,34 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
       identifyData = await identifyRes.json()
 
       if (identifyData.error) {
+        // Salvaguarda v0.0.694: se o candidato está hoje rotulado 'aguardando vaga adequada'
+        // SEM nenhuma análise (rótulo legado de processamento que morreu no meio), converte
+        // para erro_reanalise — nunca deixar falso 'aguardando' no banco.
+        try {
+          const { data: candHoje } = await supabase
+            .from('candidatos')
+            .select('motivo_inativo')
+            .eq('id', candidato.id)
+            .single()
+          if (candHoje?.motivo_inativo === 'aguardando vaga adequada') {
+            const { data: anExist } = await supabase
+              .from('analises')
+              .select('id')
+              .eq('candidato_id', candidato.id)
+              .limit(1)
+            if (!anExist || anExist.length === 0) {
+              await supabase
+                .from('candidatos')
+                .update({ motivo_inativo: 'erro_reanalise' })
+                .eq('id', candidato.id)
+            }
+          }
+        } catch (guardErr: any) {
+          console.warn(
+            '[reanalisar-candidato] Falha na salvaguarda de rótulo legado:',
+            guardErr?.message,
+          )
+        }
         return new Response(JSON.stringify({ error: identifyData.error }), {
           status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -901,16 +929,9 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
         const motivoDescarteFinal =
           identifyData.motivo_descarte || 'Fora do raio de todas as garagens'
 
-        await supabase
-          .from('candidatos')
-          .update({
-            vaga_id: null,
-            etapa_id: null,
-            ativo_kanban: false,
-            motivo_inativo: 'aguardando vaga adequada',
-            proximidade: 'fora_raio',
-          })
-          .eq('id', candidato.id)
+        // INVARIANTE (v0.0.694): o rótulo 'aguardando' só é gravado DEPOIS da análise
+        // registrada no banco. Se a gravação da análise falhar, o candidato vai para
+        // erro_reanalise — nunca fica 'aguardando vaga adequada' sem análise.
 
         // Registrar análise com vaga_id null e motivo de descarte por raio
         const analiseDescartePayload = {
@@ -948,8 +969,9 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
           .maybeSingle()
 
         let savedAnaliseDescarte: any = null
+        let erroAnaliseDescarte: string | null = null
         if (existingNullAnalise) {
-          const { data: updAnalise } = await supabase
+          const { data: updAnalise, error: updErrAnalise } = await supabase
             .from('analises')
             .update({
               resultado: 'nao_qualificado',
@@ -960,14 +982,50 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
             .select()
             .single()
           savedAnaliseDescarte = updAnalise
+          erroAnaliseDescarte = updErrAnalise?.message || null
         } else {
-          const { data: insAnalise } = await supabase
+          const { data: insAnalise, error: insErrAnalise } = await supabase
             .from('analises')
             .insert({ ...analiseDescartePayload, criado_em: new Date().toISOString() })
             .select()
             .single()
           savedAnaliseDescarte = insAnalise
+          erroAnaliseDescarte = insErrAnalise?.message || null
         }
+
+        if (erroAnaliseDescarte) {
+          console.error(
+            '[reanalisar-candidato] Falha ao registrar análise de descarte por raio:',
+            erroAnaliseDescarte,
+          )
+          await supabase
+            .from('candidatos')
+            .update({
+              vaga_id: null,
+              etapa_id: null,
+              ativo_kanban: false,
+              motivo_inativo: 'erro_reanalise',
+            })
+            .eq('id', candidato.id)
+          return new Response(
+            JSON.stringify({
+              error: `Falha ao registrar análise do candidato: ${erroAnaliseDescarte}`,
+            }),
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          )
+        }
+
+        // Análise registrada: agora sim rotula o candidato
+        await supabase
+          .from('candidatos')
+          .update({
+            vaga_id: null,
+            etapa_id: null,
+            ativo_kanban: false,
+            motivo_inativo: 'aguardando vaga adequada',
+            proximidade: 'fora_raio',
+          })
+          .eq('id', candidato.id)
 
         return new Response(
           JSON.stringify({
@@ -983,15 +1041,8 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
 
       // Trata aguardando vaga adequada (Regra 3)
       if (identifyData.aguardando_vaga) {
-        await supabase
-          .from('candidatos')
-          .update({
-            vaga_id: null,
-            etapa_id: null,
-            ativo_kanban: false,
-            motivo_inativo: 'aguardando vaga adequada',
-          })
-          .eq('id', candidato.id)
+        // INVARIANTE (v0.0.694): gravar a análise PRIMEIRO; o rótulo 'aguardando' só vai
+        // para o candidato depois da análise confirmada no banco (ver mais abaixo).
 
         // Gravar análise com vaga_id null antes do return
         const funcaoInferida = identifyData.funcao_inferida || null
@@ -1034,8 +1085,9 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
           .maybeSingle()
 
         let savedAnaliseAguardando: any = null
+        let erroAnaliseAguardando: string | null = null
         if (existingNullAnalise) {
-          const { data: updAnalise } = await supabase
+          const { data: updAnalise, error: updErrAnalise } = await supabase
             .from('analises')
             .update({
               resultado: 'nao_qualificado',
@@ -1046,14 +1098,49 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
             .select()
             .single()
           savedAnaliseAguardando = updAnalise
+          erroAnaliseAguardando = updErrAnalise?.message || null
         } else {
-          const { data: insAnalise } = await supabase
+          const { data: insAnalise, error: insErrAnalise } = await supabase
             .from('analises')
             .insert({ ...analiseAguardandoPayload, criado_em: new Date().toISOString() })
             .select()
             .single()
           savedAnaliseAguardando = insAnalise
+          erroAnaliseAguardando = insErrAnalise?.message || null
         }
+
+        if (erroAnaliseAguardando) {
+          console.error(
+            '[reanalisar-candidato] Falha ao registrar análise de aguardando vaga:',
+            erroAnaliseAguardando,
+          )
+          await supabase
+            .from('candidatos')
+            .update({
+              vaga_id: null,
+              etapa_id: null,
+              ativo_kanban: false,
+              motivo_inativo: 'erro_reanalise',
+            })
+            .eq('id', candidato.id)
+          return new Response(
+            JSON.stringify({
+              error: `Falha ao registrar análise do candidato: ${erroAnaliseAguardando}`,
+            }),
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          )
+        }
+
+        // Análise registrada: agora sim rotula o candidato
+        await supabase
+          .from('candidatos')
+          .update({
+            vaga_id: null,
+            etapa_id: null,
+            ativo_kanban: false,
+            motivo_inativo: 'aguardando vaga adequada',
+          })
+          .eq('id', candidato.id)
 
         return new Response(
           JSON.stringify({
@@ -1177,21 +1264,11 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
     // =========================================================================
     if (!identifiedVagaId) {
       console.log(
-        `[reanalisar-candidato] Nenhuma vaga compatível para candidato ${candidato.id}. Limpando vaga_id e etapa_id, e marcando aguardando vaga adequada.`,
+        `[reanalisar-candidato] Nenhuma vaga compatível para candidato ${candidato.id}. Registrando análise e, depois, rotulando aguardando vaga adequada (invariante v0.0.694).`,
       )
 
-      // 1. Limpa vaga_id e etapa_id do candidato e marca aguardando vaga adequada
-      await supabase
-        .from('candidatos')
-        .update({
-          vaga_id: null,
-          etapa_id: null,
-          ativo_kanban: false,
-          motivo_inativo: 'aguardando vaga adequada',
-        })
-        .eq('id', candidato.id)
-
-      // 2. Registra análise com resultado "nao_qualificado" e vaga_id null
+      // 1. Registra análise com resultado "nao_qualificado" e vaga_id null
+      //    (o rótulo do candidato só é gravado DEPOIS da análise confirmada — ver abaixo)
       const hasObjetivo =
         typeof currentDadosExtraidos.objetivo === 'string' &&
         currentDadosExtraidos.objetivo.trim().length > 0
@@ -1237,8 +1314,9 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
         .maybeSingle()
 
       let savedAnaliseData: any = null
+      let erroAnaliseSemVaga: string | null = null
       if (existingNullAnalise) {
-        const { data: updAnalise } = await supabase
+        const { data: updAnalise, error: updErrAnalise } = await supabase
           .from('analises')
           .update({
             resultado: 'nao_qualificado',
@@ -1249,14 +1327,50 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
           .select()
           .single()
         savedAnaliseData = updAnalise
+        erroAnaliseSemVaga = updErrAnalise?.message || null
       } else {
-        const { data: insAnalise } = await supabase
+        const { data: insAnalise, error: insErrAnalise } = await supabase
           .from('analises')
           .insert({ ...analiseSemVagaPayload, criado_em: new Date().toISOString() })
           .select()
           .single()
         savedAnaliseData = insAnalise
+        erroAnaliseSemVaga = insErrAnalise?.message || null
       }
+
+      if (erroAnaliseSemVaga) {
+        console.error(
+          '[reanalisar-candidato] Falha ao registrar análise sem vaga:',
+          erroAnaliseSemVaga,
+        )
+        await supabase
+          .from('candidatos')
+          .update({
+            vaga_id: null,
+            etapa_id: null,
+            ativo_kanban: false,
+            motivo_inativo: 'erro_reanalise',
+          })
+          .eq('id', candidato.id)
+        return new Response(
+          JSON.stringify({
+            error: `Falha ao registrar análise do candidato: ${erroAnaliseSemVaga}`,
+          }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        )
+      }
+
+      // Análise registrada: agora sim limpa vaga/etapa e rotula aguardando vaga adequada
+      await supabase
+        .from('candidatos')
+        .update({
+          vaga_id: null,
+          etapa_id: null,
+          ativo_kanban: false,
+          motivo_inativo: 'aguardando vaga adequada',
+        })
+        .eq('id', candidato.id)
+
       return new Response(
         JSON.stringify({
           success: true,
@@ -1319,6 +1433,31 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
 
     if (analyzeData.error) {
       console.error('[reanalisar-candidato] Erro retornado de analisar-cv-criterios:', analyzeData)
+      // Salvaguarda v0.0.694: candidato rotulado 'aguardando vaga adequada' sem NENHUMA
+      // análise no banco é rótulo legado de processamento morto — converte para
+      // erro_reanalise em vez de devolver erro deixando o falso 'aguardando' no lugar.
+      try {
+        const { data: candHoje } = await supabase
+          .from('candidatos')
+          .select('motivo_inativo')
+          .eq('id', candidato.id)
+          .single()
+        if (candHoje?.motivo_inativo === 'aguardando vaga adequada') {
+          const { data: anExist } = await supabase
+            .from('analises')
+            .select('id')
+            .eq('candidato_id', candidato.id)
+            .limit(1)
+          if (!anExist || anExist.length === 0) {
+            await supabase
+              .from('candidatos')
+              .update({ motivo_inativo: 'erro_reanalise' })
+              .eq('id', candidato.id)
+          }
+        }
+      } catch (guardErr: any) {
+        console.warn('[reanalisar-candidato] Falha na salvaguarda pós-análise:', guardErr?.message)
+      }
       return new Response(
         JSON.stringify({
           error: analyzeData.error,
@@ -1476,6 +1615,25 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
           .select('ativo_kanban, motivo_inativo, etapa_id')
           .eq('id', candidato.id)
           .maybeSingle()
+
+        // Se o candidato segue com o rótulo legado 'aguardando vaga adequada' sem análise,
+        // limpa o rótulo aqui também (reativação pós-qualificação é um terminal seguro).
+        if (
+          candStatus?.motivo_inativo === 'aguardando vaga adequada' &&
+          candStatus?.ativo_kanban === false
+        ) {
+          const { data: anExist } = await supabase
+            .from('analises')
+            .select('id')
+            .eq('candidato_id', candidato.id)
+            .limit(1)
+          if (!anExist || anExist.length === 0) {
+            await supabase
+              .from('candidatos')
+              .update({ motivo_inativo: 'erro_reanalise' })
+              .eq('id', candidato.id)
+          }
+        }
 
         const upd: Record<string, any> = {}
 
