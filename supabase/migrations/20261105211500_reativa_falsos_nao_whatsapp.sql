@@ -1,11 +1,15 @@
 -- Reativação dos falsos "Não" do WhatsApp (bug de classificação por texto livre,
 -- corrigido na v0.0.700: texto livre nunca classificava Sim/Não — só botão ou recusa inequívoca).
 -- O webhook antigo arquivou 4 candidatos injustamente porque a mensagem de texto livre
--- contia a palavra "não" no meio da frase. O RH confirmou que os 4 são falsos "Não".
+-- continha a palavra "não" no meio da frase. O RH confirmou que os 4 são falsos "Não".
 -- NÃO mexer em: Matheus Silva Moreira (recusa real) e Renato Alves Feitoza ("Não" por botão, legítimo).
 -- NÃO mexer nos protegidos: Daniel (3c9a24ae), Igor (46ab0280), Cristiano (18cb75de),
 -- Eduardo (cdbbf741) e João Rafael (548de618) — filtro por prefixo de UUID em todo UPDATE/DELETE.
 -- NÃO reexecuta mascaramento de dados (mask_personal_data).
+--
+-- NOTA v2: a 1ª tentativa falhou com "invalid input syntax for type json — Token JEAN is
+-- invalid": texto dinâmico com cast ::text::jsonb NÃO é quotado pelo Postgres. Todos os
+-- RAISE NOTICE agora usam texto simples (% com argumentos text), sem nenhum cast json/jsonb.
 
 DO $$
 DECLARE
@@ -38,7 +42,7 @@ BEGIN
    WHERE id = v_antonio
      AND id::text LIKE '0063f35b%';
   GET DIAGNOSTICS v_rows = ROW_COUNT;
-  RAISE NOTICE 'antonio_reativado: % linha(s)', v_rows::text::jsonb;
+  RAISE NOTICE 'antonio_reativado: % linha(s)', v_rows;
   IF v_rows = 0 THEN
     RAISE NOTICE 'antonio_falha: candidato 0063f35b não encontrado — nada alterado';
   END IF;
@@ -57,7 +61,7 @@ BEGIN
    WHERE id = v_tiago
      AND id::text LIKE '32302108%';
   GET DIAGNOSTICS v_rows = ROW_COUNT;
-  RAISE NOTICE 'tiago_reativado: % linha(s), etapa anterior real do histórico = Entrevista Gestor (15/10)', v_rows::text::jsonb;
+  RAISE NOTICE 'tiago_reativado: % linha(s) — etapa anterior real do histórico: Entrevista Gestor (15/10)', v_rows;
 
   ----------------------------------------------------------------------
   -- 3) CICERO CRISOSTOMO DOS SANTOS — estava "Reprovado" (não bate com
@@ -73,7 +77,7 @@ BEGIN
    WHERE id = v_cicero
      AND id::text LIKE '0eb00581%';
   GET DIAGNOSTICS v_rows = ROW_COUNT;
-  RAISE NOTICE 'cicero_reativado: % linha(s), etapa anterior real do histórico = Entrevista RH', v_rows::text::jsonb;
+  RAISE NOTICE 'cicero_reativado: % linha(s) — etapa anterior real do histórico: Entrevista RH', v_rows;
 
   ----------------------------------------------------------------------
   -- 4) JEAN GABRIEL DE ASSUMPÇÃO KOHLER — etapa_id estava vazia; RH
@@ -90,7 +94,7 @@ BEGIN
    WHERE id = v_jean
      AND id::text LIKE '951fd40f%';
   GET DIAGNOSTICS v_rows = ROW_COUNT;
-  RAISE NOTICE 'jean_reativado: % linha(s)', v_rows::text::jsonb;
+  RAISE NOTICE 'jean_reativado: % linha(s)', v_rows;
 
   INSERT INTO public.candidato_etapa (candidato_id, etapa_id, data_entrada, usuario_id)
   SELECT v_jean, v_entrevista_gestor, now(),
@@ -103,7 +107,7 @@ BEGIN
      WHERE candidato_id = v_jean AND etapa_id = v_entrevista_gestor
   );
   GET DIAGNOSTICS v_rows = ROW_COUNT;
-  RAISE NOTICE 'jean_candidato_etapa_inserido: % linha(s)', v_rows::text::jsonb;
+  RAISE NOTICE 'jean_candidato_etapa_inserido: % linha(s)', v_rows;
 
   ----------------------------------------------------------------------
   -- 5) Remover a observação falsa "Não tem interesse na vaga" criada pelo
@@ -116,7 +120,7 @@ BEGIN
        OR candidato_id::text LIKE '0eb00581%'
        OR candidato_id::text LIKE '951fd40f%');
   GET DIAGNOSTICS v_rows = ROW_COUNT;
-  RAISE NOTICE 'observacoes_falsas_removidas: % linha(s)', v_rows::text::jsonb;
+  RAISE NOTICE 'observacoes_falsas_removidas: % linha(s)', v_rows;
 
   ----------------------------------------------------------------------
   -- 6) Remover a resposta falsa 'nao' gerada por texto livre, nos 4.
@@ -131,10 +135,10 @@ BEGIN
        OR candidato_id::text LIKE '0eb00581%'
        OR candidato_id::text LIKE '951fd40f%');
   GET DIAGNOSTICS v_rows = ROW_COUNT;
-  RAISE NOTICE 'respostas_falsas_removidas: % linha(s)', v_rows::text::jsonb;
+  RAISE NOTICE 'respostas_falsas_removidas: % linha(s)', v_rows;
 END $$;
 
--- Verificação de auditoria (somente leitura, NOTICE)
+-- Verificação de auditoria (somente leitura, NOTICE em texto simples — sem cast json/jsonb)
 DO $$
 DECLARE
   r record;
@@ -149,8 +153,8 @@ BEGIN
         OR c.id::text LIKE '0eb00581%' OR c.id::text LIKE '951fd40f%'
   LOOP
     RAISE NOTICE 'final: % | ativo=% | motivo=% | etapa=% | vaga=% | ultima_resp=% | deleted=%',
-      r.nome::text::jsonb, r.ativo_kanban::text::jsonb, coalesce(r.motivo_inativo,'')::text::jsonb,
-      coalesce(r.etapa,'')::text::jsonb, coalesce(r.vaga,'')::text::jsonb,
-      coalesce(r.ultima_resposta_whatsapp,'')::text::jsonb, coalesce(r.deleted_at::text,'')::text::jsonb;
+      r.nome, r.ativo_kanban::text, coalesce(r.motivo_inativo, ''),
+      coalesce(r.etapa, ''), coalesce(r.vaga, ''),
+      coalesce(r.ultima_resposta_whatsapp, ''), coalesce(r.deleted_at::text, '');
   END LOOP;
 END $$;
