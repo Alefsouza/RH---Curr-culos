@@ -337,30 +337,38 @@ Deno.serve(async (req: Request) => {
             }
           }
 
-          // Classificar a resposta com base no texto recebido e no template
-          let respostaClassificada = null
+          // ------------------------------------------------------------------
+          // Classificar a resposta com base no texto recebido e no template.
+          //
+          // REGRA (v0.0.702): a classificação 'Sim' / 'Não' só vale quando:
+          //   (a) a resposta veio de BOTÃO apertado (selectedButtonId), ou
+          //   (b) o TEXTO LIVRE é uma recusa/aceite DIRETA e inequívoca
+          //       (ex.: apenas "não", "não quero", "não tenho interesse").
+          //
+          // Texto livre que apenas CONTÉM a palavra "não" no meio (ex.:
+          // "Só não tenho o endereço") é registrado somente como mensagem e
+          // NUNCA dispara as ações de 'Não' (arquivar/remover do Kanban).
+          // ------------------------------------------------------------------
+          let respostaClassificada: 'sim' | 'nao' | null = null
 
+          const isButtonReply = !!selectedButtonId
           const txtToCheck = (incomingText || selectedButtonId || '').toLowerCase().trim()
+          const normalizedText = txtToCheck.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 
           if (selectedButtonId) {
+            // (a) Botão com o nosso padrão de id sim_<candidato_id> / nao_<candidato_id>
             const btnMatch = selectedButtonId.match(/^(sim|nao)_(.+)$/i)
             if (btnMatch) {
-              respostaClassificada = btnMatch[1].toLowerCase()
+              respostaClassificada = btnMatch[1].toLowerCase() as 'sim' | 'nao'
             }
           }
 
-          if (!respostaClassificada) {
-            const simWords = ['sim', 's', 'sim!', 'sin', 'quero', 'sim|sim']
-            const naoWords = [
-              'nao',
-              'não',
-              'n',
-              'não!',
-              'nao tenho interesse',
-              'não tenho interesse',
-              'nao|nao',
-              'não|nao',
-            ]
+          if (!respostaClassificada && isButtonReply) {
+            // (a) Botão/lista/enquete com id fora do padrão: classificar pelo texto
+            // exibido do botão, que é escolhido pelo RH — nunca texto livre do candidato.
+            const norm = (w: string) => w.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            const simWords = ['sim', 's', 'quero', 'sim|sim']
+            const naoWords = ['nao', 'n', 'nao tenho interesse', 'nao|nao', 'nao quero']
 
             if (templateData) {
               if (templateData.botao_sim_texto)
@@ -369,18 +377,29 @@ Deno.serve(async (req: Request) => {
                 naoWords.push(templateData.botao_nao_texto.toLowerCase().trim())
             }
 
-            if (simWords.some((w) => txtToCheck === w || txtToCheck.startsWith('sim|'))) {
+            if (
+              simWords.some((w) => normalizedText === norm(w) || normalizedText.startsWith('sim|'))
+            ) {
               respostaClassificada = 'sim'
-            } else if (naoWords.some((w) => txtToCheck === w || txtToCheck.startsWith('nao|'))) {
+            } else if (
+              naoWords.some((w) => normalizedText === norm(w) || normalizedText.startsWith('nao|'))
+            ) {
               respostaClassificada = 'nao'
             }
           }
 
-          if (!respostaClassificada) {
-            const normalizedText = txtToCheck.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-            if (/\bnao\b/i.test(normalizedText)) {
+          if (!respostaClassificada && !isButtonReply) {
+            // (b) TEXTO LIVRE: apenas recusa/aceite direta e inequívoca.
+            // O texto inteiro (sem acentos) precisa SER a recusa/aceite — nada de
+            // procurar a palavra no meio da frase.
+            const recusaDireta =
+              /^(nao|n|nao quero|nao tenho interesse|nao quero participar|nao aceito|nao posso|nao vou participar|desisto)\W*$/
+            const aceiteDireto =
+              /^(sim|s|quero|aceito|topo|claro|certo|isso|pode contar comigo)\W*$/
+
+            if (recusaDireta.test(normalizedText)) {
               respostaClassificada = 'nao'
-            } else if (/\bsim\b/i.test(normalizedText)) {
+            } else if (aceiteDireto.test(normalizedText)) {
               respostaClassificada = 'sim'
             }
           }
