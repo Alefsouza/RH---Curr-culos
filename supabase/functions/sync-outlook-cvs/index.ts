@@ -302,19 +302,17 @@ async function getAllMailFolderIds(
     const folderList = data.value || []
 
     for (const f of folderList) {
-      // Ignorar lixeira (Deleted Items), spam (Junk Email), rascunhos (Drafts), itens enviados (Sent Items)
+      // Ignorar lixeira (Deleted Items), rascunhos (Drafts), itens enviados (Sent Items)
+      // ATENÇÃO: Junk Email / Lixo Eletrônico / Spam NÃO é mais ignorado, pois currículos
+      // de candidatos frequentemente caem em Junk/Spam no Outlook corporativo.
       const folderName = (f.displayName || '').toLowerCase()
       const wellKnown = (f.wellKnownName || '').toLowerCase()
       if (
         folderName.includes('deleted') ||
-        folderName.includes('junk') ||
         folderName.includes('drafts') ||
         folderName.includes('sent') ||
-        folderName.includes('lixo') ||
         folderName.includes('exclu') ||
-        folderName.includes('spam') ||
         wellKnown === 'deleteditems' ||
-        wellKnown === 'junkemail' ||
         wellKnown === 'drafts' ||
         wellKnown === 'sentitems'
       ) {
@@ -2444,6 +2442,102 @@ Deno.serve(async (req: Request) => {
       }
 
       return new Response(JSON.stringify({ ok: true, reprocessResults }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // Ação operacional: executar lote de reanálise de erro_reanalise diretamente pela function
+    if (body?.triggerReanalisarErroReanalise) {
+      console.log('[sync-outlook-cvs] Disparando reanalisar-erro-reanalise...')
+      const rRes = await fetch(`${supabaseUrl}/functions/v1/reanalisar-erro-reanalise`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify(body.options || {}),
+      })
+      const rJson = await rRes.json().catch(() => ({ raw: 'erro json' }))
+      return new Response(JSON.stringify({ ok: rRes.ok, status: rRes.status, result: rJson }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // Ação operacional: diagnosticar mensagem do Graph diretamente (ex.: Catia, Rian)
+    if (body?.diagnoseGraph) {
+      const clientId = Deno.env.get('MS_CLIENT_ID')
+      const clientSecret = Deno.env.get('MS_CLIENT_SECRET')
+      const tenantId = Deno.env.get('MS_TENANT_ID')
+      const mailboxEmail = Deno.env.get('MAILBOX_EMAIL') || 'rh@viasudeste.com'
+
+      const tokenRes = await fetch(
+        `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: clientId!,
+            client_secret: clientSecret!,
+            grant_type: 'client_credentials',
+            scope: 'https://graph.microsoft.com/.default',
+          }),
+        },
+      )
+      const tokenJson = await tokenRes.json()
+      const graphHeaders = {
+        Authorization: `Bearer ${tokenJson.access_token}`,
+        'Content-Type': 'application/json',
+      }
+
+      const diagResult: any = {}
+
+      // 1. Se pediu detalhes de uma mensagem por ID
+      if (body?.messageId) {
+        const msgRes = await fetch(
+          `https://graph.microsoft.com/v1.0/users/${mailboxEmail}/messages/${body.messageId}?$expand=attachments`,
+          { headers: graphHeaders },
+        )
+        diagResult.messageStatus = msgRes.status
+        diagResult.message = await msgRes.json()
+      }
+
+      // 2. Se pediu busca de mensagens (por email, assunto, etc.) em todas as pastas (incluindo Junk e Deleted)
+      if (body?.searchQuery || body?.searchFrom) {
+        const queryTerm = body.searchQuery || body.searchFrom
+        // Listar pastas reais, inclusive junk/deleted se solicitado
+        const foldersRes = await fetch(
+          `https://graph.microsoft.com/v1.0/users/${mailboxEmail}/mailFolders?$top=100`,
+          { headers: graphHeaders },
+        )
+        const foldersData = await foldersRes.json()
+        const allFolders = foldersData.value || []
+        diagResult.folders = allFolders.map((f: any) => ({
+          id: f.id,
+          name: f.displayName,
+          total: f.totalItemCount,
+          unread: f.unreadItemCount,
+        }))
+
+        const foundMsgs: any[] = []
+        for (const f of allFolders) {
+          try {
+            // Busca nas mensagens da pasta
+            const searchUrl = `https://graph.microsoft.com/v1.0/users/${mailboxEmail}/mailFolders/${f.id}/messages?$search="${encodeURIComponent(queryTerm)}"&$top=10&$select=id,subject,from,receivedDateTime,hasAttachments,parentFolderId`
+            const sRes = await fetch(searchUrl, { headers: graphHeaders })
+            if (sRes.ok) {
+              const sData = await sRes.json()
+              for (const m of sData.value || []) {
+                foundMsgs.push({ ...m, folderName: f.displayName })
+              }
+            }
+          } catch (e: any) {
+            console.warn(`Erro search folder ${f.displayName}:`, e.message)
+          }
+        }
+        diagResult.foundMessages = foundMsgs
+      }
+
+      return new Response(JSON.stringify({ ok: true, diagResult }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
