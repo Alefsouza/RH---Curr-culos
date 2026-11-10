@@ -16,6 +16,7 @@ import { extractCep, isTruncatedOrIncompleteAddress } from '../_shared/proximity
 import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
 import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
 import { performGoogleVisionPdfOcr } from '../_shared/ocr.ts'
+import { performGoogleVisionImageOcr } from '../_shared/vision-image.ts'
 import { mergeExtractedCnh } from '../_shared/cnh.ts'
 
 interface ExtractedCandidateData {
@@ -34,16 +35,28 @@ interface ExtractedCandidateData {
   [key: string]: any
 }
 
-// Extrai dados do currículo via OpenAI (apenas texto puro, sem image_url)
-async function extractCandidateData(
+// Extrai dados do currículo via OpenAI (apenas texto puro, sem image_url).
+// Exportado para o processamento manual sob demanda (reprocessEmailImportIds em lote próprio).
+export async function extractCandidateData(
   openai: OpenAI,
   fileBytes: Uint8Array,
   fileName: string,
 ): Promise<{ extractedData: ExtractedCandidateData; rawText: string } | null> {
   const ext = fileName.toLowerCase().split('.').pop()
   let extractedRawText = ''
+  const isImageExt = ['jpg', 'jpeg', 'png', 'heic', 'webp', 'bmp'].includes(ext || '')
 
-  if (ext === 'docx') {
+  if (isImageExt) {
+    // Anexo de currículo em formato IMAGEM: OCR direto via Google Vision (images:annotate)
+    const ocrText = await performGoogleVisionImageOcr(fileBytes)
+    if (ocrText && ocrText.trim().length >= 20) {
+      extractedRawText = ocrText
+    } else {
+      console.warn(
+        `[extractCandidateData] Imagem ${fileName}: OCR não retornou texto legível (${ocrText?.trim().length || 0} caracteres).`,
+      )
+    }
+  } else if (ext === 'docx') {
     extractedRawText = await extractRawTextFromDocxBytes(fileBytes)
   } else {
     extractedRawText = await extractTextFromPdfBytes(fileBytes)
@@ -549,7 +562,7 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
         }
       }
 
-      // Priorizar PDF e DOCX
+      // Priorizar PDF, DOCX e depois IMAGENS (JPG/PNG) de currículo
       let selectedAtt = attachments.find((a: any) => {
         const n = (a.name || '').toLowerCase()
         return n.endsWith('.pdf')
@@ -559,6 +572,13 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
         selectedAtt = attachments.find((a: any) => {
           const n = (a.name || '').toLowerCase()
           return n.endsWith('.docx')
+        })
+      }
+
+      if (!selectedAtt) {
+        selectedAtt = attachments.find((a: any) => {
+          const n = (a.name || '').toLowerCase()
+          return /\.(jpe?g|png|heic|webp|bmp)$/.test(n)
         })
       }
 
@@ -576,7 +596,7 @@ async function performSync(supabase: any, syncRunId: string | null, userId: stri
         const noAttPayload = {
           ...importBase,
           status: 'sem_anexo_valido',
-          erro_detalhes: 'Nenhum anexo PDF ou DOCX encontrado.',
+          erro_detalhes: 'Nenhum anexo PDF, DOCX ou imagem de currículo encontrado.',
           processado_em: new Date().toISOString(),
         }
         if (existing?.id) {
@@ -1737,6 +1757,43 @@ Deno.serve(async (req: Request) => {
       )
     }
 
+    // IMPORTAÇÃO MANUAL sob demanda: processa e-mails específicos (por id ou por remetente),
+    // incluindo os descartados como 'sem_anexo_valido' (agora com suporte a imagem/OCR).
+    if (body?.importarEmailsManualmente) {
+      const alvoIds: string[] = Array.isArray(body.emailImportIds) ? body.emailImportIds : []
+      const alvoRemetentes: string[] = Array.isArray(body.remetentes) ? body.remetentes : []
+      console.log(
+        `[sync-outlook-cvs] Importação manual: ids=${alvoIds.length}, remetentes=${alvoRemetentes.join(',') || '(nenhum)'}`,
+      )
+
+      const supabaseUrl2 = Deno.env.get('SUPABASE_URL') || ''
+      const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || supabaseKey
+
+      let query = supabase.from('email_importacoes').select('*')
+      if (alvoIds.length > 0) query = query.in('id', alvoIds)
+      if (alvoRemetentes.length > 0) query = query.in('remetente', alvoRemetentes)
+      const { data: alvoRows, error: alvoErr } = await query
+
+      if (alvoErr || !alvoRows) {
+        throw new Error(`Falha ao buscar e-mails alvo: ${alvoErr?.message}`)
+      }
+
+      const processRes = await fetch(`${supabaseUrl2}/functions/v1/sync-outlook-cvs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${serviceKey}`,
+        },
+        body: JSON.stringify({ reprocessEmailImportIds: alvoRows.map((r: any) => r.id) }),
+      })
+      const processJson = await processRes.json().catch(() => ({ raw: 'sem json' }))
+
+      return new Response(
+        JSON.stringify({ ok: processRes.ok, processados: alvoRows.length, processJson }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
+    }
+
     if (body?.triggerBatchEduardo) {
       console.log('[sync-outlook-cvs] Ação especial: disparar batch para Eduardo...')
       const batchRes = await fetch(`${supabaseUrl}/functions/v1/batch-reanalyze-all`, {
@@ -1887,7 +1944,7 @@ Deno.serve(async (req: Request) => {
       const { data: targetRows, error: fetchErr } = await supabase
         .from('email_importacoes')
         .select('*')
-        .eq('erro_detalhes', 'extractedText is not defined')
+        .in('status', ['texto_insuficiente', 'sem_anexo_valido'])
         .is('candidato_id', null)
         .order('recebido_em', { ascending: false })
         .limit(maxBatch)
@@ -2011,13 +2068,18 @@ Deno.serve(async (req: Request) => {
               (a.name || '').toLowerCase().endsWith('.docx'),
             )
           }
+          if (!selectedAtt) {
+            selectedAtt = attachments.find((a: any) =>
+              /\.(jpe?g|png|heic|webp|bmp)$/.test((a.name || '').toLowerCase()),
+            )
+          }
 
           if (!selectedAtt) {
             await supabase
               .from('email_importacoes')
               .update({
                 status: 'sem_anexo_valido',
-                erro_detalhes: 'Nenhum anexo PDF ou DOCX encontrado.',
+                erro_detalhes: 'Nenhum anexo PDF, DOCX ou imagem de currículo encontrado.',
                 processado_em: new Date().toISOString(),
               })
               .eq('id', rowId)
@@ -2220,7 +2282,17 @@ Deno.serve(async (req: Request) => {
           const contentType =
             ext === 'docx'
               ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-              : 'application/pdf'
+              : ext === 'jpg' || ext === 'jpeg'
+                ? 'image/jpeg'
+                : ext === 'png'
+                  ? 'image/png'
+                  : ext === 'heic'
+                    ? 'image/heic'
+                    : ext === 'webp'
+                      ? 'image/webp'
+                      : ext === 'bmp'
+                        ? 'image/bmp'
+                        : 'application/pdf'
 
           await supabase.storage
             .from('curriculos')
@@ -2265,6 +2337,8 @@ Deno.serve(async (req: Request) => {
           }
 
           let vagaId: string | null = null
+          let isDescartadoPorRaio = false
+          let motivoDescarte: string | null = null
           try {
             const idRes = await supabase.functions.invoke('identify-vaga-from-cv', {
               body: {
@@ -2275,12 +2349,28 @@ Deno.serve(async (req: Request) => {
               },
             })
             vagaId = idRes.data?.vaga_id || null
+            if (idRes.data?.descartado) {
+              isDescartadoPorRaio = true
+              motivoDescarte = idRes.data?.motivo_descarte || null
+            }
           } catch (e: any) {
             console.warn(`Identify vaga row ${rowId}:`, e?.message)
           }
 
           let finalStatus = 'sucesso'
-          if (vagaId) {
+          if (isDescartadoPorRaio) {
+            await supabase
+              .from('candidatos')
+              .update({
+                vaga_id: null,
+                etapa_id: null,
+                ativo_kanban: false,
+                motivo_inativo: motivoDescarte || 'Fora do raio de todas as garagens',
+                proximidade: 'fora_raio',
+              })
+              .eq('id', candidatoId)
+            finalStatus = 'fora_do_raio'
+          } else if (vagaId) {
             await supabase.from('candidatos').update({ vaga_id: vagaId }).eq('id', candidatoId)
             try {
               const critRes = await supabase.functions.invoke('analisar-cv-criterios', {
@@ -2294,11 +2384,29 @@ Deno.serve(async (req: Request) => {
               console.warn(`Critérios row ${rowId}:`, e?.message)
             }
           } else {
+            // Sem vaga compatível: aguardando vaga adequada — mas INVARIANTE (v0.0.693):
+            // só pode ficar 'aguardando' COM análise registrada; sem análise → erro_reanalise.
+            let temAnalise = false
+            try {
+              const { data: chkAnalise } = await supabase
+                .from('analises')
+                .select('id')
+                .eq('candidato_id', candidatoId)
+                .limit(1)
+              temAnalise = !!chkAnalise && chkAnalise.length > 0
+            } catch (invErr: any) {
+              console.warn(`Invariant check row ${rowId}:`, invErr?.message)
+            }
             await supabase
               .from('candidatos')
-              .update({ vaga_id: null, etapa_id: null })
+              .update({
+                vaga_id: null,
+                etapa_id: null,
+                ativo_kanban: false,
+                motivo_inativo: temAnalise ? 'aguardando vaga adequada' : 'erro_reanalise',
+              })
               .eq('id', candidatoId)
-            finalStatus = 'sem_vaga_compativel'
+            finalStatus = temAnalise ? 'sem_vaga_compativel' : 'erro'
           }
 
           await supabase
