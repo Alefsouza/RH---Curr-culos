@@ -563,6 +563,12 @@ DIRETRIZES CRÍTICAS PARA AVALIAÇÃO DE CRITÉRIOS:
    - NUNCA faça afirmações vagas como "atende" ou "não atende" sem evidência extraída do documento.
    - No campo 'evidencias_citadas', inclua uma lista com as principais citações literais do CV que sustentam o parecer geral.
 
+10. REGRA MANDATÓRIA DE CRITÉRIOS "DESEJÁVEL":
+   - Qualquer critério da vaga iniciado ou marcado com "Desejável" / "Desejavel" / "desejável" / "desejavel" (ex.: "DESEJÁVEL experiência prévia com lavagem de veículos pesados", "Desejável ensino Fundamental completo", "Desejável experiência anterior") NUNCA É ELIMINATÓRIO.
+   - O termo "Desejável" apenas soma ou ajusta a pontuação/score quando atendido; a ausência do que é desejável NUNCA reprove, NUNCA coloque em 'unmatched_criteria' como motivo eliminatório de reprovação, NUNCA gere resultado 'nao_qualificado' nem 'revisar' por si só.
+   - Só eliminam: critérios explícitos obrigatórios/exigidos e restrições mandatórias (gênero condicionado a CNH, faixa etária explícita, experiência proibida, vínculo ATUAL em empresa restrita).
+   - Se a única razão da reprovação for um critério "Desejável" não atendido (ou ausência de experiência onde a experiência é apenas desejável), o resultado DEVE ser "qualificado".
+
 Retorne ESTRITAMENTE um JSON com as seguintes chaves:
 - resultado (qualificado, nao_qualificado ou revisar)
 - detalhes (objeto com score (número inteiro de 0 a 100 representando a compatibilidade geral do candidato), matched_criteria (array de objetos com nome (string) e evidencia (string contendo citação literal do trecho do CV que comprova)), unmatched_criteria (array de objetos com nome (string), motivo (string) e evidencia_cv (string com o trecho do CV ou menção à ausência no texto)), summary (string com resumo conciso da análise citando evidências), pontos_fortes (array de strings), pontos_fracos (array de strings), aderencia (string ex: '85%'), motivo (string, explicação fundamentada citando trechos do CV), evidencias_citadas (array de strings com trechos literais extraídos do CV que sustentam cada veredito))`
@@ -1379,6 +1385,164 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
                     !motL.includes('idade')
                   )
                 })
+            }
+          }
+        }
+      }
+    }
+
+    // =========================================================================
+    // SALVAGUARDA DETERMINÍSTICA: CRITÉRIOS "DESEJÁVEL" NUNCA ELIMINAM
+    // Regra do RH (v0.0.710):
+    // Critérios que comecem ou contenham "Desejável" / "Desejavel" no texto_livre da vaga
+    // (ex.: "Desejável experiência prévia com lavagem de veículos pesados", "Desejável ensino fundamental completo")
+    // NUNCA são eliminatórios!
+    // Ausência de experiência anterior em vagas operacionais onde a experiência não é
+    // obrigatória (não-motorista/mecânico/almoxarifado/coc) também NÃO é eliminatória.
+    // Se statusFinal === 'nao_qualificado' ou 'revisar' e a razão for exclusivamente
+    // critério(s) desejável(is) ou falta de experiência onde não é mandatória:
+    // converter para 'qualificado' com motivo explicando que é critério desejável, score >= 70.
+    // =========================================================================
+    if (
+      (statusFinal === 'nao_qualificado' || statusFinal === 'revisar') &&
+      !textoLivreCheck.violou &&
+      restrictedCheck.isCurrentlyEmployedInRestricted !== true
+    ) {
+      const vTituloNorm = (vaga.titulo || '').toLowerCase()
+      const isVagaComExpMandatoria =
+        vTituloNorm.includes('motorista') ||
+        vTituloNorm.includes('mecanico') ||
+        vTituloNorm.includes('mecânico') ||
+        vTituloNorm.includes('eletricista') ||
+        vTituloNorm.includes('almoxarifado') ||
+        vTituloNorm.includes('coc') ||
+        vTituloNorm.includes('monitoramento')
+
+      const localizacaoImpede =
+        localizacoesVaga.length > 0 &&
+        raioKm > 0 &&
+        distanciaCalculada &&
+        !qualificadoPorLocalizacao &&
+        menorDistanciaKm <= 150
+
+      if (!localizacaoImpede) {
+        const rawUnmatched: any[] = Array.isArray(resultJson.detalhes?.unmatched_criteria)
+          ? resultJson.detalhes.unmatched_criteria
+          : []
+
+        // Verifica se cada item não atendido é meramente "Desejável" ou falta de experiência não obrigatória
+        const isDesejavelOrNonMandatoryExpItem = (item: any): boolean => {
+          const nome = (item?.nome || '').toLowerCase()
+          const mot = (item?.motivo || '').toLowerCase()
+          const evid = (item?.evidencia_cv || '').toLowerCase()
+          const combined = `${nome} ${mot} ${evid}`
+
+          if (
+            combined.includes('desejavel') ||
+            combined.includes('desejável') ||
+            combined.includes('desejaveis') ||
+            combined.includes('desejáveis')
+          ) {
+            return true
+          }
+
+          // Falta de experiência em vaga operacional onde a experiência não é obrigatória
+          if (!isVagaComExpMandatoria) {
+            const mentionsExperience =
+              combined.includes('experiência') ||
+              combined.includes('experiencia') ||
+              combined.includes('lavagem') ||
+              combined.includes('limpeza') ||
+              combined.includes('estética automotiva') ||
+              combined.includes('estetica automotiva') ||
+              combined.includes('veículos pesados') ||
+              combined.includes('veiculos pesados')
+
+            // Não pode ser critério mandatório como idade, CNH ou empresa restrita
+            const mentionsMandatoryRestriction =
+              combined.includes('cnh') ||
+              combined.includes('idade') ||
+              combined.includes('empresa restrita') ||
+              combined.includes('concorrente') ||
+              combined.includes('masculino') ||
+              combined.includes('mulher')
+
+            if (mentionsExperience && !mentionsMandatoryRestriction) {
+              return true
+            }
+          }
+
+          return false
+        }
+
+        const eliminatoryNonDesejavelItems = rawUnmatched.filter(
+          (item) => !isDesejavelOrNonMandatoryExpItem(item),
+        )
+
+        const motivoLower = (motivoFinal || '').toLowerCase()
+        const summaryLower = (resultJson.detalhes?.summary || '').toLowerCase()
+        const fullReasonText = `${motivoLower} ${summaryLower}`
+
+        const motivoApenasDesejavelOuExp =
+          fullReasonText.includes('desejável') ||
+          fullReasonText.includes('desejavel') ||
+          (!isVagaComExpMandatoria &&
+            (fullReasonText.includes('experiência prévia com lavagem') ||
+              fullReasonText.includes('experiencia previa com lavagem') ||
+              fullReasonText.includes('falta de experiência') ||
+              fullReasonText.includes('falta de experiencia') ||
+              fullReasonText.includes('sem experiência') ||
+              fullReasonText.includes('sem experiencia') ||
+              fullReasonText.includes('não possui experiência') ||
+              fullReasonText.includes('nao possui experiencia') ||
+              fullReasonText.includes('lavagem de veículos pesados') ||
+              fullReasonText.includes('lavagem de veiculos pesados')))
+
+        if (
+          eliminatoryNonDesejavelItems.length === 0 &&
+          (rawUnmatched.length > 0 || motivoApenasDesejavelOuExp)
+        ) {
+          console.log(
+            `[analisar-cv-criterios] Salvaguarda ativada: candidato havia sido reprovado exclusivamente por critério 'Desejável' ou experiência em vaga operacional "${vaga.titulo}". Convertendo para qualificado.`,
+          )
+
+          // Move os itens desejáveis de unmatched_criteria para observação em pontos_fracos ou remove
+          if (Array.isArray(resultJson.detalhes?.unmatched_criteria)) {
+            resultJson.detalhes.unmatched_criteria = []
+          }
+
+          if (Array.isArray(resultJson.detalhes?.matched_criteria)) {
+            const jaConstaExpDesejavel = resultJson.detalhes.matched_criteria.some(
+              (m: any) =>
+                (m?.nome || '').toLowerCase().includes('desejável') ||
+                (m?.nome || '').toLowerCase().includes('desejavel'),
+            )
+            if (!jaConstaExpDesejavel) {
+              resultJson.detalhes.matched_criteria.push({
+                nome: 'Critérios Gerais da Vaga (Desejável não eliminatório)',
+                evidencia: `Atende aos requisitos básicos da vaga "${vaga.titulo}". Experiência anterior na função ou critérios marcados como "Desejável" não são eliminatórios segundo as regras do RH.`,
+              })
+            }
+          }
+
+          statusFinal = 'qualificado'
+          motivoFinal = `Qualificado: Candidato atende aos pré-requisitos gerais da vaga operacional "${vaga.titulo}". Requisitos marcados como "Desejável" (como experiência prévia com lavagem de veículos pesados) agregam ao perfil, mas não são eliminatórios.`
+
+          if (resultJson.detalhes) {
+            resultJson.detalhes.score = Math.max(resultJson.detalhes.score || 0, 70)
+            resultJson.detalhes.motivo = motivoFinal
+            if (resultJson.detalhes.summary) {
+              resultJson.detalhes.summary = resultJson.detalhes.summary
+                .replace(
+                  /falta de experiência prévia com lavagem[^.]*\.?/gi,
+                  'experiência prévia na função é desejável (não eliminatória).',
+                )
+                .replace(
+                  /falta de experiencia previa com lavagem[^.]*\.?/gi,
+                  'experiência prévia na função é desejável (não eliminatória).',
+                )
+                .replace(/reprovad[ao] por critério da vaga[^.]*\.?/gi, '')
+                .trim()
             }
           }
         }

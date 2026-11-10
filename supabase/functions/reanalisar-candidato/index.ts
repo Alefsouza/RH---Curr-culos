@@ -1655,7 +1655,9 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
           candStatus &&
           candStatus.ativo_kanban === false &&
           typeof candStatus.motivo_inativo === 'string' &&
-          candStatus.motivo_inativo.toLowerCase().includes('não qualificado')
+          (candStatus.motivo_inativo.toLowerCase().includes('não qualificado') ||
+            candStatus.motivo_inativo === 'aguardando vaga adequada' ||
+            candStatus.motivo_inativo === 'erro_reanalise')
         ) {
           upd.ativo_kanban = true
           upd.motivo_inativo = null
