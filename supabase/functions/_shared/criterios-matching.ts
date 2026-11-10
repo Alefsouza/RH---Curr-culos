@@ -8,7 +8,37 @@
  * - Proximidade geográfica (dentro do raio da garagem)
  */
 
-import { resolveCandidateAge } from './validation.ts'
+import {
+  resolveCandidateAge,
+  extractBirthDateWithContext,
+  isPlausibleBirthDate,
+} from './validation.ts'
+
+export function extractCandidateAge(cvData: any): number | null {
+  if (!cvData) return null
+  let dataNasc = cvData.data_nascimento
+  if (!dataNasc) {
+    const rawText =
+      typeof cvData.resumo_cv === 'string'
+        ? cvData.resumo_cv
+        : typeof cvData.texto_cv === 'string'
+          ? cvData.texto_cv
+          : null
+    if (rawText) {
+      dataNasc = extractBirthDateWithContext(rawText)
+    }
+  }
+
+  if (dataNasc) {
+    const plausibility = isPlausibleBirthDate(dataNasc)
+    if (!plausibility.valida) {
+      return null
+    }
+    return plausibility.idade
+  }
+
+  return resolveCandidateAge(cvData.idade, null)
+}
 import { checkBusOrTruckDriverExperience, checkRestrictedCompanyStatus } from './motorista.ts'
 import { normalizeCnhCategory } from './cnh.ts'
 import {
