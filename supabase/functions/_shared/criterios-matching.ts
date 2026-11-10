@@ -1594,15 +1594,35 @@ export function evaluateCandidateAgainstVaga(
     }
   }
 
-  // REGRA DO USUÁRIO: Requisitos demográficos (idade, CNH, escolaridade) seguem necessários,
-  // mas NUNCA bastam sozinhos para aprovar uma vaga se não houver qualquer relação/aderência com a função.
-  // Se não tem aderência funcional nem experiência/formação correlata, penaliza o score para não aprovar sem relação.
+  // REGRA DO RH PARA OBJETIVO GENÉRICO E ENCAIXE EM VAGAS:
+  // Se a vaga exige experiência obrigatória (ex: Motorista com veículo pesado, Mecânico especializado,
+  // ou vagas com requisitos mandatórios explícitos), a ausência de experiência elimina o candidato.
+  // Contudo, em vagas operacionais/iniciais onde a experiência é apenas DESEJÁVEL (ex: Lavador de Ônibus,
+  // Auxiliar de Limpeza, etc.) e os critérios textuais não a tornam mandatória/eliminatória, a ausência de
+  // experiência anterior na função reduz o score de aderência, mas NÃO é eliminatória (não bloqueia passouBasicos).
+  const isVagaComExpObrigatoria =
+    req.requiresHeavyDrivingExp ||
+    req.requiresFrentistaExp ||
+    tituloNorm.includes('motorista') ||
+    tituloNorm.includes('mecanico') ||
+    tituloNorm.includes('eletricista') ||
+    tituloNorm.includes('almoxarifado') ||
+    tituloNorm.includes('coc') ||
+    tituloNorm.includes('monitoramento')
+
   if (!temAderenciaReal) {
-    // Vagas que exigem função específica não devem ser aprovadas puramente por requisitos demográficos
-    motivosNaoEncaixe.push(
-      `Sem experiência profissional ou formação correlata com a função "${vaga?.titulo || ''}"`,
-    )
-    score = Math.max(0, score - 35)
+    if (isVagaComExpObrigatoria) {
+      motivosNaoEncaixe.push(
+        `Sem experiência profissional ou formação correlata exigida para a função "${vaga?.titulo || ''}"`,
+      )
+      score = Math.max(0, score - 35)
+    } else {
+      // Para vagas de entrada/operacionais onde a experiência é apenas desejável (como Lavador de Ônibus)
+      score = Math.max(0, score - 15)
+      atendimentos.push(
+        `Atende aos pré-requisitos gerais da vaga operacional "${vaga?.titulo || ''}" (experiência na função é desejável, não eliminatória)`,
+      )
+    }
   }
 
   // Garante limite 0 a 100
@@ -1701,14 +1721,23 @@ export async function evaluateGenericCandidateAgainstAllVagas(
   // Filtra vagas onde passou nos requisitos básicos
   const vagasEncaixadas = vagasNoRaio.filter((e) => e.passouBasicos)
 
-  // Ordena por score decrescente
+  // REGRA DEFINITIVA DO RH:
+  // O motor escolhe a vaga de melhor encaixe:
+  // requisitos obrigatórios atendidos + restrições eliminatórias respeitadas + menor distância real
+  // Entre as vagas onde passou nos requisitos básicos, ordena primeiramente por menor distância real.
+  // Em caso de empate de distância (ou proximidades muito similares), o maior score desempata.
   vagasEncaixadas.sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score
-    // Em caso de empate de score, a mais próxima vence
     if (a.distanciaKm !== null && b.distanciaKm !== null) {
-      return a.distanciaKm - b.distanciaKm
+      const diffDist = a.distanciaKm - b.distanciaKm
+      if (Math.abs(diffDist) > 0.05) {
+        return diffDist
+      }
+    } else if (a.distanciaKm !== null) {
+      return -1
+    } else if (b.distanciaKm !== null) {
+      return 1
     }
-    return 0
+    return b.score - a.score
   })
 
   // Inferência global para resumo

@@ -131,8 +131,8 @@ Deno.serve(async (req: Request) => {
     if (deducedGender !== 'indefinido' && (!extracted.genero || !extracted.sexo)) {
       extracted.genero = extracted.genero || deducedGender
       extracted.sexo = extracted.sexo || deducedGender
-      // Persistir de forma assíncrona/não bloqueante no cadastro do candidato
-      supabaseAdmin
+      // Persistir no cadastro do candidato
+      await supabaseAdmin
         .from('candidatos')
         .update({ dados_extraidos: extracted })
         .eq('id', candidato.id)
