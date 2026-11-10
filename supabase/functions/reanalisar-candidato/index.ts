@@ -12,6 +12,7 @@ import {
   isPlausibleBirthDate,
   calculateAgeFromBirthDate,
 } from '../_shared/validation.ts'
+import { inferCandidateGender } from '../_shared/criterios-matching.ts'
 import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
 import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
 import { performGoogleVisionPdfOcrDetailed } from '../_shared/ocr.ts'
@@ -96,6 +97,19 @@ Deno.serve(async (req: Request) => {
       typeof candidato.dados_extraidos === 'object' && candidato.dados_extraidos !== null
         ? { ...candidato.dados_extraidos }
         : {}
+
+    // Dedução determinística de gênero (pedido do RH: deduzir homem/mulher pelo nome quando não tiver sexo e gravar no cadastro)
+    const deducedGenderReanalysis = inferCandidateGender(
+      currentNome || validCurrentName,
+      currentDadosExtraidos.genero || currentDadosExtraidos.sexo,
+    )
+    if (
+      deducedGenderReanalysis !== 'indefinido' &&
+      (!currentDadosExtraidos.genero || !currentDadosExtraidos.sexo)
+    ) {
+      currentDadosExtraidos.genero = currentDadosExtraidos.genero || deducedGenderReanalysis
+      currentDadosExtraidos.sexo = currentDadosExtraidos.sexo || deducedGenderReanalysis
+    }
 
     // Fallback determinístico inicial para data de nascimento com contexto explícito e sanidade
     if (

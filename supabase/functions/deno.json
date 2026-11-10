@@ -6,18 +6,19 @@
     "enviar-whatsapp": 305,
     "test-whatsapp": 293,
     "manage-users": 23,
-    "analisar-cv-criterios": 255,
+    "analisar-cv-criterios": 256,
     "whatsapp-webhook": 47,
-    "identify-vaga-from-cv": 270,
+    "identify-vaga-from-cv": 271,
     "gmail-poll-curriculos": 252,
     "enviar-mensagem-direta": 252,
     "sync-outlook-cvs": 277,
-    "reanalisar-candidato": 257,
+    "reanalisar-candidato": 258,
     "recover-candidates": 217,
     "fix-recovered-candidates": 211,
     "batch-reanalyze-all": 202,
     "backfill-proximidade": 196,
     "reanalisar-cobradores-proximidade": 70,
-    "reanalisar-erro-reanalise": 1
+    "reanalisar-erro-reanalise": 1,
+    "link-rh-cvs": 1
   }
 }

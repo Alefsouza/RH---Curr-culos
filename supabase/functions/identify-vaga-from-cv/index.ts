@@ -717,12 +717,39 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    // Extrair o objetivo explícito (se existir nos dados estruturados)
+    // Se temos candidato_id, buscar também mensagens recentes (WhatsApp) para enriquecer o objetivo declarado
+    let mensagemContexto = ''
+    if (candidato_id) {
+      try {
+        const { data: msgs } = await supabase
+          .from('mensagens_whatsapp')
+          .select('conteudo, direcao')
+          .eq('candidato_id', candidato_id)
+          .order('criado_em', { ascending: false })
+          .limit(5)
+        if (Array.isArray(msgs) && msgs.length > 0) {
+          mensagemContexto = msgs
+            .filter((m: any) => m.direcao === 'recebida' || !m.direcao)
+            .map((m: any) => m.conteudo || '')
+            .filter(Boolean)
+            .join(' ')
+        }
+      } catch (msgErr: any) {
+        console.warn(
+          '[identify-vaga-from-cv] Aviso ao consultar mensagens_whatsapp:',
+          msgErr?.message,
+        )
+      }
+    }
+
+    // Extrair o objetivo explícito (se existir nos dados estruturados ou mensagem)
     const rawObjetivo =
       parsedDadosExtraidos?.objetivo ||
       parsedDadosExtraidos?.cargo_pretendido ||
       parsedDadosExtraidos?.cargo ||
       parsedDadosExtraidos?.objetivo_profissional ||
+      (typeof body.mensagem === 'string' ? body.mensagem : '') ||
+      mensagemContexto ||
       ''
 
     const candidatoObjetivo = typeof rawObjetivo === 'string' ? rawObjetivo.trim() : ''
@@ -1013,26 +1040,54 @@ Deno.serve(async (req: Request) => {
 
         // REGRA SISTÊMICA (1): SEMPRE avaliar TODAS as vagas da família do cargo do candidato
         // e ficar com a de MELHOR encaixe (distância real menor primeiro) — nunca alocar direto em uma só sem comparar!
-        // Extrai a família do cargo (ex: 'abastecedor', 'motorista', 'cobrador', etc.)
-        let familyKeywords = [
-          'abastecedor',
-          'motorista',
-          'cobrador',
-          'mecanico',
-          'eletricista',
-          'manutencao',
-          'fiscal',
-          'auxiliar de limpeza',
-          'lavador',
-        ]
-        let detectedFamily = familyKeywords.find((k) => normObjetivo.includes(k))
+        // Extrai a família do cargo ancorando sinônimos comuns do setor de transporte/garagem:
+        // ex: limpeza, frota, lavador, higienizacao -> família Lavador / Auxiliar de Limpeza
+        let detectedFamily: string | null = null
+        if (
+          normObjetivo.includes('limpeza') ||
+          normObjetivo.includes('lavador') ||
+          normObjetivo.includes('lavagem') ||
+          normObjetivo.includes('higieniz') ||
+          normObjetivo.includes('frota') ||
+          normObjetivo.includes('lava rapido') ||
+          normObjetivo.includes('faxina') ||
+          normObjetivo.includes('servicos gerais')
+        ) {
+          detectedFamily = 'lavador'
+        } else if (
+          normObjetivo.includes('motorista') ||
+          normObjetivo.includes('condutor') ||
+          normObjetivo.includes('chapa')
+        ) {
+          detectedFamily = 'motorista'
+        } else if (
+          normObjetivo.includes('cobrador') ||
+          normObjetivo.includes('trocador') ||
+          normObjetivo.includes('bilheteiro')
+        ) {
+          detectedFamily = 'cobrador'
+        } else if (normObjetivo.includes('abastecedor') || normObjetivo.includes('frentista')) {
+          detectedFamily = 'abastecedor'
+        } else if (normObjetivo.includes('mecanico') || normObjetivo.includes('mecânica')) {
+          detectedFamily = 'mecanico'
+        } else if (normObjetivo.includes('eletricista') || normObjetivo.includes('eletrica')) {
+          detectedFamily = 'eletricista'
+        } else if (normObjetivo.includes('fiscal') || normObjetivo.includes('despachante')) {
+          detectedFamily = 'fiscal'
+        } else if (normObjetivo.includes('manutencao')) {
+          detectedFamily = 'manutencao'
+        }
 
         let topMatchedVagas: any[] = []
         if (detectedFamily) {
           // Se identificamos a família no objetivo, pega TODAS as vagas ativas dessa família
-          topMatchedVagas = vagas.filter((v) =>
-            normalizeString(v.titulo || '').includes(detectedFamily!),
-          )
+          topMatchedVagas = vagas.filter((v) => {
+            const t = normalizeString(v.titulo || '')
+            if (detectedFamily === 'lavador') {
+              return t.includes('lavador') || t.includes('limpeza')
+            }
+            return t.includes(detectedFamily!)
+          })
           console.log(
             `[identify-vaga-from-cv] Família detectada: "${detectedFamily}". Encontradas ${topMatchedVagas.length} vagas da mesma família para comparação.`,
           )

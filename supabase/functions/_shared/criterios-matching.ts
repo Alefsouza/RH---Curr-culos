@@ -378,6 +378,433 @@ export interface TextoLivreRestrictionCheck {
 }
 
 /**
+ * Dedução determinística de gênero por nome BR e declarações explícitas de gênero/sexo.
+ * Retorna 'feminino' | 'masculino' | 'indefinido'.
+ */
+export function inferCandidateGender(
+  nome: string | null | undefined,
+  generoDecl: string | null | undefined,
+): 'feminino' | 'masculino' | 'indefinido' {
+  const decl = normalizeStringBasic(generoDecl || '')
+  if (decl.includes('fem') || decl === 'f' || decl.includes('mulher')) {
+    return 'feminino'
+  }
+  if (decl.includes('masc') || decl === 'm' || decl.includes('homem')) {
+    return 'masculino'
+  }
+
+  const rawNome = String(nome || '').trim()
+  if (!rawNome) return 'indefinido'
+
+  // Primeiro nome (limpo)
+  const primeiroNome = normalizeStringBasic(rawNome.split(/\s+/)[0] || '')
+  if (!primeiroNome) return 'indefinido'
+
+  // Nomes compostos femininos comuns (ex: Maria Eduarda, Ana Paula, etc.)
+  const nomeCompletoNorm = normalizeStringBasic(rawNome)
+  if (
+    nomeCompletoNorm.startsWith('maria ') ||
+    nomeCompletoNorm.startsWith('ana ') ||
+    nomeCompletoNorm.startsWith('mary ')
+  ) {
+    return 'feminino'
+  }
+
+  // Lista ampla de nomes femininos brasileiros
+  const nomesFemininos = new Set([
+    'catiana',
+    'catia',
+    'katia',
+    'thalia',
+    'talia',
+    'irineia',
+    'irineida',
+    'maria',
+    'ana',
+    'juliana',
+    'camila',
+    'patricia',
+    'aline',
+    'amanda',
+    'beatriz',
+    'bruna',
+    'carolina',
+    'caroline',
+    'daniela',
+    'daniele',
+    'debora',
+    'fernanda',
+    'gabriela',
+    'gabriele',
+    'jessica',
+    'larissa',
+    'leticia',
+    'luana',
+    'mariana',
+    'natalia',
+    'nathalia',
+    'paula',
+    'rafaela',
+    'renata',
+    'sabrina',
+    'tatiane',
+    'tatiana',
+    'vanessa',
+    'flavia',
+    'elisabete',
+    'elizabeth',
+    'andreia',
+    'marcia',
+    'simone',
+    'luciana',
+    'rosana',
+    'valeria',
+    'claudia',
+    'cristina',
+    'adriana',
+    'priscila',
+    'priscilla',
+    'monica',
+    'lucia',
+    'aparecida',
+    'fatima',
+    'sonia',
+    'rita',
+    'regina',
+    'eliane',
+    'solange',
+    'cleide',
+    'neuza',
+    'tereza',
+    'terezinha',
+    'rose',
+    'sueli',
+    'suely',
+    'cidinha',
+    'marilene',
+    'mariluce',
+    'marisa',
+    'neide',
+    'iraci',
+    'ivani',
+    'ivone',
+    'selma',
+    'denise',
+    'vanda',
+    'wanda',
+    'silvia',
+    'elza',
+    'joana',
+    'zilda',
+    'marlene',
+    'marilda',
+    'lucilene',
+    'leila',
+    'cleusa',
+    'cleonice',
+    'creusa',
+    'arlete',
+    'vera',
+    'edna',
+    'dalva',
+    'noemi',
+    'noemia',
+    'isabela',
+    'isabella',
+    'isadora',
+    'helena',
+    'elisa',
+    'lorena',
+    'alice',
+    'sophia',
+    'sofia',
+    'laura',
+    'manuela',
+    'emanuela',
+    'valentina',
+    'giovanna',
+    'giovana',
+    'yasmin',
+    'iasmin',
+    'rebeca',
+    'clara',
+    'cecilia',
+    'luiza',
+    'luisa',
+    'stella',
+    'estela',
+    'barbara',
+    'bianca',
+    'tamires',
+    'thais',
+    'tais',
+    'nayara',
+    'naiara',
+    'paloma',
+    'pamela',
+    'karina',
+    'carina',
+    'viviane',
+    'vivian',
+    'michele',
+    'michelle',
+    'carla',
+    'raquel',
+    'sheila',
+    'silvana',
+    'danielle',
+    'cintia',
+    'cinthia',
+    'kelly',
+    'keli',
+    'suelen',
+    'andressa',
+    'milena',
+    'mirella',
+    'mayara',
+    'daiane',
+    'dayane',
+    'fabiana',
+    'jaqueline',
+    'ingrid',
+    'monique',
+    'talita',
+    'thalita',
+    'giselle',
+    'gisele',
+    'poliana',
+    'samara',
+    'cristiane',
+    'alessandra',
+    'rosangela',
+    'elisangela',
+    'lucimeire',
+    'shirley',
+    'marli',
+    'marly',
+    'daniele',
+    'franciele',
+    'graziele',
+    'roberta',
+    'lidia',
+    'mariane',
+    'mirian',
+    'myrian',
+    'joelma',
+    'telma',
+    'dilma',
+    'celia',
+    'aurea',
+    'norma',
+    'solange',
+    'deise',
+    'rosilene',
+    'valdirene',
+    'lucineide',
+    'luciana',
+    'alda',
+  ])
+
+  if (nomesFemininos.has(primeiroNome)) {
+    return 'feminino'
+  }
+
+  // Lista ampla de nomes masculinos brasileiros
+  const nomesMasculinos = new Set([
+    'carlos',
+    'daniel',
+    'rian',
+    'igor',
+    'cristiano',
+    'eduardo',
+    'joao',
+    'lucas',
+    'gabriel',
+    'matheus',
+    'mateus',
+    'felipe',
+    'gustavo',
+    'guilherme',
+    'bruno',
+    'leonardo',
+    'pedro',
+    'tiago',
+    'thiago',
+    'rodrigo',
+    'rafael',
+    'marcos',
+    'vinicius',
+    'andre',
+    'marcelo',
+    'fernando',
+    'alexandre',
+    'diego',
+    'ricardo',
+    'caio',
+    'victor',
+    'vitor',
+    'william',
+    'willian',
+    'renan',
+    'fabio',
+    'leandro',
+    'julio',
+    'marcio',
+    'paulo',
+    'sergio',
+    'roberto',
+    'antonio',
+    'francisco',
+    'jose',
+    'luis',
+    'luiz',
+    'jorge',
+    'claudio',
+    'cesar',
+    'mauricio',
+    'alex',
+    'alan',
+    'allan',
+    'adrian',
+    'anderson',
+    'alessandro',
+    'cleber',
+    'kleber',
+    'danilo',
+    'denis',
+    'darlan',
+    'douglas',
+    'edson',
+    'elias',
+    'elton',
+    'emerson',
+    'erick',
+    'eric',
+    'fabiano',
+    'fabricio',
+    'gilberto',
+    'gerson',
+    'heitor',
+    'helio',
+    'henrique',
+    'itamar',
+    'ivan',
+    'jailson',
+    'jamil',
+    'jeferon',
+    'jefferson',
+    'joilson',
+    'jonas',
+    'jonathan',
+    'jonatas',
+    'juliano',
+    'laercio',
+    'luciano',
+    'manoel',
+    'mauro',
+    'michel',
+    'murilo',
+    'nelson',
+    'nilton',
+    'orlando',
+    'osvaldo',
+    'otavio',
+    'patrik',
+    'patrick',
+    'renato',
+    'reginaldo',
+    'reinaldo',
+    'rivaldo',
+    'robson',
+    'rogerio',
+    'romario',
+    'ronaldo',
+    'ronan',
+    'rubens',
+    'samuel',
+    'saulo',
+    'sidney',
+    'tales',
+    'valdecir',
+    'valdemar',
+    'valdir',
+    'vagner',
+    'wagner',
+    'valter',
+    'walter',
+    'vanderson',
+    'washington',
+    'wellingto',
+    'wellington',
+    'wesley',
+    'wilson',
+    'yuri',
+    'davi',
+    'david',
+    'arthur',
+    'artur',
+    'bernardo',
+    'heitor',
+    'theo',
+    'darlan',
+    'breno',
+    'cauã',
+    'caua',
+    'enzo',
+    'kayque',
+    'kaue',
+    'lorran',
+    'luan',
+    'nicolas',
+    'otavio',
+  ])
+
+  if (nomesMasculinos.has(primeiroNome)) {
+    return 'masculino'
+  }
+
+  // Heurística de terminação em português:
+  // Nomes terminados em 'a' tendem fortemente a feminino no Brasil (exceto poucas exceções masculinas)
+  const excecoesMasculinasTerminaA = new Set([
+    'luca',
+    'lucas',
+    'jean',
+    'jonas',
+    'elias',
+    'lucena',
+    'sena',
+    'senna',
+    'barbosa',
+    'silva',
+    'costa',
+    'souza',
+    'sousa',
+    'moura',
+    'fraga',
+    'braga',
+  ])
+  if (primeiroNome.endsWith('a') && !excecoesMasculinasTerminaA.has(primeiroNome)) {
+    return 'feminino'
+  }
+
+  // Nomes terminados em 'o', 'or', 'os', 'on', 'son', 'ton', 'mar', 'iel' tendem a masculino
+  if (
+    primeiroNome.endsWith('o') ||
+    primeiroNome.endsWith('or') ||
+    primeiroNome.endsWith('os') ||
+    primeiroNome.endsWith('on') ||
+    primeiroNome.endsWith('son') ||
+    primeiroNome.endsWith('ton') ||
+    primeiroNome.endsWith('mar') ||
+    primeiroNome.endsWith('iel')
+  ) {
+    return 'masculino'
+  }
+
+  return 'indefinido'
+}
+
+/**
  * Validação determinística de restrições expressas no campo texto_livre dos critérios da vaga.
  * Cobre:
  * 1) Restrições de gênero condicionadas: mulheres apenas com CNH categoria D (ex: Cobrador).
@@ -401,14 +828,10 @@ export function checkTextoLivreEliminatoryRestrictions(
   const titNorm = normalizeStringBasic(vagaTitulo || '')
   const fullText = `${tlNorm} ${titNorm}`
 
-  // Gênero do candidato
-  const nomeCand = String(cvData?.nome || '').trim()
-  const generoDecl = String(cvData?.genero || cvData?.sexo || '').toLowerCase()
-  const isCandidateFemale =
-    generoDecl === 'feminino' ||
-    /^(catiana|maria|ana|juliana|camila|patricia|aline|amanda|beatriz|bruna|carolina|daniela|debora|fernanda|gabriela|jessica|larissa|leticia|luana|mariana|natalia|paula|rafaela|renata|sabrina|tatiane|vanessa|flavia|elisabete|elizabeth|andreia|marcia|simone|luciana|rosana|valeria|claudia|cristina|adriana|priscila|monica|lucia|aparecida|fatima|sonia|rita|regina|eliane|solange|cleide|neuza|tereza|terezinha|rose|sueli|suely|cidinha|marilene|mariluce|marisa|neide|iraci|ivani|ivone|selma|denise|vanda|wanda|silvia|elza|joana|zilda|marlene|marilda|lucilene|leila|cleusa|cleonice|creusa|arlete|vera|edna|dalva|cleide|noemi|noemia|thalia|irineia|catia|katia)\b/i.test(
-      nomeCand,
-    )
+  // Dedução determinística de gênero do candidato
+  const deducedGender = inferCandidateGender(cvData?.nome, cvData?.genero || cvData?.sexo)
+  const isCandidateFemale = deducedGender === 'feminino'
+  const isGenderUnknown = deducedGender === 'indefinido'
 
   // CNH do candidato
   const cnhInfo = extractCnhCategory(cvData)
@@ -425,14 +848,23 @@ export function checkTextoLivreEliminatoryRestrictions(
     fullText.includes('mulheres apenas se possuir cnh d') ||
     (fullText.includes('mulheres') && fullText.includes('categoria d'))
 
-  if (hasMulheresCnhDRestriction && isCandidateFemale) {
-    if (!hasCnhDOrE) {
-      const cnhTexto = cnhCat
-        ? `CNH Categoria ${cnhCat}`
-        : 'sem CNH informada/mencionada no currículo'
+  if (hasMulheresCnhDRestriction) {
+    if (isCandidateFemale) {
+      if (!hasCnhDOrE) {
+        const cnhTexto = cnhCat
+          ? `CNH Categoria ${cnhCat}`
+          : 'sem CNH informada/mencionada no currículo'
+        return {
+          violou: true,
+          motivo: `Não atende ao critério eliminatório da vaga: mulheres apenas se tiver categoria D na CNH (candidata do sexo feminino consta ${cnhTexto}).`,
+          rebaixarScore: 50,
+        }
+      }
+    } else if (isGenderUnknown && !hasCnhDOrE) {
+      // Regra de segurança: não conseguindo verificar o gênero, nunca aprovar por omissão quando não tem CNH D
       return {
         violou: true,
-        motivo: `Não atende ao critério eliminatório da vaga: mulheres apenas se tiver categoria D na CNH (candidata do sexo feminino consta ${cnhTexto}).`,
+        motivo: `Não atende ao critério eliminatório da vaga: mulheres apenas com CNH D e gênero do candidato não pôde ser determinado sem CNH D comprovada (nunca aprovar por omissão).`,
         rebaixarScore: 50,
       }
     }
@@ -820,26 +1252,29 @@ export function evaluateCandidateAgainstVaga(
   }
 
   // Regra de CNH D para mulheres em Cobrador (ou vaga com texto_livre "Mulheres apenas se tiver categoria D na CNH")
-  const nomeCandidato = String(cvData?.nome || '')
-  const isFemale =
-    cvData?.genero === 'feminino' ||
-    cvData?.sexo === 'feminino' ||
-    /^(catiana|maria|ana|juliana|camila|patricia|aline|amanda|beatriz|bruna|carolina|daniela|debora|fernanda|gabriela|jessica|larissa|leticia|luana|mariana|natalia|paula|rafaela|renata|sabrina|tatiane|vanessa|flavia|elisabete|elizabeth|andreia|marcia|simone|luciana|rosana|valeria|claudia|cristina|adriana|priscila|monica|lucia|aparecida|fatima|sonia|rita|regina|eliane|solange|cleide|neuza|tereza|terezinha|rose|sueli|suely|cidinha|marilene|mariluce|marisa|neide|iraci|ivani|ivone|selma|denise|vanda|wanda|silvia|elza|joana|zilda|marlene|marilda|lucilene|leila|cleusa|cleonice|creusa|arlete|vera|edna|dalva|cleide|noemi|noemia|thalia|irineia|catia|katia)\b/i.test(
-      nomeCandidato.trim(),
-    )
+  const deducedGender = inferCandidateGender(cvData?.nome, cvData?.genero || cvData?.sexo)
+  const isFemale = deducedGender === 'feminino'
+  const isUnknownGender = deducedGender === 'indefinido'
 
-  if (req.requiresFemaleCnhD && isFemale) {
-    if (!hasCnhDOrE) {
-      // Regra mandante do RH: nunca aprovar por omissão; se a CNH não foi mencionada ou não é CNH D/E, reprovar/não atender
+  if (req.requiresFemaleCnhD) {
+    if (isFemale) {
+      if (!hasCnhDOrE) {
+        // Regra mandante do RH: nunca aprovar por omissão; se a CNH não foi mencionada ou não é CNH D/E, reprovar/não atender
+        motivosNaoEncaixe.push(
+          `Candidata do sexo feminino necessita de CNH Categoria D para esta vaga (critério da vaga: "Mulheres apenas se tiver categoria D na CNH"; candidata não possui CNH D comprovada)`,
+        )
+        score -= 50
+      } else {
+        atendimentos.push(
+          `Candidata possui CNH Categoria ${cnhCat || 'D'} conforme exigido para mulheres`,
+        )
+        score += 15
+      }
+    } else if (isUnknownGender && !hasCnhDOrE) {
       motivosNaoEncaixe.push(
-        `Candidata do sexo feminino necessita de CNH Categoria D para esta vaga (critério da vaga: "Mulheres apenas se tiver categoria D na CNH"; candidata não possui CNH D comprovada)`,
+        `Vaga exige CNH Categoria D para candidatas mulheres; sem gênero definido e sem CNH D comprovada, não é possível aprovar por omissão`,
       )
       score -= 50
-    } else {
-      atendimentos.push(
-        `Candidata possui CNH Categoria ${cnhCat || 'D'} conforme exigido para mulheres`,
-      )
-      score += 15
     }
   }
 

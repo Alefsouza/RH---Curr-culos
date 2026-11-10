@@ -37,6 +37,7 @@ import {
   isGenericObjective,
   evaluateGenericCandidateAgainstAllVagas,
   checkTextoLivreEliminatoryRestrictions,
+  inferCandidateGender,
 } from '../_shared/criterios-matching.ts'
 
 Deno.serve(async (req: Request) => {
@@ -122,11 +123,35 @@ Deno.serve(async (req: Request) => {
     const dataNascimentoCandidato = extracted.data_nascimento || null
     const idadeCandidato = resolveCandidateAge(extracted.idade, dataNascimentoCandidato)
 
+    // Dedução determinística de gênero (pedido do RH: deduzir homem/mulher pelo nome quando não tiver sexo e gravar no cadastro)
+    const deducedGender = inferCandidateGender(
+      validName || candidato.nome,
+      extracted.genero || extracted.sexo,
+    )
+    if (deducedGender !== 'indefinido' && (!extracted.genero || !extracted.sexo)) {
+      extracted.genero = extracted.genero || deducedGender
+      extracted.sexo = extracted.sexo || deducedGender
+      // Persistir de forma assíncrona/não bloqueante no cadastro do candidato
+      supabaseAdmin
+        .from('candidatos')
+        .update({ dados_extraidos: extracted })
+        .eq('id', candidato.id)
+        .then(({ error: upErr }: any) => {
+          if (upErr)
+            console.warn(
+              '[analisar-cv-criterios] Falha ao persistir genero no cadastro:',
+              upErr?.message,
+            )
+        })
+    }
+
     const cvData = {
       nome: validName || 'Candidato',
       email: validEmail,
       telefone: candidato.telefone,
       ...extracted,
+      genero: extracted.genero || deducedGender,
+      sexo: extracted.sexo || deducedGender,
       idade: idadeCandidato,
       data_nascimento: dataNascimentoCandidato,
     }
@@ -1311,14 +1336,13 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
     // Se o resultado foi "revisar" motivado por falta de CNH e/ou falta de idade em vaga de Cobrador para homem,
     // ajustar para "qualificado" se a localização e requisitos gerais foram cumpridos.
     if (isCobrador && statusFinal === 'revisar' && !textoLivreCheck.violou) {
-      const isCandidateFemale =
-        cvData.genero === 'feminino' ||
-        cvData.sexo === 'feminino' ||
-        /^(catiana|maria|ana|juliana|camila|patricia|aline|amanda|beatriz|bruna|carolina|daniela|debora|fernanda|gabriela|jessica|larissa|leticia|luana|mariana|natalia|paula|rafaela|renata|sabrina|tatiane|vanessa|flavia|elisabete|elizabeth|andreia|marcia|simone|luciana|rosana|valeria|claudia|cristina|adriana|priscila|monica)\b/i.test(
-          validName || '',
-        )
+      const deducedGender = inferCandidateGender(validName, cvData.genero || cvData.sexo)
+      const isCandidateFemale = deducedGender === 'feminino'
+      const isCandidateMale = deducedGender === 'masculino'
 
-      if (!isCandidateFemale) {
+      // Se o candidato é comprovadamente homem para vaga de Cobrador:
+      // homens não necessitam de CNH para Cobrador
+      if (isCandidateMale) {
         // Candidato é homem para vaga de Cobrador
         const motivoLower = (motivoFinal || '').toLowerCase()
         const summaryLower = (resultJson.detalhes?.summary || '').toLowerCase()
