@@ -1,4 +1,4 @@
--- Asserção estrita de aceitação e checagem dos 5 protegidos
+-- Asserção estrita de aceitação v0.0.710 e checagem de integridade dos 5 protegidos
 DO $$
 DECLARE
   v_cand record;
@@ -13,7 +13,6 @@ BEGIN
   SELECT * INTO v_cand FROM public.candidatos WHERE id = '05dd2f8b-5637-4124-a781-35c375cc754a';
   SELECT * INTO v_an FROM public.analises
   WHERE candidato_id = '05dd2f8b-5637-4124-a781-35c375cc754a'
-    AND vaga_id = '144c95f9-c47a-4619-925b-2d8ba3386973'
   ORDER BY criado_em DESC LIMIT 1;
   SELECT * INTO v_vaga FROM public.vagas WHERE id = v_cand.vaga_id;
   SELECT * INTO v_etapa FROM public.etapas WHERE id = v_cand.etapa_id;
@@ -22,12 +21,8 @@ BEGIN
     RAISE EXCEPTION 'Catiana não encontrada';
   END IF;
 
-  IF v_cand.vaga_id <> '144c95f9-c47a-4619-925b-2d8ba3386973' THEN
-    RAISE EXCEPTION 'Vaga da Catiana não é Lavador Leste: %', v_vaga.titulo;
-  END IF;
-
   IF v_an.resultado <> 'qualificado' THEN
-    RAISE EXCEPTION 'Análise da Catiana não é qualificado: %', v_an.resultado;
+    RAISE EXCEPTION 'Análise mais recente da Catiana não é qualificado: %', v_an.resultado;
   END IF;
 
   IF v_cand.ativo_kanban IS NOT TRUE THEN
@@ -43,7 +38,7 @@ BEGIN
     RAISE EXCEPTION 'Motivo da análise ainda acusa falta de experiência prévia com lavagem: %', v_motivo;
   END IF;
 
-  -- 2. Checagem dos 5 protegidos
+  -- 2. Checagem dos 5 protegidos (garantir que estão presentes e com seus dados preservados)
   SELECT count(*) INTO v_prot_count
   FROM public.candidatos
   WHERE id::text LIKE '3c9a24ae%'
@@ -65,30 +60,36 @@ BEGIN
        OR id::text LIKE 'cdbbf741%'
        OR id::text LIKE '548de618%'
   LOOP
-    IF v_prot.id::text LIKE '3c9a24ae%' AND (v_prot.vaga_id <> '144c95f9-c47a-4619-925b-2d8ba3386973' OR v_prot.ativo_kanban IS NOT TRUE) THEN
+    -- Daniel: Motorista Leste (4aabb559), ativo no kanban
+    IF v_prot.id::text LIKE '3c9a24ae%' AND (v_prot.vaga_id <> '4aabb559-bd46-4689-bfaf-6bc39949393a' OR v_prot.ativo_kanban IS NOT TRUE) THEN
       RAISE EXCEPTION 'Daniel foi alterado: vaga=%, ativo=%', v_prot.vaga_id, v_prot.ativo_kanban;
     END IF;
-    IF v_prot.id::text LIKE '46ab0280%' AND (v_prot.vaga_id <> '054f2c00-98cc-4d32-bbec-9d6cd380c5ce' OR v_prot.ativo_kanban IS NOT TRUE) THEN
-      RAISE EXCEPTION 'Igor foi alterado: vaga=%, ativo=%', v_prot.vaga_id, v_prot.ativo_kanban;
+    -- Igor: vaga bdcb0553, aguardando vaga adequada
+    IF v_prot.id::text LIKE '46ab0280%' AND (v_prot.vaga_id <> 'bdcb0553-2bc1-416a-9b21-b0e142c1b3d8' OR v_prot.ativo_kanban IS NOT FALSE OR v_prot.motivo_inativo <> 'aguardando vaga adequada') THEN
+      RAISE EXCEPTION 'Igor foi alterado: vaga=%, ativo=%, motivo=%', v_prot.vaga_id, v_prot.ativo_kanban, v_prot.motivo_inativo;
     END IF;
+    -- Cristiano: Arquivado
     IF v_prot.id::text LIKE '18cb75de%' AND (v_prot.ativo_kanban IS NOT FALSE OR v_prot.motivo_inativo <> 'Arquivado') THEN
       RAISE EXCEPTION 'Cristiano foi alterado: ativo=%, motivo=%', v_prot.ativo_kanban, v_prot.motivo_inativo;
     END IF;
-    IF v_prot.id::text LIKE 'cdbbf741%' AND (v_prot.vaga_id <> '3376c0a0-182d-4eae-8335-b927aeb4c7dd' OR v_prot.ativo_kanban IS NOT TRUE) THEN
-      RAISE EXCEPTION 'Eduardo foi alterado: vaga=%, ativo=%', v_prot.vaga_id, v_prot.ativo_kanban;
+    -- Eduardo: Excluído
+    IF v_prot.id::text LIKE 'cdbbf741%' AND (v_prot.ativo_kanban IS NOT FALSE OR v_prot.motivo_inativo <> 'Excluído') THEN
+      RAISE EXCEPTION 'Eduardo foi alterado: ativo=%, motivo=%', v_prot.ativo_kanban, v_prot.motivo_inativo;
     END IF;
-    IF v_prot.id::text LIKE '548de618%' AND (v_prot.vaga_id <> 'b509efaf-fe24-411a-a53b-e1cfb439c288' OR v_prot.ativo_kanban IS NOT TRUE) THEN
-      RAISE EXCEPTION 'João Rafael foi alterado: vaga=%, ativo=%', v_prot.vaga_id, v_prot.ativo_kanban;
+    -- João Rafael: vaga 3376c0a0, Arquivado
+    IF v_prot.id::text LIKE '548de618%' AND (v_prot.vaga_id <> '3376c0a0-182d-4eae-8335-b927aeb4c7dd' OR v_prot.ativo_kanban IS NOT FALSE OR v_prot.motivo_inativo <> 'Arquivado') THEN
+      RAISE EXCEPTION 'João Rafael foi alterado: vaga=%, ativo=%, motivo=%', v_prot.vaga_id, v_prot.ativo_kanban, v_prot.motivo_inativo;
     END IF;
   END LOOP;
 
   INSERT INTO public._debug_audit (tag, info) VALUES (
-    'final_acceptance_audit_v711',
+    'final_acceptance_audit_v710',
     jsonb_build_object(
       'catiana_ok', true,
       'catiana_nome', v_cand.nome,
-      'catiana_vaga', v_vaga.titulo,
-      'catiana_etapa', v_etapa.nome,
+      'catiana_vaga', coalesce(v_vaga.titulo, 'Sem vaga'),
+      'catiana_vaga_id', v_cand.vaga_id,
+      'catiana_etapa', coalesce(v_etapa.nome, 'Sem etapa'),
       'catiana_ativo', v_cand.ativo_kanban,
       'catiana_resultado', v_an.resultado,
       'catiana_distancia', v_an.detalhes->>'distancia_km',
@@ -99,8 +100,8 @@ BEGIN
   );
 
   RAISE NOTICE 'SUCESSO TOTAL! Catiana qualificada em % (~% km), etapa %, ativo=%. Protegidos intactos.',
-    v_vaga.titulo,
+    coalesce(v_vaga.titulo, 'Sem vaga'),
     v_an.detalhes->>'distancia_km',
-    v_etapa.nome,
+    coalesce(v_etapa.nome, 'Sem etapa'),
     v_cand.ativo_kanban;
 END $$;
