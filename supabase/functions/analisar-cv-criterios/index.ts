@@ -36,6 +36,7 @@ import {
 import {
   isGenericObjective,
   evaluateGenericCandidateAgainstAllVagas,
+  checkTextoLivreEliminatoryRestrictions,
 } from '../_shared/criterios-matching.ts'
 
 Deno.serve(async (req: Request) => {
@@ -1256,16 +1257,64 @@ Retorne ESTRITAMENTE um JSON com as seguintes chaves:
       }
     }
 
+    // =========================================================================
+    // SALVAGUARDA DETERMINÍSTICA: RESTRIÇÕES DO CAMPO TEXTO_LIVRE DA VAGA
+    // Casos a cobrir:
+    // (1) Restrições de gênero condicionadas (mulheres apenas com CNH D)
+    // (2) Restrições de sexo exclusivas (vagas apenas masculinas)
+    // (3) Faixa de idade estrita
+    // (4) Experiência proibida ('não pode ter experiência de cobrador')
+    // (5) Quando a restrição não puder ser verificada com os dados do candidato
+    //     (ex.: CNH não mencionada para mulher onde texto_livre exige CNH D),
+    //     tratar como NÃO atendida e rebaixar score/reprovar - NUNCA aprovar por omissão!
+    // =========================================================================
+    const rawTextoLivre =
+      typeof criteriosVaga === 'object' && criteriosVaga !== null
+        ? criteriosVaga.texto_livre || ''
+        : typeof criteriosVaga === 'string'
+          ? criteriosVaga
+          : ''
+
+    const textoLivreCheck = checkTextoLivreEliminatoryRestrictions(
+      cvData,
+      rawTextoLivre,
+      vaga.titulo,
+    )
+
+    if (textoLivreCheck.violou && textoLivreCheck.motivo) {
+      console.log(
+        `[analisar-cv-criterios] Candidato violou restrição determinística do texto_livre: ${textoLivreCheck.motivo}`,
+      )
+      statusFinal = 'nao_qualificado'
+      motivoFinal = textoLivreCheck.motivo
+      if (resultJson.detalhes) {
+        resultJson.detalhes.score = Math.min(resultJson.detalhes.score || 50, 40)
+        resultJson.detalhes.motivo = motivoFinal
+        if (Array.isArray(resultJson.detalhes.unmatched_criteria)) {
+          const jaConsta = resultJson.detalhes.unmatched_criteria.some(
+            (u: any) => (u?.motivo || '').toLowerCase() === textoLivreCheck.motivo!.toLowerCase(),
+          )
+          if (!jaConsta) {
+            resultJson.detalhes.unmatched_criteria.push({
+              nome: 'Critério Eliminatório do Texto Livre da Vaga',
+              motivo: textoLivreCheck.motivo,
+              obrigatorio: true,
+            })
+          }
+        }
+      }
+    }
+
     // REGRA DE NEGÓCIO: Vaga de Cobrador + Homem
     // Homens não necessitam de CNH nem informação de CNH para a vaga de Cobrador.
     // Falta de idade/data de nascimento também não deve travar o candidato em "revisar".
     // Se o resultado foi "revisar" motivado por falta de CNH e/ou falta de idade em vaga de Cobrador para homem,
     // ajustar para "qualificado" se a localização e requisitos gerais foram cumpridos.
-    if (isCobrador && statusFinal === 'revisar') {
+    if (isCobrador && statusFinal === 'revisar' && !textoLivreCheck.violou) {
       const isCandidateFemale =
         cvData.genero === 'feminino' ||
         cvData.sexo === 'feminino' ||
-        /^(maria|ana|juliana|camila|patricia|aline|amanda|beatriz|bruna|carolina|daniela|debora|fernanda|gabriela|jessica|larissa|leticia|luana|mariana|natalia|paula|rafaela|renata|sabrina|tatiane|vanessa|flavia|elisabete|elizabeth|andreia|marcia|simone|luciana|rosana|valeria|claudia|cristina|adriana|priscila|monica)\b/i.test(
+        /^(catiana|maria|ana|juliana|camila|patricia|aline|amanda|beatriz|bruna|carolina|daniela|debora|fernanda|gabriela|jessica|larissa|leticia|luana|mariana|natalia|paula|rafaela|renata|sabrina|tatiane|vanessa|flavia|elisabete|elizabeth|andreia|marcia|simone|luciana|rosana|valeria|claudia|cristina|adriana|priscila|monica)\b/i.test(
           validName || '',
         )
 

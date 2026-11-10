@@ -356,7 +356,10 @@ export interface VagaBasicRequirements {
   requiresCnhDOrE?: boolean
   requiresCnhAny?: boolean
   requiresFemaleCnhD?: boolean
+  requiresMaleOnly?: boolean
+  prohibitsCobradorExp?: boolean
   minSchooling?: 'fundamental' | 'medio' | 'superior' | null
+  schoolingMandatory?: boolean
   requiresHeavyDrivingExp?: boolean
   requiresFrentistaExp?: boolean
   requiresAlmoxarifadoExp?: boolean
@@ -365,6 +368,163 @@ export interface VagaBasicRequirements {
   raioKm?: number | null
   coords?: Coordinates | null
   locations?: string[]
+  rawTextoLivre?: string
+}
+
+export interface TextoLivreRestrictionCheck {
+  violou: boolean
+  motivo: string | null
+  rebaixarScore: number
+}
+
+/**
+ * Validação determinística de restrições expressas no campo texto_livre dos critérios da vaga.
+ * Cobre:
+ * 1) Restrições de gênero condicionadas: mulheres apenas com CNH categoria D (ex: Cobrador).
+ *    Quando a candidata é mulher e a CNH não consta ou não é D/E, tratar como NÃO atendida.
+ * 2) Restrições de sexo exclusivas: ex: "Sexo Masculino", "Vaga para homens" (ex: Abastecedor, Lavador de Peças).
+ * 3) Faixa de idade estrita: ex: "Idade dos 19 até 56 anos", "até 53 anos", "até 45 anos", "18 a 22 anos".
+ * 4) Experiência proibida: ex: "Não pode ter experiência de cobrador", "Candidato não pode ter experiência de cobrador".
+ * 5) Escolaridade exigida/obrigatória: ex: Ensino Médio completo.
+ * NUNCA aprovar por omissão quando o dado obrigatório não constar.
+ */
+export function checkTextoLivreEliminatoryRestrictions(
+  cvData: any,
+  textoLivre: string | null | undefined,
+  vagaTitulo: string | null | undefined,
+): TextoLivreRestrictionCheck {
+  if (!textoLivre && !vagaTitulo) {
+    return { violou: false, motivo: null, rebaixarScore: 0 }
+  }
+
+  const tlNorm = normalizeStringBasic(textoLivre || '')
+  const titNorm = normalizeStringBasic(vagaTitulo || '')
+  const fullText = `${tlNorm} ${titNorm}`
+
+  // Gênero do candidato
+  const nomeCand = String(cvData?.nome || '').trim()
+  const generoDecl = String(cvData?.genero || cvData?.sexo || '').toLowerCase()
+  const isCandidateFemale =
+    generoDecl === 'feminino' ||
+    /^(catiana|maria|ana|juliana|camila|patricia|aline|amanda|beatriz|bruna|carolina|daniela|debora|fernanda|gabriela|jessica|larissa|leticia|luana|mariana|natalia|paula|rafaela|renata|sabrina|tatiane|vanessa|flavia|elisabete|elizabeth|andreia|marcia|simone|luciana|rosana|valeria|claudia|cristina|adriana|priscila|monica|lucia|aparecida|fatima|sonia|rita|regina|eliane|solange|cleide|neuza|tereza|terezinha|rose|sueli|suely|cidinha|marilene|mariluce|marisa|neide|iraci|ivani|ivone|selma|denise|vanda|wanda|silvia|elza|joana|zilda|marlene|marilda|lucilene|leila|cleusa|cleonice|creusa|arlete|vera|edna|dalva|cleide|noemi|noemia|thalia|irineia|catia|katia)\b/i.test(
+      nomeCand,
+    )
+
+  // CNH do candidato
+  const cnhInfo = extractCnhCategory(cvData)
+  const cnhCat = (cnhInfo.category || '').toUpperCase()
+  const hasCnhDOrE = cnhCat === 'D' || cnhCat === 'E'
+
+  // 1) Restrição condicional de gênero: "mulheres apenas se tiver categoria D na CNH"
+  const hasMulheresCnhDRestriction =
+    fullText.includes('mulheres apenas se tiver categoria d') ||
+    fullText.includes('mulheres apenas se tiver cnh d') ||
+    fullText.includes('mulheres apenas com cnh d') ||
+    fullText.includes('mulheres apenas com categoria d') ||
+    fullText.includes('mulheres somente se tiver categoria d') ||
+    fullText.includes('mulheres apenas se possuir cnh d') ||
+    (fullText.includes('mulheres') && fullText.includes('categoria d'))
+
+  if (hasMulheresCnhDRestriction && isCandidateFemale) {
+    if (!hasCnhDOrE) {
+      const cnhTexto = cnhCat
+        ? `CNH Categoria ${cnhCat}`
+        : 'sem CNH informada/mencionada no currículo'
+      return {
+        violou: true,
+        motivo: `Não atende ao critério eliminatório da vaga: mulheres apenas se tiver categoria D na CNH (candidata do sexo feminino consta ${cnhTexto}).`,
+        rebaixarScore: 50,
+      }
+    }
+  }
+
+  // 2) Restrição de sexo exclusivo masculino (ex: "Sexo Masculino", "Vaga para homens")
+  const hasMaleOnlyRestriction =
+    fullText.includes('sexo masculino') ||
+    fullText.includes('vaga para homens') ||
+    fullText.includes('apenas homens') ||
+    fullText.includes('somente homens')
+
+  if (hasMaleOnlyRestriction && isCandidateFemale) {
+    return {
+      violou: true,
+      motivo: `Não atende ao critério eliminatório da vaga: restrita a candidatos do sexo masculino.`,
+      rebaixarScore: 50,
+    }
+  }
+
+  // 3) Experiência proibida de cobrador ("Não pode ter experiência de cobrador")
+  const hasProibicaoCobrador =
+    fullText.includes('nao pode ter experiencia de cobrador') ||
+    fullText.includes('nao pode ter experiencia como cobrador') ||
+    fullText.includes('sem experiencia de cobrador') ||
+    fullText.includes('candidato nao pode ter experiencia de cobrador') ||
+    fullText.includes('proibido experiencia de cobrador')
+
+  if (hasProibicaoCobrador) {
+    const rawExps: any[] = Array.isArray(cvData?.experiencia_profissional)
+      ? cvData.experiencia_profissional
+      : Array.isArray(cvData?.experiencias)
+        ? cvData.experiencias
+        : []
+
+    const allExpText = rawExps
+      .map((e) =>
+        typeof e === 'string' ? e : `${e.cargo || ''} ${e.empresa || ''} ${e.descricao || ''}`,
+      )
+      .join(' ')
+      .toLowerCase()
+
+    const temExpCobrador =
+      allExpText.includes('cobrador') ||
+      allExpText.includes('cobradora') ||
+      allExpText.includes('fiscal de onibus')
+
+    if (temExpCobrador) {
+      return {
+        violou: true,
+        motivo: `Não atende ao critério eliminatório da vaga: candidato não pode ter experiência anterior como cobrador de ônibus.`,
+        rebaixarScore: 50,
+      }
+    }
+  }
+
+  // 4) Idade máxima / faixa de idade estrita
+  let maxAge: number | null = null
+  let minAge: number | null = null
+
+  const matchAte = tlNorm.match(/ate\s+(\d{2})\s*anos/i)
+  if (matchAte) {
+    maxAge = parseInt(matchAte[1], 10)
+  }
+
+  const matchFaixa = tlNorm.match(/(?:de|dos|idade)\s*(\d{2})\s*(?:ate|a)\s*(\d{2})\s*anos/i)
+  if (matchFaixa) {
+    minAge = parseInt(matchFaixa[1], 10)
+    maxAge = parseInt(matchFaixa[2], 10)
+  }
+
+  if (minAge !== null || maxAge !== null) {
+    const candidateAge = extractCandidateAge(cvData)
+    if (candidateAge !== null && candidateAge > 0) {
+      if (minAge !== null && candidateAge < minAge) {
+        return {
+          violou: true,
+          motivo: `Idade (${candidateAge} anos) abaixo do mínimo exigido pela vaga (${minAge} anos).`,
+          rebaixarScore: 40,
+        }
+      }
+      if (maxAge !== null && candidateAge > maxAge) {
+        return {
+          violou: true,
+          motivo: `Idade (${candidateAge} anos) acima do limite máximo estabelecido nos critérios da vaga (${maxAge} anos).`,
+          rebaixarScore: 40,
+        }
+      }
+    }
+  }
+
+  return { violou: false, motivo: null, rebaixarScore: 0 }
 }
 
 /**
@@ -391,6 +551,7 @@ export function parseVagaRequirements(vaga: any): VagaBasicRequirements {
   const crit = vaga?.criterios_qualificacao
   let texto = ''
   if (typeof crit === 'object' && crit !== null) {
+    req.rawTextoLivre = crit.texto_livre || ''
     texto = (crit.texto_livre || '') + ' ' + JSON.stringify(crit)
     if (typeof crit.raio_km === 'number') req.raioKm = crit.raio_km
     if (Array.isArray(crit.localizacoes)) {
@@ -399,6 +560,7 @@ export function parseVagaRequirements(vaga: any): VagaBasicRequirements {
       )
     }
   } else if (typeof crit === 'string') {
+    req.rawTextoLivre = crit
     texto = crit
   }
 
@@ -455,19 +617,55 @@ export function parseVagaRequirements(vaga: any): VagaBasicRequirements {
     req.requiresCnhDOrE = true
   }
 
-  // Regra condicional mulheres
+  // Regra condicional mulheres: "mulheres apenas se tiver categoria D na CNH"
   if (
     fullText.includes('mulheres apenas se tiver categoria d') ||
-    fullText.includes('mulheres apenas com cnh d')
+    fullText.includes('mulheres apenas se tiver cnh d') ||
+    fullText.includes('mulheres apenas com cnh d') ||
+    fullText.includes('mulheres apenas com categoria d') ||
+    fullText.includes('mulheres somente se tiver categoria d') ||
+    fullText.includes('mulheres apenas se possuir cnh d') ||
+    (fullText.includes('mulheres') && fullText.includes('categoria d'))
   ) {
     req.requiresFemaleCnhD = true
+  }
+
+  // Restrição de sexo exclusivamente masculino ("Sexo Masculino", "Vaga para homens", "Apenas homens")
+  if (
+    fullText.includes('sexo masculino') ||
+    fullText.includes('para homens') ||
+    fullText.includes('apenas homens') ||
+    fullText.includes('somente homens')
+  ) {
+    req.requiresMaleOnly = true
+  }
+
+  // Experiência proibida de cobrador ("Não pode ter experiência de cobrador", "Candidato não pode ter experiência de cobrador")
+  if (
+    fullText.includes('nao pode ter experiencia de cobrador') ||
+    fullText.includes('nao pode ter experiencia como cobrador') ||
+    fullText.includes('sem experiencia de cobrador') ||
+    fullText.includes('proibido experiencia de cobrador')
+  ) {
+    req.prohibitsCobradorExp = true
   }
 
   // Escolaridade
   if (fullText.includes('medio')) {
     req.minSchooling = 'medio'
+    // Verifica se é obrigatório ("obrigatório", "exigido", ou não marcado como apenas "desejável")
+    if (
+      fullText.includes('exigido') ||
+      fullText.includes('obrigatorio') ||
+      !fullText.includes('desejavel ensino medio')
+    ) {
+      req.schoolingMandatory = true
+    }
   } else if (fullText.includes('fundamental')) {
     req.minSchooling = 'fundamental'
+    if (fullText.includes('exigido') || fullText.includes('obrigatorio')) {
+      req.schoolingMandatory = true
+    }
   }
 
   // Experiência pesada de motorista
@@ -621,27 +819,36 @@ export function evaluateCandidateAgainstVaga(
     }
   }
 
-  // Regra de CNH D para mulheres em Cobrador
+  // Regra de CNH D para mulheres em Cobrador (ou vaga com texto_livre "Mulheres apenas se tiver categoria D na CNH")
   const nomeCandidato = String(cvData?.nome || '')
   const isFemale =
     cvData?.genero === 'feminino' ||
     cvData?.sexo === 'feminino' ||
-    /^(maria|ana|juliana|camila|patricia|aline|amanda|beatriz|bruna|carolina|daniela|debora|fernanda|gabriela|jessica|larissa|leticia|luana|mariana|natalia|paula|rafaela|renata|sabrina|tatiane|vanessa|flavia|elisabete|elizabeth|andreia|marcia|simone|luciana|rosana|valeria|claudia|cristina|adriana|priscila|monica)\b/i.test(
-      nomeCandidato,
+    /^(catiana|maria|ana|juliana|camila|patricia|aline|amanda|beatriz|bruna|carolina|daniela|debora|fernanda|gabriela|jessica|larissa|leticia|luana|mariana|natalia|paula|rafaela|renata|sabrina|tatiane|vanessa|flavia|elisabete|elizabeth|andreia|marcia|simone|luciana|rosana|valeria|claudia|cristina|adriana|priscila|monica|lucia|aparecida|fatima|sonia|rita|regina|eliane|solange|cleide|neuza|tereza|terezinha|rose|sueli|suely|cidinha|marilene|mariluce|marisa|neide|iraci|ivani|ivone|selma|denise|vanda|wanda|silvia|elza|joana|zilda|marlene|marilda|lucilene|leila|cleusa|cleonice|creusa|arlete|vera|edna|dalva|cleide|noemi|noemia|thalia|irineia|catia|katia)\b/i.test(
+      nomeCandidato.trim(),
     )
 
   if (req.requiresFemaleCnhD && isFemale) {
     if (!hasCnhDOrE) {
+      // Regra mandante do RH: nunca aprovar por omissão; se a CNH não foi mencionada ou não é CNH D/E, reprovar/não atender
       motivosNaoEncaixe.push(
-        `Candidata do sexo feminino necessita de CNH Categoria D para vaga de Cobrador`,
+        `Candidata do sexo feminino necessita de CNH Categoria D para esta vaga (critério da vaga: "Mulheres apenas se tiver categoria D na CNH"; candidata não possui CNH D comprovada)`,
       )
-      score -= 40
+      score -= 50
     } else {
       atendimentos.push(
         `Candidata possui CNH Categoria ${cnhCat || 'D'} conforme exigido para mulheres`,
       )
       score += 15
     }
+  }
+
+  // Restrição de sexo exclusivamente masculino (ex: Abastecedor, Lavador de Peças)
+  if (req.requiresMaleOnly && isFemale) {
+    motivosNaoEncaixe.push(
+      `Vaga restrita a candidatos do sexo masculino conforme critérios da vaga`,
+    )
+    score -= 50
   }
 
   // 4. Experiência Profissional
@@ -657,6 +864,22 @@ export function evaluateCandidateAgainstVaga(
     )
     .join(' ')
     .toLowerCase()
+
+  // Restrição de experiência proibida de cobrador ("Não pode ter experiência de cobrador")
+  if (req.prohibitsCobradorExp) {
+    const temExpCobrador =
+      allExpText.includes('cobrador') ||
+      allExpText.includes('cobradora') ||
+      allExpText.includes('fiscal de onibus')
+    if (temExpCobrador) {
+      motivosNaoEncaixe.push(
+        `Critério eliminatório da vaga: não pode ter experiência anterior como cobrador de ônibus`,
+      )
+      score -= 50
+    } else {
+      atendimentos.push(`Atende ao critério de não ter experiência anterior como cobrador`)
+    }
+  }
 
   if (req.requiresHeavyDrivingExp) {
     const driverCheck = checkBusOrTruckDriverExperience(cvData)
@@ -681,7 +904,6 @@ export function evaluateCandidateAgainstVaga(
   }
 
   // 5. Escolaridade
-  // Todo nível superior satisfaz o fundamental. Se não temos formação informada, não eliminamos determinísticamente.
   const formacoes = Array.isArray(cvData?.formacao_academica) ? cvData.formacao_academica : []
   const formacaoText = formacoes
     .map((f: any) => (typeof f === 'string' ? f : `${f.curso || ''} ${f.instituicao || ''}`))
@@ -689,16 +911,21 @@ export function evaluateCandidateAgainstVaga(
     .toLowerCase()
 
   if (req.minSchooling === 'medio') {
-    if (
-      formacaoText.length > 0 &&
-      !formacaoText.includes('medio') &&
-      !formacaoText.includes('superior') &&
-      !formacaoText.includes('faculdade') &&
-      !formacaoText.includes('gradua')
-    ) {
-      motivosNaoEncaixe.push(`Exige Ensino Médio completo`)
-      score -= 15
-    } else if (formacaoText.includes('medio') || formacaoText.includes('superior')) {
+    const hasMedioOrSuperior =
+      formacaoText.includes('medio') ||
+      formacaoText.includes('superior') ||
+      formacaoText.includes('faculdade') ||
+      formacaoText.includes('gradua') ||
+      formacaoText.includes('tecnico')
+
+    if (!hasMedioOrSuperior) {
+      if (req.schoolingMandatory || formacaoText.length > 0) {
+        motivosNaoEncaixe.push(
+          `Exige Ensino Médio completo (escolaridade informada não atende ou não consta)`,
+        )
+        score -= 25
+      }
+    } else {
       atendimentos.push(`Escolaridade atende ao Ensino Médio`)
       score += 10
     }
@@ -711,6 +938,19 @@ export function evaluateCandidateAgainstVaga(
       atendimentos.push(`Escolaridade atende ao Ensino Fundamental`)
       score += 5
     }
+  }
+
+  // 6. Salvaguarda Determinística direta via checkTextoLivreEliminatoryRestrictions
+  const textoLivreCheck = checkTextoLivreEliminatoryRestrictions(
+    cvData,
+    req.rawTextoLivre,
+    vaga?.titulo,
+  )
+  if (textoLivreCheck.violou && textoLivreCheck.motivo) {
+    if (!motivosNaoEncaixe.includes(textoLivreCheck.motivo)) {
+      motivosNaoEncaixe.push(textoLivreCheck.motivo)
+    }
+    score = Math.max(0, score - textoLivreCheck.rebaixarScore)
   }
 
   // Inferência de funções a partir da experiência profissional
