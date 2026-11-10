@@ -834,9 +834,14 @@ export function checkTextoLivreEliminatoryRestrictions(
   const isGenderUnknown = deducedGender === 'indefinido'
 
   // CNH do candidato
-  const cnhInfo = extractCnhCategory(cvData)
-  const cnhCat = (cnhInfo.category || '').toUpperCase()
-  const hasCnhDOrE = cnhCat === 'D' || cnhCat === 'E'
+  const cnhCat = normalizeCnhCategory(cvData?.cnh_categoria || cvData?.cnh || '') || ''
+  const hasCnhDOrE =
+    cnhCat === 'D' ||
+    cnhCat === 'E' ||
+    cnhCat === 'AD' ||
+    cnhCat === 'AE' ||
+    (typeof cvData?.cnh === 'string' &&
+      /\b(cnh|cat)\s*[:\s]*([a-c]*[de][a-e]*)\b/i.test(cvData.cnh))
 
   // 1) Restrição condicional de gênero: "mulheres apenas se tiver categoria D na CNH"
   const hasMulheresCnhDRestriction =

@@ -16,12 +16,19 @@ DECLARE
   v_vaga_leste_id UUID;
   v_vaga_cursino_id UUID;
   v_vaga_titulo TEXT;
-  v_etapa_triagem UUID := '22619bf4-1f4a-4c28-be58-39bf785c4e72'; -- Triagem
+  v_etapa_triagem UUID;
   v_user_id UUID;
   v_dados JSONB;
   v_detalhes JSONB;
   v_analise_id UUID;
 BEGIN
+  -- Buscar a etapa Triagem real existente no banco
+  SELECT id INTO v_etapa_triagem
+    FROM public.etapas
+   WHERE nome ILIKE '%triagem%'
+   ORDER BY ordem ASC
+   LIMIT 1;
+
   -- Buscar a vaga de Lavador Leste ativa
   SELECT id, titulo INTO v_vaga_leste_id, v_vaga_titulo
     FROM public.vagas
@@ -103,7 +110,7 @@ BEGIN
   -- Atualizar candidato: vaga_id = Lavador Leste, ativo_kanban = true, etapa_id = Triagem, motivo_inativo = null
   UPDATE public.candidatos
      SET vaga_id = v_vaga_leste_id,
-         etapa_id = v_etapa_triagem,
+         etapa_id = COALESCE(v_etapa_triagem, etapa_id),
          ativo_kanban = true,
          motivo_inativo = NULL,
          dados_extraidos = v_dados
