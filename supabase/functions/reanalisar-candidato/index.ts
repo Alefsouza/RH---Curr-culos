@@ -12,7 +12,7 @@ import {
   isPlausibleBirthDate,
   calculateAgeFromBirthDate,
 } from '../_shared/validation.ts'
-import { inferCandidateGender } from '../_shared/criterios-matching.ts'
+import { inferCandidateGender, isGenericObjective } from '../_shared/criterios-matching.ts'
 import { extractRawTextFromDocxBytes } from '../_shared/docx.ts'
 import { extractTextFromPdfBytes } from '../_shared/pdf.ts'
 import { performGoogleVisionPdfOcrDetailed } from '../_shared/ocr.ts'
@@ -886,7 +886,28 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
       identifyHeaders['x-forwarded-auth'] = incomingAuth
     }
 
+    // REGRA DEFINITIVA DO RH (objetivo genérico): candidato com objetivo genérico
+    // ('a disposição da empresa', 'Todos', vazio) deve ser avaliado contra TODAS as
+    // vagas abertas e todos os requisitos de cada uma. A família inferida pela
+    // experiência NÃO limita o alcance: target_vaga_id é IGNORADO para genéricos,
+    // que sempre passam pelo identify-vaga-from-cv (caminho de todas as vagas).
+    const objetivoAtualParaGenCheck = ((typeof currentDadosExtraidos?.objetivo === 'string' &&
+      currentDadosExtraidos.objetivo) ||
+      (typeof currentDadosExtraidos?.cargo_pretendido === 'string' &&
+        currentDadosExtraidos.cargo_pretendido) ||
+      (typeof currentDadosExtraidos?.cargo === 'string' && currentDadosExtraidos.cargo) ||
+      (typeof currentDadosExtraidos?.objetivo_profissional === 'string' &&
+        currentDadosExtraidos.objetivo_profissional) ||
+      '') as string
+    const objetivoGenerico = isGenericObjective(objetivoAtualParaGenCheck)
+
     let identifiedVagaId = target_vaga_id || null
+    if (identifiedVagaId && objetivoGenerico) {
+      console.log(
+        `[reanalisar-candidato] Objetivo genérico detectado ("${objetivoAtualParaGenCheck || '(vazio)'}"): ignorando target_vaga_id e avaliando TODAS as vagas abertas via identify-vaga-from-cv.`,
+      )
+      identifiedVagaId = null
+    }
     let justificativaIdentificacao = ''
     let identifyData: any = {}
 
@@ -1174,6 +1195,10 @@ Retorne estritamente um único objeto JSON válido (sem markdown ou texto adicio
         identifyData.justificativa || 'Nenhuma vaga compatível foi identificada no sistema.'
     } else {
       justificativaIdentificacao = 'Vaga alvo especificada explicitamente para reanálise.'
+      if (objetivoGenerico) {
+        justificativaIdentificacao =
+          'Candidato com objetivo genérico: vaga escolhida por melhor encaixe entre TODAS as vagas abertas (target_vaga_id ignorado pela regra definitiva do RH).'
+      }
     }
 
     // Se temos análise prévia de Motorista com resultado "revisar", verificar se identify tentou desviar para não-motorista (ex: Cobrador)
